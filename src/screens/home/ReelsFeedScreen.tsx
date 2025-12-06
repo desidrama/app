@@ -1,4 +1,3 @@
-
 // ============================================
 // FILE: src/screens/home/ReelsFeedScreen.tsx
 // ============================================
@@ -10,15 +9,21 @@ import {
   StyleSheet,
   ActivityIndicator,
   Text,
+  TouchableOpacity,
+  Pressable,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../redux/store';
 import { videoService } from '../../services/video.service';
 import { setReels, addReels } from '../../redux/slices/videoSlice';
-import ReelCard from '../../components/ReelCard';
 import { COLORS } from '../../utils/constants';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import type { Video } from '../../types';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ========== REELS FEED SCREEN ==========
 
 export default function ReelsFeedScreen() {
   const dispatch = useDispatch();
@@ -57,7 +62,7 @@ export default function ReelsFeedScreen() {
   }).current;
 
   return (
-    <View style={styles.container}>
+    <View style={feedStyles.container}>
       <FlatList
         data={reels}
         renderItem={({ item, index }) => (
@@ -73,46 +78,23 @@ export default function ReelsFeedScreen() {
           itemVisiblePercentThreshold: 80,
         }}
         ListFooterComponent={
-          loading ? <ActivityIndicator size="large" color={COLORS.primary} /> : null
+          loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          ) : null
         }
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-});
-
-// ============================================
-// FILE: src/components/ReelCard.tsx
-// ============================================
-import React, { useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Pressable,
-} from 'react-native';
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
-import { Video } from '../types';
-import { videoService } from '../services/video.service';
-import { COLORS } from '../utils/constants';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// ========== REEL CARD COMPONENT (same file, NOT default export) ==========
 
 interface ReelCardProps {
   video: Video;
   isActive: boolean;
 }
 
-export default function ReelCard({ video, isActive }: ReelCardProps) {
+function ReelCard({ video, isActive }: ReelCardProps) {
   const videoRef = useRef<ExpoVideo>(null);
   const [isLiked, setIsLiked] = React.useState(false);
   const [likes, setLikes] = React.useState(video.likes);
@@ -124,7 +106,7 @@ export default function ReelCard({ video, isActive }: ReelCardProps) {
     } else {
       videoRef.current?.pauseAsync();
     }
-  }, [isActive]);
+  }, [isActive, video._id]);
 
   const handleLike = async () => {
     if (!isLiked) {
@@ -139,12 +121,12 @@ export default function ReelCard({ video, isActive }: ReelCardProps) {
   };
 
   return (
-    <View style={styles.container}>
-      <Pressable onPress={handleDoubleTap} style={styles.videoContainer}>
+    <View style={cardStyles.container}>
+      <Pressable onPress={handleDoubleTap} style={cardStyles.videoContainer}>
         <ExpoVideo
           ref={videoRef}
           source={{ uri: video.masterPlaylistUrl }}
-          style={styles.video}
+          style={cardStyles.video}
           resizeMode={ResizeMode.COVER}
           shouldPlay={isActive}
           isLooping
@@ -152,27 +134,27 @@ export default function ReelCard({ video, isActive }: ReelCardProps) {
         />
       </Pressable>
 
-      <View style={styles.overlay}>
-        <View style={styles.rightActions}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
+      <View style={cardStyles.overlay}>
+        <View style={cardStyles.rightActions}>
+          <TouchableOpacity style={cardStyles.actionButton} onPress={handleLike}>
             <Ionicons
               name={isLiked ? 'heart' : 'heart-outline'}
               size={32}
               color={isLiked ? COLORS.primary : COLORS.text}
             />
-            <Text style={styles.actionText}>{likes}</Text>
+            <Text style={cardStyles.actionText}>{likes}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity style={cardStyles.actionButton}>
             <Ionicons name="eye-outline" size={32} color={COLORS.text} />
-            <Text style={styles.actionText}>{video.views}</Text>
+            <Text style={cardStyles.actionText}>{video.views}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.bottomInfo}>
-          <Text style={styles.title}>{video.title}</Text>
+        <View style={cardStyles.bottomInfo}>
+          <Text style={cardStyles.title}>{video.title}</Text>
           {video.description && (
-            <Text style={styles.description} numberOfLines={2}>
+            <Text style={cardStyles.description} numberOfLines={2}>
               {video.description}
             </Text>
           )}
@@ -182,7 +164,16 @@ export default function ReelCard({ video, isActive }: ReelCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+// ========== STYLES ==========
+
+const feedStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+});
+
+const cardStyles = StyleSheet.create({
   container: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
