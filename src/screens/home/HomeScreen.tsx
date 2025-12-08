@@ -10,12 +10,24 @@ import {
   StatusBar,
   TouchableOpacity,
   TextInput,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import VideoCard from '../../components/VideoCard';
 
 export default function HomeScreen({ navigation }: any) {
   const [searchText, setSearchText] = React.useState('');
+
+  const continueWatchingData = [
+    { title: 'Jurassic Park', imageUrl: 'https://picsum.photos/110/160?random=1' },
+    { title: 'Oldboy', imageUrl: 'https://picsum.photos/110/160?random=2' },
+    { title: 'John Wick', imageUrl: 'https://picsum.photos/110/160?random=3' },
+  ];
+
+  const latestTrendingData = [
+    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
+    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
+    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
+  ];
 
   return (
     <View style={styles.container}>
@@ -26,7 +38,7 @@ export default function HomeScreen({ navigation }: any) {
         <View style={styles.searchContainer}>
           <Ionicons
             name="search-outline"
-            size={30}
+            size={20}
             color="#999"
             style={styles.searchIcon}
           />
@@ -97,21 +109,13 @@ export default function HomeScreen({ navigation }: any) {
             showsHorizontalScrollIndicator={false}
             style={styles.horizontalScroll}
           >
-            {[
-              { title: 'Jurassic Park', image: '#1a3a3a' },
-              { title: 'Oldboy', image: '#2a1a1a' },
-              { title: 'John Wick', image: '#1a2a3a' },
-            ].map((item, i) => (
-              <View key={i} style={styles.videoCard}>
-                <View style={[styles.thumbnail, { backgroundColor: item.image }]}>
-                  <TouchableOpacity style={styles.playButton}>
-                    <Ionicons name="play" size={32} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.videoTitle}>{item.title}</Text>
-                </View>
-              </View>
+            {continueWatchingData.map((item, i) => (
+              <VideoCard
+                key={i}
+                title={item.title}
+                imageUrl={item.imageUrl}
+                onPress={() => {}}
+              />
             ))}
           </ScrollView>
         </View>
@@ -124,21 +128,13 @@ export default function HomeScreen({ navigation }: any) {
             showsHorizontalScrollIndicator={false}
             style={styles.horizontalScroll}
           >
-            {[
-              { title: 'Series 1', image: '#1a3a3a' },
-              { title: 'Series 2', image: '#2a1a1a' },
-              { title: 'Series 3', image: '#1a2a3a' },
-            ].map((item, i) => (
-              <View key={i} style={styles.videoCard}>
-                <View style={[styles.thumbnail, { backgroundColor: item.image }]}>
-                  <TouchableOpacity style={styles.playButton}>
-                    <Ionicons name="play" size={32} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.videoTitle}>{item.title}</Text>
-                </View>
-              </View>
+            {latestTrendingData.map((item, i) => (
+              <VideoCard
+                key={i}
+                title={item.title}
+                imageUrl={item.imageUrl}
+                onPress={() => {}}
+              />
             ))}
           </ScrollView>
         </View>
@@ -266,36 +262,7 @@ const styles = StyleSheet.create({
     marginHorizontal: -12,
     paddingHorizontal: 12,
   },
-  videoCard: {
-    width: 110,
-    marginRight: 12,
-  },
-  thumbnail: {
-    width: 110,
-    height: 160,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardFooter: {
-    paddingTop: 8,
-  },
-  videoTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
   bottomPadding: {
-    height: 100,
+    height: 130,
   },
 });
