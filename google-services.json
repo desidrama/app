@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "689740677634",
+    "project_id": "desidrama-1a05c",
+    "storage_bucket": "desidrama-1a05c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:689740677634:android:970c06e11d34e311dd5d1b",
+        "android_client_info": {
+          "package_name": "com.desidrama.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAa9ZO0cgpdQBFTpQDQp50xXJjgwQB_7w0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:689740677634:android:b6339fe85006ee3ddd5d1b",
+        "android_client_info": {
+          "package_name": "com.shubham1719.desidrama"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAa9ZO0cgpdQBFTpQDQp50xXJjgwQB_7w0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
