@@ -5,12 +5,12 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { User } from '../../types';
 
 interface UserState {
-  user: User | null;
+  profile: User | null;
   loading: boolean;
 }
 
 const initialState: UserState = {
-  user: null,
+  profile: null,
   loading: false,
 };
 
@@ -18,19 +18,16 @@ const userSlice = createSlice({
   name: 'user',
   initialState,
   reducers: {
-    setUser: (state, action: PayloadAction<User>) => {
-      state.user = action.payload;
+    setUser: (state, action: PayloadAction<User | null>) => {
+      state.profile = action.payload;
     },
     updateCoins: (state, action: PayloadAction<number>) => {
-      if (state.user) {
-        state.user.coinsBalance += action.payload;
+      if (state.profile) {
+        state.profile.coins = (state.profile.coins || 0) + action.payload;
       }
-    },
-    clearUser: (state) => {
-      state.user = null;
     },
   },
 });
 
-export const { setUser, updateCoins, clearUser } = userSlice.actions;
+export const { setUser, updateCoins } = userSlice.actions;
 export default userSlice.reducer;

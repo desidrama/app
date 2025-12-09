@@ -1,151 +1,326 @@
-
-// ============================================
-// FILE: src/screens/profile/ProfileScreen.tsx
-// ============================================
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
-  TouchableOpacity,
   ScrollView,
+  TouchableOpacity,
+  StyleSheet,
   Image,
+  StatusBar,
+  Alert,
+  Switch,
+  Dimensions,
 } from 'react-native';
-import { useSelector, useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector, useDispatch } from 'react-redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootState } from '../../redux/store';
 import { logout } from '../../redux/slices/authSlice';
-import { clearUser } from '../../redux/slices/userSlice';
-import { storage } from '../../utils/storage';
-import { COLORS } from '../../utils/constants';
+import { setUser } from '../../redux/slices/userSlice';
+import ProfilePhotoUpload from '../../components/ProfilePhotoUpload';
 
-export default function ProfileScreen() {
+const { width } = Dimensions.get('window');
+
+const PROFILE_COLORS = {
+  background: '#000000',
+  cardBg: '#FFF8E7',
+  cardText: '#000000',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#B0B0B0',
+  textTertiary: '#888888',
+  accentOrange: '#FF6B35',
+  accentRed: '#FF3B30',
+  accentBlue: '#2196F3',
+};
+
+export default function ProfileScreen({ navigation }: any) {
   const dispatch = useDispatch();
-  const { user } = useSelector((state: RootState) => state.user);
+  const user = useSelector((state: RootState) => state.user.profile);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(true);
+  const [notifications, setNotifications] = useState(true);
 
-  const handleLogout = async () => {
-    await storage.removeToken();
-    dispatch(logout());
-    dispatch(clearUser());
+  const profileData = {
+    name: user?.name || 'User name',
+    email: user?.email || 'Digital***@gmail.com',
+    password: '••••••••',
+    avatar: user?.avatar || 'https://via.placeholder.com/150',
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem('token');
+              await AsyncStorage.removeItem('user');
+              dispatch(logout());
+              dispatch(setUser(null));
+            } catch (error) {
+              console.error('Logout error:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={PROFILE_COLORS.background} />
+
+      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.profilePicContainer}>
-          {user?.profilePicture ? (
-            <Image source={{ uri: user.profilePicture }} style={styles.profilePic} />
-          ) : (
-            <Ionicons name="person-circle" size={100} color={COLORS.textSecondary} />
-          )}
-        </View>
-        <Text style={styles.name}>{user?.name || 'User'}</Text>
-        <Text style={styles.phone}>{user?.phone}</Text>
-      </View>
-
-      <View style={styles.statsContainer}>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{user?.coinsBalance || 0}</Text>
-          <Text style={styles.statLabel}>Coins</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{user?.totalVideosWatched || 0}</Text>
-          <Text style={styles.statLabel}>Videos Watched</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{user?.streak || 0}</Text>
-          <Text style={styles.statLabel}>Day Streak</Text>
-        </View>
-      </View>
-
-      <View style={styles.menuContainer}>
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="wallet-outline" size={24} color={COLORS.text} />
-          <Text style={styles.menuText}>Coin History</Text>
-          <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="settings-outline" size={24} color={COLORS.text} />
-          <Text style={styles.menuText}>Settings</Text>
-          <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color={COLORS.primary} />
-          <Text style={[styles.menuText, { color: COLORS.primary }]}>Logout</Text>
+        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>User name</Text>
+        <TouchableOpacity 
+          style={{ width: 40 }}
+          onPress={() => navigation.navigate('EditProfile')}
+        >
+          <Ionicons name="create-outline" size={28} color={PROFILE_COLORS.textPrimary} />
         </TouchableOpacity>
       </View>
-    </ScrollView>
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Avatar Section */}
+        <View style={styles.avatarSection}>
+          <TouchableOpacity
+            onPress={() => setPhotoModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons 
+              name="person-circle" 
+              size={80} 
+              color={PROFILE_COLORS.accentOrange} 
+            />
+          </TouchableOpacity>
+        </View>
+        
+        {/* Settings Card */}
+        <View style={styles.settingsCard}>
+          {/* Email Row */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Email</Text>
+            <Text style={styles.settingValue}>{profileData.email}</Text>
+          </View>
+
+          {/* Password Row */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Password</Text>
+            <View style={styles.passwordRow}>
+              <Text style={styles.settingValue}>{profileData.password}</Text>
+              <TouchableOpacity style={styles.editPasswordButton}>
+                <Ionicons name="pencil" size={16} color={PROFILE_COLORS.cardText} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* AutoPlay Toggle */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>AutoPlay</Text>
+            <Switch
+              value={autoPlay}
+              onValueChange={setAutoPlay}
+              trackColor={{ false: '#767577', true: '#FFD700' }}
+              thumbColor={autoPlay ? '#FFD700' : '#f4f3f4'}
+              style={styles.toggle}
+            />
+          </View>
+
+          {/* Notifications Toggle */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Notifications</Text>
+            <Switch
+              value={notifications}
+              onValueChange={setNotifications}
+              trackColor={{ false: '#767577', true: '#FFD700' }}
+              thumbColor={notifications ? '#FFD700' : '#f4f3f4'}
+              style={styles.toggle}
+            />
+          </View>
+        </View>
+
+        {/* Menu Items */}
+        <View style={styles.menuSection}>
+          <MenuItem
+            icon="create-outline"
+            title="Edit Profile"
+            onPress={() => navigation.navigate('EditProfile')}
+          />
+          <MenuItem
+            icon="help-circle-outline"
+            title="Help & Support"
+            onPress={() => {}}
+          />
+          <MenuItem
+            icon="information-circle-outline"
+            title="About"
+            onPress={() => {}}
+          />
+        </View>
+        {/* Logout */}
+        <View style={styles.logoutSection}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="log-out-outline" size={20} color={PROFILE_COLORS.accentRed} />
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Photo Upload Modal */}
+      <ProfilePhotoUpload
+        visible={photoModalVisible}
+        onClose={() => setPhotoModalVisible(false)}
+        currentPhotoUri={profileData.avatar}
+      />
+    </View>
   );
 }
+
+const MenuItem = ({ icon, title, onPress }: any) => (
+  <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
+    <View style={styles.menuItemLeft}>
+      <Ionicons name={icon} size={20} color={PROFILE_COLORS.textPrimary} />
+      <Text style={styles.menuItemText}>{title}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={20} color={PROFILE_COLORS.textSecondary} />
+  </TouchableOpacity>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: PROFILE_COLORS.background,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 30,
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 20,
+    backgroundColor: PROFILE_COLORS.background,
   },
-  profilePicContainer: {
-    marginBottom: 15,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: PROFILE_COLORS.textPrimary,
   },
-  profilePic: {
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  avatarSection: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  avatarContainer: {
     width: 100,
     height: 100,
     borderRadius: 50,
+    overflow: 'hidden',
+    backgroundColor: PROFILE_COLORS.cardBg,
   },
-  name: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 5,
+  avatar: {
+    width: '100%',
+    height: '100%',
   },
-  phone: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
+  settingsCard: {
+    backgroundColor: PROFILE_COLORS.cardBg,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    paddingVertical: 4,
+    marginBottom: 24,
+    overflow: 'hidden',
   },
-  statsContainer: {
+  settingRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 20,
-    marginHorizontal: 20,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  statBox: {
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.08)',
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.primary,
+  settingLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: PROFILE_COLORS.cardText,
+    flex: 1,
   },
-  statLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 5,
+  settingValue: {
+    fontSize: 14,
+    color: PROFILE_COLORS.textTertiary,
+    marginRight: 12,
   },
-  menuContainer: {
-    marginHorizontal: 20,
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editPasswordButton: {
+    padding: 6,
+  },
+  toggle: {
+    transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
+  },
+  menuSection: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
+    gap: 12,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 15,
-    backgroundColor: COLORS.secondary,
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 12,
-    marginBottom: 10,
   },
-  menuText: {
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     flex: 1,
-    fontSize: 16,
-    color: COLORS.text,
-    marginLeft: 15,
+  },
+  menuItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: PROFILE_COLORS.textPrimary,
+  },
+  logoutSection: {
+    paddingHorizontal: 16,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  logoutText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: PROFILE_COLORS.accentRed,
   },
 });

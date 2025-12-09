@@ -29,6 +29,9 @@ export interface User {
   phone?: string;
   avatar?: string;
   coins: number;
+  username?: string;
+  bio?: string;
+  location?: string;
   referralCode?: string;
   createdAt: string;
   updatedAt: string;
