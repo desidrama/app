@@ -100,8 +100,8 @@ export default function ProfileScreen({ navigation }: any) {
           >
             <Ionicons 
               name="person-circle" 
-              size={80} 
-              color={PROFILE_COLORS.accentOrange} 
+              size={120} 
+              color={PROFILE_COLORS.textPrimary} 
             />
           </TouchableOpacity>
         </View>
@@ -230,14 +230,16 @@ const styles = StyleSheet.create({
   },
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 20,
   },
   avatarContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     overflow: 'hidden',
-    backgroundColor: PROFILE_COLORS.cardBg,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatar: {
     width: '100%',
@@ -246,23 +248,28 @@ const styles = StyleSheet.create({
   settingsCard: {
     backgroundColor: PROFILE_COLORS.cardBg,
     marginHorizontal: 16,
-    borderRadius: 16,
-    paddingVertical: 4,
+    borderRadius: 20,
+    paddingVertical: 0,
     marginBottom: 24,
     overflow: 'hidden',
+    shadowColor: 'rgba(0, 0, 0, 0.1)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.08)',
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   settingLabel: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     color: PROFILE_COLORS.cardText,
     flex: 1,
   },

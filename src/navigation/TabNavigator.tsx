@@ -43,7 +43,7 @@ function ProfileNavigator() {
         name="EditProfile" 
         component={EditProfileScreen}
         options={{
-          animationEnabled: true,
+          gestureEnabled: true,
         }}
       />
     </ProfileStack.Navigator>
