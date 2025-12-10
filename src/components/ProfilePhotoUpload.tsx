@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,12 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
-  ActivityIndicator,
   Alert,
   Dimensions,
   Animated,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -41,9 +40,6 @@ export default function ProfilePhotoUpload({
   onClose,
   currentPhotoUri,
 }: ProfilePhotoUploadProps) {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
   const slideAnim = useRef(new Animated.Value(height)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -78,71 +74,12 @@ export default function ProfilePhotoUpload({
     }
   }, [visible]);
 
-  const pickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Camera roll access is needed');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        setSelectedImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
-    }
+  const handlePickImage = () => {
+    Alert.alert('Coming Soon', 'Image picker functionality will be added soon');
   };
 
-  const takePhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Camera access is needed');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        setSelectedImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to take photo');
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!selectedImage) {
-      Alert.alert('Error', 'Please select an image first');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Simulated upload - replace with actual API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      Alert.alert('Success', 'Photo updated successfully', [
-        { text: 'OK', onPress: onClose },
-      ]);
-      setSelectedImage(null);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to upload photo');
-    } finally {
-      setLoading(false);
-    }
+  const handleTakePhoto = () => {
+    Alert.alert('Coming Soon', 'Camera functionality will be added soon');
   };
 
   const handleRemove = () => {
@@ -154,19 +91,9 @@ export default function ProfilePhotoUpload({
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              // Simulated removal - replace with actual API call
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              Alert.alert('Success', 'Photo removed successfully', [
-                { text: 'OK', onPress: onClose },
-              ]);
-            } catch (error) {
-              Alert.alert('Error', 'Failed to remove photo');
-            } finally {
-              setLoading(false);
-            }
+          onPress: () => {
+            Alert.alert('Success', 'Photo removed successfully');
+            onClose();
           },
         },
       ]
@@ -216,33 +143,29 @@ export default function ProfilePhotoUpload({
           contentContainerStyle={styles.contentContainer}
         >
           {/* Preview Section */}
-          {selectedImage && (
-            <View style={styles.previewSection}>
-              <View style={styles.previewImageContainer}>
-                <Ionicons
-                  name="person-circle"
-                  size={140}
-                  color={PROFILE_COLORS.cardBg}
-                />
-              </View>
-              <Text style={styles.previewLabel}>Preview</Text>
+          <View style={styles.previewSection}>
+            <View style={styles.placeholderContainer}>
+              <Ionicons
+                name="person-circle"
+                size={120}
+                color={PROFILE_COLORS.cardBg}
+              />
             </View>
-          )}
+            <Text style={styles.previewLabel}>Current Photo</Text>
+          </View>
 
           {/* Action Buttons Card */}
           <View style={styles.actionCard}>
             <ActionButton
               icon="image-outline"
               title="Choose from Gallery"
-              onPress={pickImage}
-              disabled={loading}
+              onPress={handlePickImage}
             />
             <View style={styles.divider} />
             <ActionButton
               icon="camera-outline"
               title="Take Photo"
-              onPress={takePhoto}
-              disabled={loading}
+              onPress={handleTakePhoto}
             />
             <View style={styles.divider} />
             <ActionButton
@@ -250,7 +173,6 @@ export default function ProfilePhotoUpload({
               title="Remove Photo"
               onPress={handleRemove}
               color={PROFILE_COLORS.accentRed}
-              disabled={loading}
             />
           </View>
 
@@ -291,40 +213,15 @@ export default function ProfilePhotoUpload({
             </View>
           </View>
         </ScrollView>
-
-        {/* Footer Buttons */}
-        {selectedImage && (
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.cancelButton]}
-              onPress={() => setSelectedImage(null)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.uploadButton]}
-              onPress={handleUpload}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={PROFILE_COLORS.textPrimary} />
-              ) : (
-                <Text style={styles.uploadButtonText}>Upload</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
       </Animated.View>
     </Modal>
   );
 }
 
-const ActionButton = ({ icon, title, onPress, color = PROFILE_COLORS.cardText, disabled }: any) => (
+const ActionButton = ({ icon, title, onPress, color = PROFILE_COLORS.cardText }: any) => (
   <TouchableOpacity
     style={styles.actionButton}
     onPress={onPress}
-    disabled={disabled}
     activeOpacity={0.7}
   >
     <Ionicons name={icon} size={20} color={color} />
@@ -376,7 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 24,
   },
-  previewImageContainer: {
+  placeholderContainer: {
     width: 140,
     height: 140,
     borderRadius: 70,
@@ -449,38 +346,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: PROFILE_COLORS.textTertiary,
     fontWeight: '500',
-  },
-  footer: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: 24,
-    backgroundColor: PROFILE_COLORS.background,
-  },
-  footerButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: PROFILE_COLORS.textSecondary,
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: PROFILE_COLORS.textPrimary,
-  },
-  uploadButton: {
-    backgroundColor: PROFILE_COLORS.accentOrange,
-  },
-  uploadButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: PROFILE_COLORS.textPrimary,
   },
 });

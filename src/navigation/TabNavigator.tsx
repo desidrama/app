@@ -20,33 +20,33 @@ type TabParamList = {
   Home: undefined;
   Reels: undefined;
   Rewards: undefined;
-  ProfileStack: undefined;
+  Profile: undefined;
 };
 
-type ProfileStackParamList = {
+type ProfileParamList = {
   Profile: undefined;
   EditProfile: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
-const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
+const Profile = createNativeStackNavigator<ProfileParamList>();
 
 function ProfileNavigator() {
   return (
-    <ProfileStack.Navigator
+    <Profile.Navigator
       screenOptions={{
         headerShown: false,
       }}
     >
-      <ProfileStack.Screen name="Profile" component={ProfileScreen} />
-      <ProfileStack.Screen 
+      <Profile.Screen name="Profile" component={ProfileScreen} />
+      <Profile.Screen 
         name="EditProfile" 
         component={EditProfileScreen}
         options={{
           gestureEnabled: true,
         }}
       />
-    </ProfileStack.Navigator>
+    </Profile.Navigator>
   );
 }
 
@@ -61,7 +61,7 @@ export default function TabNavigator() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Reels" component={ReelsFeedScreen} />
       <Tab.Screen name="Rewards" component={RewardsScreen} />
-      <Tab.Screen name="ProfileStack" component={ProfileNavigator} />
+      <Tab.Screen name="Profile" component={ProfileNavigator} />
     </Tab.Navigator>
   );
 }

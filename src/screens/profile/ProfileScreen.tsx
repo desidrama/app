@@ -95,14 +95,22 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Avatar Section */}
         <View style={styles.avatarSection}>
           <TouchableOpacity
-            onPress={() => setPhotoModalVisible(true)}
+            onPress={() => navigation.navigate('EditProfile')}
             activeOpacity={0.8}
+            style={styles.avatarTouchable}
           >
-            <Ionicons 
-              name="person-circle" 
-              size={120} 
-              color={PROFILE_COLORS.textPrimary} 
-            />
+            {user?.avatar ? (
+              <Image
+                source={{ uri: user.avatar }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Ionicons 
+                name="person-circle" 
+                size={120} 
+                color={PROFILE_COLORS.textPrimary} 
+              />
+            )}
           </TouchableOpacity>
         </View>
         
@@ -231,6 +239,19 @@ const styles = StyleSheet.create({
   avatarSection: {
     alignItems: 'center',
     paddingVertical: 20,
+  },
+  avatarTouchable: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   avatarContainer: {
     width: 140,
