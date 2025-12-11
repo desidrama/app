@@ -62,35 +62,20 @@ const LoginScreen: React.FC = () => {
       // Success - navigate to OTP screen
       setLoading(false);
       
-      // Show dev OTP in development (if provided)
-      if (response?.devOtp && __DEV__) {
-        console.log('🔐 DEV OTP:', response.devOtp);
-        Alert.alert(
-          'OTP Sent',
-          `OTP has been sent to your WhatsApp.\n\n(Dev OTP: ${response.devOtp})`,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('OTPScreen', { phone: onlyDigits })
-            }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'OTP Sent',
-          'OTP has been sent to your WhatsApp number.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('OTPScreen', { phone: onlyDigits })
-            }
-          ]
-        );
-      }
+
+      Alert.alert(
+        'OTP Sent',
+        'OTP has been sent to your WhatsApp number.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('OTPScreen', { phone: onlyDigits })
+          }
+        ]
+      );
 
     } catch (error: any) {
       setLoading(false);
-      console.error('❌ Send OTP error:', error);
       
       if (error.response) {
         // Server responded with error

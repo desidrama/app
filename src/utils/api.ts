@@ -2,11 +2,17 @@
 // API_BASE_URL is configured via environment variables
 import Constants from 'expo-constants';
 
+
 // Get API_BASE_URL from environment - Expo reads from app.json or .env
 const envApiUrl = Constants.expoConfig?.extra?.apiBaseUrl;
 
 // Fallback URLs for development/production
 const DEV_API_URL = 'http://192.168.29.105:5000';
+
+// Development URL - Change this as needed
+
+
+
 const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
 // Priority: env variable > .env files (via Constants) > fallback

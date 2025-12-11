@@ -14,10 +14,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+
 import { useDispatch } from 'react-redux';
 import { verifyOTP, sendOTP } from '../../services/api';
 import { setToken } from '../../redux/slices/authSlice';
 import * as storage from '../../utils/storage';
+
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -63,13 +65,23 @@ const OTPScreen: React.FC = () => {
 
     try {
       setLoading(true);
+
+      // Get FCM token (best effort)
+      let fcmToken: string | undefined;
+      try {
+        fcmToken = await getFcmToken();
+      } catch (tokenErr) {
+        console.warn('⚠️ Could not fetch FCM token', tokenErr);
+      }
       
+
       const response = await verifyOTP(phone, otp);
 
       console.log('✅ Verify OTP Response:', response);
 
       if (response?.success === false) {
         Alert.alert('Verification Failed', response?.message || 'Invalid OTP');
+
         setLoading(false);
         setOtp(''); // Clear OTP field
         return;
@@ -95,6 +107,7 @@ const OTPScreen: React.FC = () => {
         await storage.setUser(JSON.stringify(user));
       }
 
+
       // Dispatch Redux action to update authentication state
       dispatch(
         setToken({
@@ -103,6 +116,7 @@ const OTPScreen: React.FC = () => {
           user,
         })
       );
+
 
       console.log('✅ Login successful:', user);
       
@@ -159,11 +173,13 @@ const OTPScreen: React.FC = () => {
       setOtp('');
       
       // Show dev OTP in development
+
       if (response?.devOtp && __DEV__) {
         console.log('🔐 DEV OTP:', response.devOtp);
         Alert.alert(
           'OTP Resent',
-          `A new OTP has been sent to your WhatsApp.\n\n(Dev OTP: ${response.devOtp})`
+          `A new OTP has been sent to your WhatsApp`
+
         );
       } else {
         Alert.alert(
