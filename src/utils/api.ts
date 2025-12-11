@@ -4,7 +4,7 @@
 // For production: use EAS secrets or environment variables
 
 // Development URL - Change this as needed
-const DEV_API_URL = 'http://192.168.29.105:5000';
+const DEV_API_URL = 'http://10.78.2.110:5000';
 const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
 export const API_BASE_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;

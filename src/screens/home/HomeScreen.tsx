@@ -1,6 +1,4 @@
-// ============================================
 // FILE: src/screens/home/HomeScreen.tsx
-// ============================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -16,6 +14,7 @@ import {
   NativeSyntheticEvent,
   Dimensions,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../../components/VideoCard';
@@ -57,11 +56,10 @@ const HERO_DATA: HeroItem[] = [
 export default function HomeScreen({ navigation }: any) {
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('New & Hot');
-  const [heroIndex, setHeroIndex] = useState(0); // real index 0..N-1
+  const [heroIndex, setHeroIndex] = useState(0);
 
   const heroRef = useRef<FlatList<HeroItem>>(null);
 
-  // ---------- Infinite hero data (fake first & last) ----------
   const extendedHeroData = useMemo(() => {
     if (HERO_DATA.length <= 1) return HERO_DATA;
     const first = HERO_DATA[0];
@@ -81,24 +79,22 @@ export default function HomeScreen({ navigation }: any) {
     { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
   ];
 
-  // ---------- AUTO SLIDE (with infinite loop) ----------
   useEffect(() => {
     const n = HERO_DATA.length;
     if (n <= 1) return;
 
     const interval = setInterval(() => {
-      const next = (heroIndex + 1) % n; // real index
+      const next = (heroIndex + 1) % n;
       heroRef.current?.scrollToIndex({ index: next + 1, animated: true });
       setHeroIndex(next);
-    }, 4000); // 4 seconds
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [heroIndex]);
 
-  // When user finishes swiping hero (manual swipe)
   const onHeroScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const viewIndex = Math.round(x / SCREEN_WIDTH); // index in extendedHeroData
+    const viewIndex = Math.round(x / SCREEN_WIDTH);
     const n = HERO_DATA.length;
 
     if (n <= 1) {
@@ -124,192 +120,194 @@ export default function HomeScreen({ navigation }: any) {
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#050509" />
-
-      <View style={styles.container}>
-        {/* Header with Brand + Search */}
-        <View style={styles.header}>
-          <View style={styles.brandRow}>
-            <Text style={styles.brandDigital}>Digital</Text>
-            <Text style={styles.brandKalakar}> कलाकार</Text>
-          </View>
-
-          {/* SEARCH BAR */}
-          <View style={styles.searchContainer}>
-            <Ionicons
-              name="search-outline"
-              size={18}
-              color="#C8C8C8"
-              style={styles.searchIcon}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search..."
-              placeholderTextColor="#A0A0A0"
-              value={searchText}
-              onChangeText={setSearchText}
-            />
-            <TouchableOpacity style={styles.micButton}>
-              <Ionicons name="mic-outline" size={18} color="#F5F5F5" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Content */}
-        <ScrollView
-          style={styles.content}
-          showsVerticalScrollIndicator={false}
-          scrollEventThrottle={16}
-        >
-          {/* Category Tabs */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-          >
-            {['New & Hot', 'Popular', 'Originals', 'Categories'].map((cat) => {
-              const isActive = cat === activeCategory;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
-                  onPress={() => setActiveCategory(cat)}
-                >
-                  <Text
-                    style={[
-                      styles.categoryText,
-                      isActive && styles.categoryTextActive,
-                    ]}
-                  >
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Hero Carousel – infinite + auto sliding */}
-          <View style={styles.heroWrapper}>
-            <FlatList
-              ref={heroRef}
-              data={extendedHeroData}
-              keyExtractor={(_, index) => `hero-${index}`}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              initialScrollIndex={1}
-              getItemLayout={getHeroItemLayout}
-              onMomentumScrollEnd={onHeroScrollEnd}
-              renderItem={({ item }) => (
-                <View style={styles.heroSlide}>
-                  <ImageBackground
-                    source={{ uri: item.imageUrl }}
-                    style={styles.heroImage}
-                    imageStyle={styles.heroImageRadius}
-                  >
-                    <View style={styles.heroGradient} />
-                    <View style={styles.heroContent}>
-                      <View style={styles.heroTagRow}>
-                        <Text style={styles.heroTag}>{item.tag}</Text>
-                      </View>
-                      <Text style={styles.heroTitle}>{item.title}</Text>
-                      <Text style={styles.heroSubtitle}>{item.subtitle}</Text>
-
-                      <View style={styles.heroButtonsRow}>
-                        <TouchableOpacity style={styles.heroPrimaryButton}>
-                          <Ionicons name="play" size={18} color="#000" />
-                          <Text style={styles.heroPrimaryText}>Play</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.heroSecondaryButton}>
-                          <Ionicons name="add" size={18} color="#fff" />
-                          <Text style={styles.heroSecondaryText}>Watchlist</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </ImageBackground>
-                </View>
-              )}
-            />
-
-            {/* Dots for real items only */}
-            <View style={styles.heroDotsRow}>
-              {HERO_DATA.map((item, index) => {
-                const isActive = index === heroIndex;
-                return (
-                  <View
-                    key={item.id}
-                    style={[styles.heroDot, isActive && styles.heroDotActive]}
-                  />
-                );
-              })}
+      <SafeAreaView style={styles.safeAreaInner}>
+        <View style={styles.container}>
+          {/* Header with Brand + Search */}
+          <View style={styles.header}>
+            <View style={styles.brandRow}>
+              <Text style={styles.brandDigital}>Digital</Text>
+              <Text style={styles.brandKalakar}> कलाकार</Text>
             </View>
-          </View>
 
-          {/* Continue Watching */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Continue Watching</Text>
-            <Text style={styles.sectionSubtitle}>
-              Pick up exactly where you left off
-            </Text>
-
-            <View style={{ height: 12 }} />
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.horizontalScroll}
-            >
-              {continueWatchingData.map((item, i) => (
-                <View key={i} style={styles.videoCardWrapper}>
-                  <VideoCard
-                    title={item.title}
-                    imageUrl={item.imageUrl}
-                    onPress={() => {}}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Latest & Trending */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <View>
-                <Text style={styles.sectionTitle}>Latest & Trending</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Fresh drops from top creators
-                </Text>
-              </View>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>See all</Text>
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color="#C8C8C8"
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search..."
+                placeholderTextColor="#A0A0A0"
+                value={searchText}
+                onChangeText={setSearchText}
+                returnKeyType="search"
+              />
+              <TouchableOpacity style={styles.micButton}>
+                <Ionicons name="mic-outline" size={18} color="#F5F5F5" />
               </TouchableOpacity>
             </View>
+          </View>
 
-            <View style={{ height: 12 }} />
-
+          {/* Content */}
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+          >
+            {/* Category Tabs */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.horizontalScroll}
+              contentContainerStyle={styles.categoryScrollContainer}
             >
-              {latestTrendingData.map((item, i) => (
-                <View key={i} style={styles.videoCardWrapper}>
-                  <VideoCard
-                    title={item.title}
-                    imageUrl={item.imageUrl}
-                    onPress={() => {}}
-                  />
-                </View>
-              ))}
+              {['New & Hot', 'Popular', 'Originals', 'Categories'].map((cat) => {
+                const isActive = cat === activeCategory;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+                    onPress={() => setActiveCategory(cat)}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        isActive && styles.categoryTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
-          </View>
 
-          <View style={styles.bottomPadding} />
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+            {/* Hero Carousel */}
+            <View style={styles.heroWrapper}>
+              <FlatList
+                ref={heroRef}
+                data={extendedHeroData}
+                keyExtractor={(_, index) => `hero-${index}`}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                initialScrollIndex={1}
+                getItemLayout={getHeroItemLayout}
+                onMomentumScrollEnd={onHeroScrollEnd}
+                decelerationRate="fast"
+                renderItem={({ item }) => (
+                  <View style={styles.heroSlide}>
+                    <ImageBackground
+                      source={{ uri: item.imageUrl }}
+                      style={styles.heroImage}
+                      imageStyle={styles.heroImageRadius}
+                    >
+                      <View style={styles.heroGradient} />
+                      <View style={styles.heroContent}>
+                        <View style={styles.heroTagRow}>
+                          <Text style={styles.heroTag}>{item.tag}</Text>
+                        </View>
+                        <Text style={styles.heroTitle}>{item.title}</Text>
+                        <Text style={styles.heroSubtitle}>{item.subtitle}</Text>
+
+                        <View style={styles.heroButtonsRow}>
+                          <TouchableOpacity style={styles.heroPrimaryButton}>
+                            <Ionicons name="play" size={18} color="#000" />
+                            <Text style={styles.heroPrimaryText}>Play</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity style={styles.heroSecondaryButton}>
+                            <Ionicons name="add" size={18} color="#fff" />
+                            <Text style={styles.heroSecondaryText}>Watchlist</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </ImageBackground>
+                  </View>
+                )}
+              />
+
+              {/* Dots */}
+              <View style={styles.heroDotsRow}>
+                {HERO_DATA.map((item, index) => {
+                  const isActive = index === heroIndex;
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.heroDot, isActive && styles.heroDotActive]}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Continue Watching */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Continue Watching</Text>
+              <Text style={styles.sectionSubtitle}>
+                Pick up exactly where you left off
+              </Text>
+
+              <View style={{ height: 12 }} />
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {continueWatchingData.map((item, i) => (
+                  <View key={i} style={styles.videoCardWrapper}>
+                    <VideoCard
+                      title={item.title}
+                      imageUrl={item.imageUrl}
+                      onPress={() => {}}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Latest & Trending */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={styles.sectionTitle}>Latest & Trending</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Fresh drops from top creators
+                  </Text>
+                </View>
+                <TouchableOpacity>
+                  <Text style={styles.seeAllText}>See all</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ height: 12 }} />
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {latestTrendingData.map((item, i) => (
+                  <View key={i} style={styles.videoCardWrapper}>
+                    <VideoCard
+                      title={item.title}
+                      imageUrl={item.imageUrl}
+                      onPress={() => {}}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.bottomPadding} />
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -320,6 +318,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#050509',
   },
+  safeAreaInner: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#050509',
@@ -328,14 +329,14 @@ const styles = StyleSheet.create({
   // HEADER
   header: {
     paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 10,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 12) : 16,
+    paddingBottom: 12,
     backgroundColor: '#050509',
   },
   brandRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: 6, // tighter spacing above search
+    alignItems: 'center',
+    marginBottom: 14,
   },
   brandDigital: {
     color: '#FFFFFF',
@@ -354,10 +355,10 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#221107', // warm dark
+    backgroundColor: '#221107',
     borderRadius: 26,
     paddingHorizontal: 14,
-    height: 38,
+    height: 40,
     borderWidth: 1,
     borderColor: '#332016',
   },
@@ -369,7 +370,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     paddingVertical: 0,
-    letterSpacing: 0, // no extra spacing
   },
   micButton: {
     width: 30,
@@ -386,10 +386,10 @@ const styles = StyleSheet.create({
   },
 
   // CATEGORY TABS
-  categoryScroll: {
+  categoryScrollContainer: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   categoryTab: {
     paddingHorizontal: 18,
@@ -412,18 +412,20 @@ const styles = StyleSheet.create({
 
   // HERO
   heroWrapper: {
-    marginTop: 2,
-    marginBottom: 6, // so Continue Watching comes closer
+    marginTop: 8,
+    marginBottom: 16,
   },
   heroSlide: {
-    width: SCREEN_WIDTH,
-    paddingHorizontal: 16,
+    width: SCREEN_WIDTH,      // keep paging at full screen width
+    paddingHorizontal: 16,   // inset the slide content so the image lines up with rest of UI
   },
   heroImage: {
-    height: 220, // slightly shorter so second section peeks up
+    width: SCREEN_WIDTH - 32, // image width matches the inset (16 left + 16 right)
+    height: 220,
     borderRadius: 18,
     overflow: 'hidden',
     justifyContent: 'flex-end',
+    alignSelf: 'center',     // center inside the page
   },
   heroImageRadius: {
     borderRadius: 18,
@@ -498,15 +500,15 @@ const styles = StyleSheet.create({
   heroDotsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 8,
-    marginBottom: 4,
+    marginTop: 12,
+    marginBottom: 6,
   },
   heroDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#555',
-    marginHorizontal: 3,
+    marginHorizontal: 4,
   },
   heroDotActive: {
     width: 14,
@@ -517,7 +519,7 @@ const styles = StyleSheet.create({
   // SECTIONS
   section: {
     paddingHorizontal: 16,
-    marginTop: 18,
+    marginTop: 20,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -539,15 +541,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#A5A5AB',
   },
-  horizontalScroll: {
-    marginHorizontal: -4,
-    paddingHorizontal: 4,
+  horizontalScrollContainer: {
+    paddingRight: 16,
   },
   videoCardWrapper: {
     marginRight: 10,
   },
 
   bottomPadding: {
-    height: 120,
+    height: 140, // ensures content rises above bottom nav / home bar on modern devices
   },
 });

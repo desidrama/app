@@ -1,6 +1,4 @@
-// ============================================
 // FILE: src/screens/rewards/CoinsScreen.tsx
-// ============================================
 import React, { useState } from 'react';
 import {
   View,
@@ -9,6 +7,8 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 
@@ -55,7 +55,7 @@ const MISSIONS: Mission[] = [
   },
   {
     id: 'insta2',
-    title: 'Instagram',
+    title: 'Twitter',
     subtitle: '5 Coins',
     coins: 5,
     cta: 'Follow',
@@ -70,6 +70,8 @@ const MISSIONS: Mission[] = [
     iconType: 'game',
   },
 ];
+
+const TAB_BAR_SAFE_PADDING = 140; // ensure content visible above tab bar / home indicator
 
 const CoinsScreen: React.FC<any> = ({ navigation }) => {
   const [selectedDay, setSelectedDay] = useState(1);
@@ -88,60 +90,71 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
       case 'instagram':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#F56040' }]}>
-            <FontAwesome name="instagram" size={20} color="#fff" />
+            <FontAwesome name="instagram" size={18} color="#fff" />
           </View>
         );
       case 'youtube':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#FF0000' }]}>
-            <FontAwesome name="youtube-play" size={20} color="#fff" />
+            <FontAwesome name="youtube-play" size={18} color="#fff" />
           </View>
         );
       case 'x':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#111827' }]}>
-            <FontAwesome5 name="x-twitter" size={18} color="#fff" />
+            <FontAwesome5 name="x-twitter" size={16} color="#fff" />
           </View>
         );
       case 'game':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#2563EB' }]}>
-            <FontAwesome5 name="gamepad" size={18} color="#fff" />
+            <FontAwesome5 name="gamepad" size={16} color="#fff" />
           </View>
         );
       case 'ad':
       default:
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#10B981' }]}>
-            <Ionicons name="play-outline" size={18} color="#fff" />
+            <Ionicons name="play-outline" size={16} color="#fff" />
           </View>
         );
     }
   };
 
+  const topOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset }]}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation?.goBack?.()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Coins & Rewards</Text>
+          <Text
+            style={styles.headerTitle}
+            numberOfLines={1}
+            accessible
+            accessibilityRole="header"
+          >
+            Coins & Rewards
+          </Text>
 
-          <View style={styles.coinPill}>
+          <View style={styles.coinPill} accessible accessibilityLabel={`${userCoins} coins`}>
             <Text style={styles.coinText}>{userCoins}</Text>
-            <FontAwesome5 name="rupee-sign" size={16} color="#F5B800" />
+            <FontAwesome5 name="rupee-sign" size={14} color="#F5B800" />
           </View>
         </View>
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: TAB_BAR_SAFE_PADDING }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Daily Rewards */}
@@ -168,7 +181,7 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
                     <View style={styles.dayCoinCircle}>
                       <FontAwesome5
                         name="rupee-sign"
-                        size={18}
+                        size={16}
                         color="#F5B800"
                       />
                     </View>
@@ -190,7 +203,7 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
               activeOpacity={0.9}
               style={styles.claimButton}
             >
-              <Text style={styles.claimButtonText}>Get 1 Coin</Text>
+              <Text style={styles.claimButtonText}>Get {DAILY_REWARDS.find(r => r.day === selectedDay)?.coins ?? 0} Coin</Text>
             </TouchableOpacity>
           </View>
 
@@ -254,34 +267,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#090407',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
   },
 
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 6,
-    paddingBottom: 12,
+    paddingVertical: 12,
   },
   backButton: {
-    paddingRight: 8,
-    paddingVertical: 4,
+    width: 42,
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingLeft: 4,
   },
   headerTitle: {
     flex: 1,
-    textAlign: 'left',
+    textAlign: 'center',
     color: '#ffffff',
     fontSize: 20,
     fontWeight: '800',
-    marginLeft: 2,
+    marginLeft: 0,
   },
   coinPill: {
+    minWidth: 72,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FDF7EA',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
+    justifyContent: 'center',
   },
   coinText: {
     marginRight: 6,
@@ -292,6 +309,10 @@ const styles = StyleSheet.create({
 
   scroll: {
     flex: 1,
+  },
+
+  scrollContentContainer: {
+    paddingTop: 6,
   },
 
   sectionTitle: {
@@ -311,35 +332,35 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
   dailyScrollContent: {
-    paddingHorizontal: 2,
-    paddingBottom: 10,
+    paddingHorizontal: 4,
+    paddingBottom: 12,
   },
   dayItem: {
-    width: 64,
-    height: 76,
+    width: 68,
+    height: 80,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#3f3f46',
     backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    marginRight: 10,
   },
   dayItemActive: {
     borderColor: '#F5B800',
     backgroundColor: '#1d1b10',
   },
   dayCoinCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#27272f',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   dayLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#e5e5e5',
     fontWeight: '600',
   },
@@ -347,10 +368,10 @@ const styles = StyleSheet.create({
     color: '#F5B800',
   },
   claimButton: {
-    marginTop: 6,
+    marginTop: 10,
     backgroundColor: '#FFD54A',
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -368,7 +389,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   missionLeft: {
     flexDirection: 'row',
@@ -376,9 +397,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   missionIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -395,7 +416,7 @@ const styles = StyleSheet.create({
   },
   // equal-width CTA for Follow / Subscribe / Login / Watch
   missionCTA: {
-    width: 100, // 👈 all buttons same width now
+    width: 96,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,

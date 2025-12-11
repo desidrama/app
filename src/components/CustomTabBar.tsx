@@ -1,319 +1,160 @@
-// ============================================
 // FILE: src/components/CustomTabBar.tsx
-// ============================================
-import React, { useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   Platform,
   Animated,
+  GestureResponderEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import * as Haptics from 'expo-haptics';
 
-export default function CustomTabBar({
-  state,
-  descriptors,
-  navigation,
-}: BottomTabBarProps) {
-  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
-  const [reelsPlaying, setReelsPlaying] = useState(false);
+type TabAnim = {
+  scale: Animated.Value;
+  rotate: Animated.Value;
+  translateY: Animated.Value;
+  colorState: Animated.Value;
+};
 
-  // Scale animations for each icon
-  const scaleAnims = React.useRef(
-    state.routes.map(() => new Animated.Value(1))
-  ).current;
+export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const anims = useMemo<TabAnim[]>(
+    () =>
+      state.routes.map(() => ({
+        scale: new Animated.Value(1),
+        rotate: new Animated.Value(0),
+        translateY: new Animated.Value(0),
+        colorState: new Animated.Value(0),
+      })),
+    [state.routes.length]
+  );
 
-  // Rotation animation (for Reels)
-  const rotateAnims = React.useRef(
-    state.routes.map(() => new Animated.Value(0))
-  ).current;
+  const doHaptic = useCallback(() => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+  }, []);
 
-  // Tilt animation (for Home)
-  const tiltAnims = React.useRef(
-    state.routes.map(() => new Animated.Value(0))
-  ).current;
+  const handlePress = useCallback(
+    (index: number) => (e?: GestureResponderEvent) => {
+      const isFocused = state.index === index;
+      const route = state.routes[index];
 
-  // Swing animation (for Rewards/Coins)
-  const swingAnims = React.useRef(
-    state.routes.map(() => new Animated.Value(0))
-  ).current;
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
 
-  // Bounce animation (for Profile)
-  const bounceAnims = React.useRef(
-    state.routes.map(() => new Animated.Value(0))
-  ).current;
+      if (event.defaultPrevented) return;
 
-  // Color animation - keep yellow until another tab clicked
-  const clickAnimations = React.useRef(
-    state.routes.map(() => new Animated.Value(0))
-  ).current;
+      doHaptic();
 
-  const handlePress = (route: any, index: number, isFocused: boolean) => {
-    // Haptic feedback
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+      anims.forEach((a, i) => {
+        Animated.timing(a.colorState, {
+          toValue: i === index ? 1 : 0,
+          duration: 230,
+          useNativeDriver: false,
+        }).start();
+      });
 
-    // Update last clicked index
-    setLastClickedIndex(index);
+      Animated.sequence([
+        Animated.timing(anims[index].scale, { toValue: 0.9, duration: 80, useNativeDriver: true }),
+        Animated.timing(anims[index].scale, { toValue: 1, duration: 140, useNativeDriver: true }),
+      ]).start();
 
-    // If clicking on a different tab, reset Reels icon to play
-    if (lastClickedIndex !== null && lastClickedIndex !== index && route.name !== 'Reels') {
-      setReelsPlaying(false);
-    }
+      switch (route.name) {
+        case 'Reels':
+          Animated.sequence([
+            Animated.timing(anims[index].rotate, { toValue: 1, duration: 480, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, { toValue: 0, duration: 0, useNativeDriver: true }),
+          ]).start();
+          break;
 
-    // Reset previous click animation
-    if (lastClickedIndex !== null && lastClickedIndex !== index) {
-      Animated.timing(clickAnimations[lastClickedIndex], {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
-    }
+        case 'Profile':
+          Animated.sequence([
+            Animated.timing(anims[index].translateY, { toValue: -12, duration: 150, useNativeDriver: true }),
+            Animated.timing(anims[index].translateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+          ]).start();
+          break;
 
-    // Color transition - keep yellow until another tab clicked
-    Animated.timing(clickAnimations[index], {
-      toValue: 1,
-      duration: 250,
-      useNativeDriver: false,
-    }).start();
+        case 'Rewards':
+          Animated.sequence([
+            Animated.timing(anims[index].rotate, { toValue: -0.15, duration: 100, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, { toValue: 0.15, duration: 200, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, { toValue: 0, duration: 100, useNativeDriver: true }),
+          ]).start();
+          break;
 
-    // Professional icon-specific animations
-    switch (route.name) {
-      case 'Reels':
-        // Smooth 360° rotation
-        Animated.timing(rotateAnims[index], {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }).start(() => {
-          rotateAnims[index].setValue(0);
-          setReelsPlaying(!reelsPlaying);
-        });
-        break;
+        case 'Home':
+          Animated.sequence([
+            Animated.timing(anims[index].rotate, { toValue: -0.08, duration: 80, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, { toValue: 0.08, duration: 130, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, { toValue: 0, duration: 120, useNativeDriver: true }),
+          ]).start();
+          break;
+      }
 
-      case 'Home':
-        // Subtle tilt/wiggle animation
-        Animated.sequence([
-          Animated.timing(tiltAnims[index], {
-            toValue: -8,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tiltAnims[index], {
-            toValue: 8,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tiltAnims[index], {
-            toValue: -6,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tiltAnims[index], {
-            toValue: 6,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tiltAnims[index], {
-            toValue: 0,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        break;
+      if (!isFocused) navigation.navigate(route.name);
+    },
+    [navigation, anims, state.index, state.routes, doHaptic]
+  );
 
-      case 'Rewards':
-        // Smooth swing animation (left-right)
-        Animated.sequence([
-          Animated.timing(swingAnims[index], {
-            toValue: 1,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-          Animated.timing(swingAnims[index], {
-            toValue: -1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(swingAnims[index], {
-            toValue: 0,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        break;
-
-      case 'Profile':
-        // Vertical bounce animation
-        Animated.sequence([
-          Animated.timing(bounceAnims[index], {
-            toValue: -12,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnims[index], {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnims[index], {
-            toValue: -6,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnims[index], {
-            toValue: 0,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        break;
-
-      default:
-        break;
-    }
-
-    if (!isFocused) {
-      navigation.navigate(route.name);
-    }
-  };
-
-  const getIconName = (
-    routeName: string,
-    isFocused: boolean,
-    isReelsPlaying?: boolean
-  ): keyof typeof Ionicons.glyphMap => {
+  const iconFor = (routeName: string, isActive: boolean) => {
     switch (routeName) {
       case 'Home':
-        return isFocused ? 'home' : 'home-outline';
+        return isActive ? 'home' : 'home-outline';
       case 'Reels':
-        return isReelsPlaying ? 'pause-circle' : 'play-circle';
+        return 'play-circle';
       case 'Rewards':
-        return isFocused ? 'wallet' : 'wallet-outline';
+        return isActive ? 'wallet' : 'wallet-outline';
       case 'Profile':
-        return isFocused ? 'person' : 'person-outline';
+        return isActive ? 'person' : 'person-outline';
       default:
-        return 'help-circle-outline';
+        return 'ellipse';
     }
   };
 
-  const getLabel = (routeName: string): string => {
-    switch (routeName) {
-      case 'Home':
-        return 'Home';
-      case 'Reels':
-        return 'Reels';
-      case 'Rewards':
-        return 'Coins';
-      case 'Profile':
-        return 'Profile';
-      default:
-        return routeName;
-    }
-  };
+  const tabBarHeight = Platform.OS === 'ios' ? 78 : 64;
 
   return (
-    <View style={styles.tabBarContainer}>
+    <View style={[styles.wrapper, { height: tabBarHeight }]}>
       <View style={styles.tabBar}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
-          const isReelsTab = route.name === 'Reels';
-          const isClicked = lastClickedIndex === index;
+          const anim = anims[index];
 
-          const iconName = getIconName(route.name, isFocused, reelsPlaying);
-          const label = getLabel(route.name);
-
-          // Rotation for Reels icon
-          const rotation = rotateAnims[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: ['0deg', '360deg'],
+          const rotate = anim.rotate.interpolate({
+            inputRange: [-1, -0.15, 0, 0.15, 1],
+            outputRange: ['-25deg', '-8deg', '0deg', '8deg', '360deg'],
           });
 
-          // Tilt for Home icon
-          const tilt = tiltAnims[index].interpolate({
-            inputRange: [-8, 8],
-            outputRange: ['-8deg', '8deg'],
-          });
-
-          // Swing for Rewards icon
-          const swing = swingAnims[index].interpolate({
-            inputRange: [-1, 1],
-            outputRange: ['-15deg', '15deg'],
-          });
-
-          // Border color - yellow outline when clicked
-          const borderColor = clickAnimations[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: ['rgba(255, 215, 0, 0)', 'rgba(255, 215, 0, 1)'],
-          });
-
-          // Icon color - white always
-          const iconColor = '#FFFFFF';
-
-          // Label color - yellow when clicked
-          const labelColor = clickAnimations[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: ['#888888', '#FFD700'],
-          });
+          const scale = anim.scale;
+          const translateY = anim.translateY;
 
           return (
             <TouchableOpacity
               key={route.key}
-              activeOpacity={0.7}
-              onPress={() => handlePress(route, index, isFocused)}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              onPress={handlePress(index)}
               style={styles.tabItem}
+              activeOpacity={0.8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Animated.View
                 style={[
-                  styles.tabContent,
-                  {
-                    transform: [
-                      // Reels: rotation
-                      isReelsTab && isClicked ? { rotate: rotation } : { rotate: '0deg' },
-                      // Home: tilt
-                      route.name === 'Home' && isClicked ? { rotate: tilt } : { rotate: '0deg' },
-                      // Rewards: swing
-                      route.name === 'Rewards' && isClicked ? { rotate: swing } : { rotate: '0deg' },
-                      // Profile: vertical bounce
-                      route.name === 'Profile' && isClicked
-                        ? { translateY: bounceAnims[index] }
-                        : { translateY: 0 },
-                    ],
-                  },
+                  styles.iconWrapper,
+                  { transform: [{ translateY }, { scale }, { rotate }] },
                 ]}
               >
-                <Animated.View
-                  style={[
-                    styles.iconContainer,
-                    {
-                      borderColor: borderColor,
-                      borderWidth: 2,
-                    },
-                  ]}
-                >
-                  <Animated.Text style={{ color: iconColor }}>
-                    <Ionicons
-                      name={iconName}
-                      size={isReelsTab ? 26 : 24}
-                      color={isClicked ? '#FFD700' : '#FFFFFF'}
-                    />
-                  </Animated.Text>
-                </Animated.View>
-                <Animated.Text
-                  style={[
-                    styles.label,
-                    {
-                      color: labelColor,
-                    },
-                  ]}
-                >
-                  {label}
-                </Animated.Text>
+                <Ionicons
+                  name={iconFor(route.name, isFocused)}
+                  size={28}
+                  color={isFocused ? '#FFD54A' : '#FFFFFF'}
+                />
               </Animated.View>
             </TouchableOpacity>
           );
@@ -323,48 +164,43 @@ export default function CustomTabBar({
   );
 }
 
-
 const styles = StyleSheet.create({
-  tabBarContainer: {
+  wrapper: {
     position: 'absolute',
+    left: 12,
+    right: 12,
     bottom: 12,
-    left: 0,
-    right: 0,
+    zIndex: 20,
+    borderRadius: 18,
+    ...Platform.select({
+      android: { elevation: 6 },
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.22,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+      },
+    }),
   },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#0A0A0A',
-    height: Platform.OS === 'ios' ? 80 : 60,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1A1A1A',
-    justifyContent: 'space-around',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   tabItem: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'center',
   },
-  tabContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  iconWrapper: {
+    width: 52,
+    height: 52,
     borderRadius: 16,
-    padding: 10,
-    width: 50,
-    height: 50,
-  },
-  label: {
-    fontSize: 11,
-    color: '#888888',
-    marginTop: 6,
-    fontWeight: '600',
-    letterSpacing: 0.4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
