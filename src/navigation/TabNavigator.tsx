@@ -5,18 +5,18 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-// Import screens
+// Screens
 import HomeScreen from '../screens/home/HomeScreen';
 import ReelsFeedScreen from '../screens/home/ReelsFeedScreen';
 import RewardsScreen from '../screens/rewards/RewardsScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 
-// Import custom tab bar
+// Custom bottom bar
 import CustomTabBar from '../components/CustomTabBar';
 
-// TypeScript types
-type TabParamList = {
+// ---- Types ----
+export type TabParamList = {
   Home: undefined;
   Reels: undefined;
   Rewards: undefined;
@@ -50,12 +50,15 @@ function ProfileNavigator() {
   );
 }
 
-export default function TabNavigator() {
+const TabNavigator: React.FC = () => {
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        // keeps performance nice when switching tabs
+        lazy: true,
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -64,5 +67,6 @@ export default function TabNavigator() {
       <Tab.Screen name="Profile" component={ProfileNavigator} />
     </Tab.Navigator>
   );
-}
+};
 
+export default TabNavigator;
