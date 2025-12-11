@@ -16,14 +16,10 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { API_BASE_URL } from '../../utils/api';
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Backend URL - Change this to your backend URL
-const API_BASE_URL = __DEV__ 
-  ? 'http://10.78.2.110:5000' // Change IP to your computer's IP
-  : 'https://your-production-api.com';
 
 const OTPScreen: React.FC = () => {
   const navigation = useNavigation<any>();

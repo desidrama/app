@@ -1,12 +1,13 @@
 // src/utils/api.ts
-// Edit API_BASE depending on platform/local testing.
-// For Android emulator use 10.0.2.2. For iOS simulator use localhost.
-// For a real device use your PC's LAN IP (e.g. http://192.168.1.45:5000).
+// API_BASE_URL is configured via environment variables
+// For development: change the value below directly
+// For production: use EAS secrets or environment variables
 
-export const API_BASE = __DEV__
-  ? 'http://10.0.2.2:5000'   // Android emulator
-  // ? 'http://localhost:5000' // Uncomment for iOS simulator
-  : 'https://api.yourproductiondomain.com';
+// Development URL - Change this as needed
+const DEV_API_URL = 'http://192.168.29.105:5000';
+const PROD_API_URL = 'https://api.yourproductiondomain.com';
+
+export const API_BASE_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
 export const SEND_OTP_PATH = '/api/auth/send-otp';
 export const VERIFY_OTP_PATH = '/api/auth/verify-otp';

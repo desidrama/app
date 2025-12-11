@@ -1,459 +1,410 @@
 // ============================================
-// FILE: src/screens/rewards/RewardsScreen.tsx
+// FILE: src/screens/rewards/CoinsScreen.tsx
 // ============================================
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  SafeAreaView,
   ScrollView,
-  StatusBar,
   TouchableOpacity,
-  Image,
-  FlatList,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 
-export default function RewardsScreen() {
-  const [activeTab, setActiveTab] = React.useState('coins');
+type DailyReward = {
+  day: number;
+  coins: number;
+};
 
-  const rewardsData = [
-    {
-      id: '1',
-      title: 'Daily Login Bonus',
-      coins: 50,
-      icon: 'calendar-outline',
-      completed: true,
-    },
-    {
-      id: '2',
-      title: 'Watch 3 Videos',
-      coins: 150,
-      icon: 'play-circle-outline',
-      completed: true,
-    },
-    {
-      id: '3',
-      title: 'Referral Reward',
-      coins: 500,
-      icon: 'share-social-outline',
-      completed: false,
-    },
-    {
-      id: '4',
-      title: 'Weekly Challenge',
-      coins: 300,
-      icon: 'trophy-outline',
-      completed: false,
-    },
-  ];
+type Mission = {
+  id: string;
+  title: string;
+  subtitle: string;
+  coins: number;
+  cta: string;
+  iconType: 'instagram' | 'youtube' | 'x' | 'game' | 'ad';
+};
 
-  const transactionHistory = [
-    {
-      id: '1',
-      type: 'earned',
-      description: 'Daily Bonus',
-      coins: 50,
-      date: 'Today',
-    },
-    {
-      id: '2',
-      type: 'earned',
-      description: 'Video Watch Reward',
-      coins: 100,
-      date: 'Yesterday',
-    },
-    {
-      id: '3',
-      type: 'spent',
-      description: 'Premium Unlock',
-      coins: 200,
-      date: '2 days ago',
-    },
-    {
-      id: '4',
-      type: 'earned',
-      description: 'Referral Bonus',
-      coins: 500,
-      date: '1 week ago',
-    },
-  ];
+const DAILY_REWARDS: DailyReward[] = [
+  { day: 1, coins: 1 },
+  { day: 2, coins: 1 },
+  { day: 3, coins: 1 },
+  { day: 4, coins: 1 },
+  { day: 5, coins: 1 },
+  { day: 6, coins: 1 },
+  { day: 7, coins: 1 },
+];
 
-  const renderRewardCard = ({ item }: any) => (
-    <TouchableOpacity style={styles.rewardCard}>
-      <View style={styles.rewardIconContainer}>
-        <Ionicons name={item.icon} size={32} color="#FFD700" />
-      </View>
-      <View style={styles.rewardInfo}>
-        <Text style={styles.rewardTitle}>{item.title}</Text>
-        <View style={styles.rewardFooter}>
-          <Text style={styles.rewardCoins}>+{item.coins} Coins</Text>
-          {item.completed && (
-            <View style={styles.completedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#FFD700" />
-            </View>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+const MISSIONS: Mission[] = [
+  {
+    id: 'insta1',
+    title: 'Instagram',
+    subtitle: '5 Coins',
+    coins: 5,
+    cta: 'Follow',
+    iconType: 'instagram',
+  },
+  {
+    id: 'yt',
+    title: 'Youtube',
+    subtitle: '5 Coins',
+    coins: 5,
+    cta: 'Subscribe',
+    iconType: 'youtube',
+  },
+  {
+    id: 'insta2',
+    title: 'Instagram',
+    subtitle: '5 Coins',
+    coins: 5,
+    cta: 'Follow',
+    iconType: 'x',
+  },
+  {
+    id: 'game',
+    title: 'Clash Royale',
+    subtitle: '5 Coins',
+    coins: 5,
+    cta: 'Login',
+    iconType: 'game',
+  },
+];
 
-  const renderTransaction = ({ item }: any) => (
-    <View style={styles.transactionItem}>
-      <View
-        style={[
-          styles.transactionIcon,
-          item.type === 'earned' && styles.earnedIcon,
-        ]}
-      >
-        <Ionicons
-          name={item.type === 'earned' ? 'arrow-down' : 'arrow-up'}
-          size={16}
-          color={item.type === 'earned' ? '#4CAF50' : '#FF6B6B'}
-        />
-      </View>
-      <View style={styles.transactionInfo}>
-        <Text style={styles.transactionDescription}>{item.description}</Text>
-        <Text style={styles.transactionDate}>{item.date}</Text>
-      </View>
-      <Text
-        style={[
-          styles.transactionAmount,
-          item.type === 'earned' && styles.earnedAmount,
-        ]}
-      >
-        {item.type === 'earned' ? '+' : '-'}{item.coins}
-      </Text>
-    </View>
-  );
+const CoinsScreen: React.FC<any> = ({ navigation }) => {
+  const [selectedDay, setSelectedDay] = useState(1);
+  const [userCoins, setUserCoins] = useState(0);
+
+  const handleClaim = () => {
+    const reward = DAILY_REWARDS.find(r => r.day === selectedDay);
+    if (reward) {
+      setUserCoins(prev => prev + reward.coins);
+      // TODO: call API / redux here in real app
+    }
+  };
+
+  const renderMissionIcon = (mission: Mission) => {
+    switch (mission.iconType) {
+      case 'instagram':
+        return (
+          <View style={[styles.missionIconCircle, { backgroundColor: '#F56040' }]}>
+            <FontAwesome name="instagram" size={20} color="#fff" />
+          </View>
+        );
+      case 'youtube':
+        return (
+          <View style={[styles.missionIconCircle, { backgroundColor: '#FF0000' }]}>
+            <FontAwesome name="youtube-play" size={20} color="#fff" />
+          </View>
+        );
+      case 'x':
+        return (
+          <View style={[styles.missionIconCircle, { backgroundColor: '#111827' }]}>
+            <FontAwesome5 name="x-twitter" size={18} color="#fff" />
+          </View>
+        );
+      case 'game':
+        return (
+          <View style={[styles.missionIconCircle, { backgroundColor: '#2563EB' }]}>
+            <FontAwesome5 name="gamepad" size={18} color="#fff" />
+          </View>
+        );
+      case 'ad':
+      default:
+        return (
+          <View style={[styles.missionIconCircle, { backgroundColor: '#10B981' }]}>
+            <Ionicons name="play-outline" size={18} color="#fff" />
+          </View>
+        );
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-
-      {/* Header with Coins Balance */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Rewards & Coins</Text>
-      </View>
-
-      {/* Coin Balance Card */}
-      <View style={styles.balanceCardContainer}>
-        <LinearGradient
-          colors={['#FFD700', '#FFC107']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.balanceCard}
-        >
-          <View style={styles.balanceContent}>
-            <Text style={styles.balanceLabel}>Total Coins</Text>
-            <View style={styles.coinDisplay}>
-              <Ionicons name="cash" size={32} color="#000" />
-              <Text style={styles.coinAmount}>2,450</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.withdrawButton}>
-            <Text style={styles.withdrawText}>Withdraw</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation?.goBack?.()}
+          >
+            <Ionicons name="chevron-back" size={22} color="#fff" />
           </TouchableOpacity>
-        </LinearGradient>
-      </View>
 
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'coins' && styles.activeTab]}
-          onPress={() => setActiveTab('coins')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'coins' && styles.activeTabText,
-            ]}
-          >
-            Available Coins
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'tasks' && styles.activeTab]}
-          onPress={() => setActiveTab('tasks')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'tasks' && styles.activeTabText,
-            ]}
-          >
-            Earn Coins
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'history' && styles.activeTab]}
-          onPress={() => setActiveTab('history')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'history' && styles.activeTabText,
-            ]}
-          >
-            History
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={styles.headerTitle}>Coins & Rewards</Text>
 
-      {/* Content */}
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
-      >
-        {activeTab === 'coins' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="gift-outline" size={24} color="#FFD700" />
-              <Text style={styles.actionButtonText}>Redeem Gift Card</Text>
+          <View style={styles.coinPill}>
+            <Text style={styles.coinText}>{userCoins}</Text>
+            <FontAwesome5 name="rupee-sign" size={16} color="#F5B800" />
+          </View>
+        </View>
+
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={{ paddingBottom: 32 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Daily Rewards */}
+          <Text style={styles.sectionTitle}>Daily Rewards</Text>
+
+          <View style={styles.dailyCard}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dailyScrollContent}
+            >
+              {DAILY_REWARDS.map(reward => {
+                const isSelected = reward.day === selectedDay;
+                return (
+                  <TouchableOpacity
+                    key={reward.day}
+                    style={[
+                      styles.dayItem,
+                      isSelected && styles.dayItemActive,
+                    ]}
+                    onPress={() => setSelectedDay(reward.day)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.dayCoinCircle}>
+                      <FontAwesome5
+                        name="rupee-sign"
+                        size={18}
+                        color="#F5B800"
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.dayLabel,
+                        isSelected && styles.dayLabelActive,
+                      ]}
+                    >
+                      Day {reward.day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={handleClaim}
+              activeOpacity={0.9}
+              style={styles.claimButton}
+            >
+              <Text style={styles.claimButtonText}>Get 1 Coin</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="swap-horizontal-outline" size={24} color="#FFD700" />
-              <Text style={styles.actionButtonText}>Convert to Credits</Text>
+          </View>
+
+          {/* Missions */}
+          <Text style={styles.sectionTitle}>Missions</Text>
+
+          {MISSIONS.map(m => (
+            <View key={m.id} style={styles.missionCard}>
+              <View style={styles.missionLeft}>
+                {renderMissionIcon(m)}
+                <View>
+                  <Text style={styles.missionTitle}>{m.title}</Text>
+                  <Text style={styles.missionSubtitle}>{m.coins} Coins</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.missionCTA}>
+                <Text style={styles.missionCTAText}>{m.cta}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {/* Watch Ad and earn */}
+          <Text style={styles.sectionTitle}>Watch Ad and earn</Text>
+
+          <View style={styles.missionCard}>
+            <View style={styles.missionLeft}>
+              {renderMissionIcon({
+                id: 'ad',
+                title: 'Watch Ads',
+                subtitle: '5 Coins',
+                coins: 5,
+                cta: 'Watch',
+                iconType: 'ad',
+              })}
+              <View>
+                <Text style={styles.missionTitle}>Watch Ads</Text>
+                <Text style={styles.missionSubtitle}>5 Coins</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.missionCTA}>
+              <Text style={styles.missionCTAText}>Watch</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        {activeTab === 'tasks' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Available Tasks</Text>
-            <FlatList
-              data={rewardsData}
-              renderItem={renderRewardCard}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              ItemSeparatorComponent={() => <View style={styles.divider} />}
-            />
-          </View>
-        )}
-
-        {activeTab === 'history' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Transaction History</Text>
-            <FlatList
-              data={transactionHistory}
-              renderItem={renderTransaction}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              ItemSeparatorComponent={() => <View style={styles.divider} />}
-            />
-          </View>
-        )}
-
-        <View style={styles.bottomPadding} />
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   );
-}
+};
+
+export default CoinsScreen;
+
+// ================= STYLES =================
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#090407', // deep dark brown/black
+  },
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#090407',
+    paddingHorizontal: 12,
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 50,
+
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 6,
     paddingBottom: 12,
   },
+  backButton: {
+    paddingRight: 8,
+    paddingVertical: 4,
+  },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  balanceCardContainer: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  balanceCard: {
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  balanceContent: {
     flex: 1,
+    textAlign: 'left',
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 2,
   },
-  balanceLabel: {
-    fontSize: 12,
-    color: '#000',
-    fontWeight: '600',
-    opacity: 0.8,
-    marginBottom: 8,
-  },
-  coinDisplay: {
+  coinPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#FDF7EA',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
-  coinAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#000',
+  coinText: {
+    marginRight: 6,
+    fontWeight: '700',
+    fontSize: 14,
+    color: '#111827',
   },
-  withdrawButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  withdrawText: {
-    color: '#000',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: '#FFD700',
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-  },
-  activeTabText: {
-    color: '#FFD700',
-  },
-  content: {
+
+  scroll: {
     flex: 1,
   },
-  contentContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  section: {
-    marginBottom: 20,
-  },
+
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+    marginBottom: 10,
+    marginTop: 6,
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+
+  // Daily card
+  dailyCard: {
+    backgroundColor: '#1a1012',
+    borderRadius: 14,
     paddingVertical: 14,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    marginBottom: 12,
-    gap: 12,
+    paddingHorizontal: 10,
+    marginBottom: 22,
   },
-  actionButtonText: {
-    color: '#fff',
+  dailyScrollContent: {
+    paddingHorizontal: 2,
+    paddingBottom: 10,
+  },
+  dayItem: {
+    width: 64,
+    height: 76,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  dayItemActive: {
+    borderColor: '#F5B800',
+    backgroundColor: '#1d1b10',
+  },
+  dayCoinCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#27272f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  dayLabel: {
+    fontSize: 11,
+    color: '#e5e5e5',
     fontWeight: '600',
-    fontSize: 14,
   },
-  rewardCard: {
+  dayLabelActive: {
+    color: '#F5B800',
+  },
+  claimButton: {
+    marginTop: 6,
+    backgroundColor: '#FFD54A',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  claimButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+
+  // Missions
+  missionCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#1a1a20',
+    borderRadius: 14,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    gap: 12,
+    marginBottom: 10,
   },
-  rewardIconContainer: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    justifyContent: 'center',
+  missionLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  rewardInfo: {
     flex: 1,
   },
-  rewardTitle: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  rewardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  missionIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  rewardCoins: {
-    color: '#FFD700',
+  missionTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    fontSize: 13,
+    color: '#ffffff',
   },
-  completedBadge: {
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  transactionIcon: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  earnedIcon: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionDescription: {
-    color: '#fff',
-    fontWeight: '500',
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  transactionDate: {
-    color: '#666',
+  missionSubtitle: {
     fontSize: 12,
+    color: '#d4d4d8',
+    marginTop: 2,
   },
-  transactionAmount: {
-    color: '#FF6B6B',
-    fontWeight: '700',
+  // equal-width CTA for Follow / Subscribe / Login / Watch
+  missionCTA: {
+    width: 100, // 👈 all buttons same width now
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#F5F5F5',
+  },
+  missionCTAText: {
     fontSize: 13,
-  },
-  earnedAmount: {
-    color: '#4CAF50',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#1a1a1a',
-    marginVertical: 0,
-  },
-  bottomPadding: {
-    height: 100,
+    fontWeight: '700',
+    color: '#111827',
   },
 });
