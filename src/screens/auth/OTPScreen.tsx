@@ -23,6 +23,7 @@ import * as storage from '../../utils/storage';
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const OTP_BOX_WIDTH = Math.min(SCREEN_WIDTH * 0.12, 55);
 
 const OTPScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -30,13 +31,15 @@ const OTPScreen: React.FC = () => {
   const dispatch = useDispatch();
 
   const phone: string = route.params?.phone || '';
-  const [otp, setOtp] = useState('');
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [timer, setTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState<number>(0);
   
-  const otpInputRef = useRef<TextInput>(null);
+  const otpInputRefs = useRef<Array<TextInput | null>>([]);
+  const hiddenInputRef = useRef<TextInput | null>(null);
 
   // Timer countdown
   useEffect(() => {
@@ -53,13 +56,103 @@ const OTPScreen: React.FC = () => {
   // Auto-focus on mount
   useEffect(() => {
     setTimeout(() => {
-      otpInputRef.current?.focus();
+      otpInputRefs.current[0]?.focus();
     }, 500);
   }, []);
 
+  // Handle OTP digit change
+  const handleOtpChange = (index: number, value: string) => {
+    // Only allow digits
+    const digits = value.replace(/\D/g, '');
+    
+    // If multiple digits detected (paste event), handle paste and distribute
+    if (digits.length > 1) {
+      handlePaste(digits);
+      return;
+    }
+    
+    // Single digit input - take only the last character (handles edge cases)
+    if (digits) {
+      const digit = digits.slice(-1); // Take last character in case of edge cases
+      const newOtpDigits = [...otpDigits];
+      newOtpDigits[index] = digit;
+      setOtpDigits(newOtpDigits);
+
+      // Auto-focus next box
+      if (index < 5) {
+        otpInputRefs.current[index + 1]?.focus();
+        setFocusedIndex(index + 1);
+      }
+    } else {
+      // Clear current box
+      const newOtpDigits = [...otpDigits];
+      newOtpDigits[index] = '';
+      setOtpDigits(newOtpDigits);
+    }
+  };
+
+  // Handle paste from hidden input or any box
+  const handleHiddenInputChange = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, 6);
+    if (digits.length > 0) {
+      handlePaste(digits);
+    }
+  };
+
+  // Handle backspace
+  const handleKeyPress = (index: number, key: string) => {
+    if (key === 'Backspace' && !otpDigits[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+      setFocusedIndex(index - 1);
+    }
+  };
+
+  // Handle paste - distributes digits across all boxes starting from index 0
+  const handlePaste = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, 6).split('');
+    const newOtpDigits = ['', '', '', '', '', ''];
+    
+    // Fill boxes starting from the beginning
+    digits.forEach((digit, idx) => {
+      if (idx < 6) {
+        newOtpDigits[idx] = digit;
+      }
+    });
+    
+    setOtpDigits(newOtpDigits);
+    
+    // Clear hidden input
+    if (hiddenInputRef.current) {
+      hiddenInputRef.current.setNativeProps({ text: '' });
+    }
+    
+    // Focus the last filled box or the last box
+    const lastFilledIndex = Math.min(digits.length - 1, 5);
+    setTimeout(() => {
+      if (lastFilledIndex >= 0) {
+        otpInputRefs.current[lastFilledIndex]?.focus();
+        setFocusedIndex(lastFilledIndex);
+      }
+    }, 50);
+  };
+
+  // Get OTP string from digits array
+  const getOtpString = () => otpDigits.join('');
+
+  // Clear OTP boxes
+  const clearOtp = () => {
+    setOtpDigits(['', '', '', '', '', '']);
+    setFocusedIndex(0);
+    setTimeout(() => {
+      otpInputRefs.current[0]?.focus();
+    }, 100);
+  };
+
   const handleVerify = async () => {
-    if (otp.length < 4) {
-      Alert.alert('Invalid OTP', 'Please enter the complete OTP.');
+    const otp = getOtpString();
+    
+    if (otp.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the complete 6-digit OTP.');
       return;
     }
 
@@ -83,7 +176,7 @@ const OTPScreen: React.FC = () => {
         Alert.alert('Verification Failed', response?.message || 'Invalid OTP');
 
         setLoading(false);
-        setOtp(''); // Clear OTP field
+        clearOtp(); // Clear OTP boxes
         return;
       }
 
@@ -136,7 +229,7 @@ const OTPScreen: React.FC = () => {
         // Server responded with error
         const message = error.response.data?.message || 'Invalid OTP. Please try again.';
         Alert.alert('Verification Failed', message);
-        setOtp(''); // Clear OTP field
+        clearOtp(); // Clear OTP boxes
       } else if (error.request) {
         // No response from server
         Alert.alert(
@@ -170,23 +263,14 @@ const OTPScreen: React.FC = () => {
       // Reset timer and state
       setTimer(60);
       setCanResend(false);
-      setOtp('');
+      clearOtp();
       
-      // Show dev OTP in development
 
-      if (response?.devOtp && __DEV__) {
-        console.log('🔐 DEV OTP:', response.devOtp);
-        Alert.alert(
-          'OTP Resent',
-          `A new OTP has been sent to your WhatsApp`
+      Alert.alert(
+        'OTP Resent',
+        'A new OTP has been sent to your WhatsApp.'
+      );
 
-        );
-      } else {
-        Alert.alert(
-          'OTP Resent',
-          'A new OTP has been sent to your WhatsApp.'
-        );
-      }
 
     } catch (error: any) {
       setResending(false);
@@ -206,11 +290,6 @@ const OTPScreen: React.FC = () => {
     phone && phone.length === 10
       ? `+91 ${phone.slice(0, 2)}*****${phone.slice(7)}`
       : `+91 ${phone}`;
-
-  const formatOTP = (text: string) => {
-    // Only allow digits
-    return text.replace(/\D/g, '').slice(0, 6);
-  };
 
   return (
     <KeyboardAvoidingView
@@ -238,27 +317,52 @@ const OTPScreen: React.FC = () => {
           Enter the OTP sent to {maskedPhone}
         </Text>
 
+        {/* Hidden input for iOS AutoFill and paste detection */}
         <TextInput
-          ref={otpInputRef}
-          style={styles.otpInput}
-          placeholder="Enter 6-digit OTP"
-          placeholderTextColor="#8C8C8C"
+          ref={hiddenInputRef}
+          style={styles.hiddenInput}
+          value=""
+          onChangeText={handleHiddenInputChange}
           keyboardType="numeric"
           maxLength={6}
-          value={otp}
-          onChangeText={(text) => setOtp(formatOTP(text))}
-          textAlign="center"
+          textContentType="oneTimeCode"
+          autoComplete="sms-otp"
           editable={!loading}
-          autoFocus
         />
+
+        <View style={styles.otpContainer}>
+          {otpDigits.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => {
+                otpInputRefs.current[index] = ref;
+              }}
+              style={[
+                styles.otpBox,
+                focusedIndex === index && styles.otpBoxFocused,
+                digit && styles.otpBoxFilled
+              ]}
+              value={digit}
+              onChangeText={(text) => handleOtpChange(index, text)}
+              onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
+              keyboardType="numeric"
+              textAlign="center"
+              editable={!loading}
+              selectTextOnFocus
+              onFocus={() => setFocusedIndex(index)}
+              // Remove maxLength to allow paste - we handle validation in onChange
+              maxLength={6}
+            />
+          ))}
+        </View>
 
         <TouchableOpacity
           style={[
             styles.verifyButton, 
-            (loading || otp.length < 4) && styles.verifyButtonDisabled
+            (loading || getOtpString().length !== 6) && styles.verifyButtonDisabled
           ]}
           onPress={handleVerify}
-          disabled={loading || otp.length < 4}
+          disabled={loading || getOtpString().length !== 6}
         >
           {loading ? (
             <ActivityIndicator size="small" color="#000000" />
@@ -354,15 +458,40 @@ const styles = StyleSheet.create({
     color: '#CCCCCC', 
     marginBottom: 32 
   },
-  otpInput: { 
-    fontSize: 28, 
-    color: '#FFFFFF', 
-    paddingVertical: 16, 
-    borderBottomWidth: 2, 
-    borderColor: '#FFD54A', 
-    marginBottom: 32, 
-    letterSpacing: 12,
-    fontWeight: '600',
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 1,
+    height: 1,
+    left: -1000,
+    zIndex: -1,
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 32,
+    paddingHorizontal: 5,
+  },
+  otpBox: {
+    width: OTP_BOX_WIDTH,
+    height: 65,
+    borderWidth: 2,
+    borderColor: '#777777',
+    borderRadius: 12,
+    backgroundColor: '#1A1A1A',
+    fontSize: 28,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  otpBoxFocused: {
+    borderColor: '#FFD54A',
+    backgroundColor: '#2A2A2A',
+    borderWidth: 2.5,
+  },
+  otpBoxFilled: {
+    borderColor: '#FFD54A',
+    backgroundColor: '#1F1F1F',
   },
   verifyButton: { 
     backgroundColor: '#FFD54A', 
