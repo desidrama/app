@@ -6,13 +6,30 @@ export interface Video {
   _id: string;
   title: string;
   description?: string;
-  masterPlaylistUrl: string;
+  masterPlaylistUrl?: string;
+  thumbnailUrl?: string;
   thumbnail?: string;
   duration: number;
   views: number;
   likes: number;
   shares?: number;
   comments?: number;
+  type?: 'reel' | 'episode';
+  seasonId?: {
+    _id: string;
+    title: string;
+    seasonNumber: number;
+    thumbnail?: string;
+  };
+  episodeNumber?: number;
+  variants?: Array<{
+    resolution: string;
+    url: string;
+    size?: number;
+    duration?: number;
+  }>;
+  year?: string;
+  ageRating?: string;
   createdAt: string;
   updatedAt: string;
   creator?: {

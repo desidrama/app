@@ -53,6 +53,14 @@ api.interceptors.request.use(
     // Add token to Authorization header
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('🔑 Token added to request:', {
+        url: config.url,
+        hasToken: !!token,
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 20) + '...',
+      });
+    } else {
+      console.log('⚠️ No token found for request:', config.url);
     }
 
     // Add cookies to Cookie header
@@ -79,7 +87,14 @@ api.interceptors.response.use(
 
     // Store tokens if provided in response
     if (response.data?.data?.token) {
-      await setToken(response.data.data.token);
+      const token = response.data.data.token;
+      console.log('💾 Storing token from response:', {
+        hasToken: !!token,
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 20) + '...',
+      });
+      await setToken(token);
+      console.log('✅ Token stored successfully');
     }
     if (response.data?.data?.refreshToken) {
       await setRefreshToken(response.data.data.refreshToken);

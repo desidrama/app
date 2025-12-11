@@ -1,17 +1,15 @@
 // ============================================ 
 // FILE: src/screens/home/ReelPlayerScreen.tsx
-// Minimal updates: 1) ensure Episodes sheet can close reliably, 2) hide right-side action buttons + reaction bar when Info sheet is open
-// Rest of file preserved exactly as requested.
+// Updated to fetch webseries from backend and display in reels feed
 // ============================================
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
-  SafeAreaView,
   Animated,
   Easing,
   Share,
@@ -22,9 +20,13 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { videoService } from '../../services/video.service';
+import { Video as VideoType } from '../../types';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -40,40 +42,11 @@ type Reel = {
   duration: string;
   videoUrl: string;
   initialLikes: number;
+  description?: string;
+  seasonId?: any;
+  episodeNumber?: number;
+  thumbnailUrl?: string;
 };
-
-const REELS: Reel[] = [
-  {
-    id: 'r1',
-    title: 'Jurassic Park',
-    year: '2024',
-    rating: 'UA 16+',
-    duration: '2h 22m',
-    videoUrl:
-      'https://videos.pexels.com/video-files/855331/855331-hd_1920_1080_24fps.mp4',
-    initialLikes: 370,
-  },
-  {
-    id: 'r2',
-    title: 'City Lights',
-    year: '2023',
-    rating: 'U',
-    duration: '1h 45m',
-    videoUrl:
-      'https://videos.pexels.com/video-files/1448735/1448735-hd_1920_1080_24fps.mp4',
-    initialLikes: 128,
-  },
-  {
-    id: 'r3',
-    title: 'Delhi Nights',
-    year: '2022',
-    rating: 'UA',
-    duration: '58m',
-    videoUrl:
-      'https://videos.pexels.com/video-files/854149/854149-hd_1920_1080_24fps.mp4',
-    initialLikes: 542,
-  },
-];
 
 // ---- MOCK DATA FOR INFO SHEET ----
 const MOCK_CAST = [
@@ -130,18 +103,347 @@ type Comment = {
 };
 
 const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+  const scrollOffsetRef = useRef(0);
+  const previousReelsCountRef = useRef(0);
+
+  useEffect(() => {
+    loadWebseries();
+  }, []);
+
+  const loadWebseries = async () => {
+    try {
+      setLoading(true);
+      const response = await videoService.getWebseriesFeed(page);
+      
+      if (response.success && response.data) {
+        // Transform backend video data to Reel format
+        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
+          // Get video URL - prefer masterPlaylistUrl, fallback to best variant
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            // Prefer 720p, then 1080p, then 480p, then 360p
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find(v => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            // If no preferred resolution found, use first available
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          // Format duration
+          const formatDuration = (seconds: number) => {
+            if (!seconds) return '0m';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+              return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+          };
+
+          return {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+        });
+
+        if (page === 1) {
+          setReels(transformedReels);
+          setHasPrevious(false); // First page, no previous content
+        } else {
+          setReels(prev => [...prev, ...transformedReels]);
+        }
+
+        setHasMore(response.pagination?.hasMore || false);
+        // Update hasPrevious based on response or current page
+        // If we're on page 1, there's no previous. Otherwise, there is.
+        const currentPage = page;
+        setHasPrevious(response.pagination?.hasPrevious !== undefined 
+          ? response.pagination.hasPrevious 
+          : currentPage > 1);
+      }
+    } catch (error) {
+      console.error('Error loading webseries:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadPrevious = async () => {
+    if (loadingPrevious || !hasPrevious || page <= 1) return;
+
+    const previousPage = page - 1;
+    try {
+      setLoadingPrevious(true);
+      const response = await videoService.getWebseriesFeed(previousPage);
+      
+      if (response.success && response.data) {
+        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find(v => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          const formatDuration = (seconds: number) => {
+            if (!seconds) return '0m';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+              return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+          };
+
+          return {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+        });
+
+        // Store current scroll position
+        previousReelsCountRef.current = reels.length;
+        
+        // Prepend new reels to the beginning
+        setReels(prev => [...transformedReels, ...prev]);
+        setPage(previousPage);
+        // Update hasPrevious - can load more previous if not on page 1
+        setHasPrevious(previousPage > 1);
+        
+        // Also update hasMore - we can still load forward
+        setHasMore(response.pagination?.hasMore !== undefined 
+          ? response.pagination.hasMore 
+          : true);
+
+        // Adjust scroll position to maintain user's view
+        // Wait for next frame to ensure list has updated
+        requestAnimationFrame(() => {
+          if (flatListRef.current) {
+            const newItemsHeight = transformedReels.length * SCREEN_HEIGHT;
+            flatListRef.current.scrollToOffset({
+              offset: scrollOffsetRef.current + newItemsHeight,
+              animated: false,
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading previous webseries:', error);
+    } finally {
+      setLoadingPrevious(false);
+    }
+  };
+
+  const loadMore = async () => {
+    // Prevent multiple simultaneous loads
+    if (loading || loadingPrevious || !hasMore) {
+      return;
+    }
+
+    const nextPage = page + 1;
+    try {
+      setLoading(true);
+      const response = await videoService.getWebseriesFeed(nextPage);
+      
+      if (response.success && response.data) {
+        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find(v => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          const formatDuration = (seconds: number) => {
+            if (!seconds) return '0m';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+              return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+          };
+
+          return {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+        });
+
+        if (transformedReels.length > 0) {
+          setReels(prev => [...prev, ...transformedReels]);
+          setPage(nextPage);
+          const stillHasMore = response.pagination?.hasMore || false;
+          setHasMore(stillHasMore);
+          // When loading more, we can now scroll back (hasPrevious becomes true)
+          setHasPrevious(true);
+          
+          // Auto-load next page if there's more content and we got a full page
+          // This ensures continuous loading when all episodes finish
+          if (stillHasMore && transformedReels.length === 15) {
+            // Small delay to prevent too rapid loading, then auto-load next page
+            setTimeout(() => {
+              // Use stillHasMore from closure instead of state
+              if (stillHasMore) {
+                loadMore();
+              }
+            }, 800);
+          }
+        } else {
+          // No more content
+          setHasMore(false);
+        }
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Error loading more webseries:', error);
+      // Don't set hasMore to false on error, allow retry
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle viewability change to track which video should play
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      const newIndex = viewableItems[0].index;
+      if (newIndex !== null && newIndex !== currentIndex) {
+        // Use a small delay to prevent rapid index changes
+        setTimeout(() => {
+          setCurrentIndex(newIndex);
+        }, 50);
+      }
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 70, // Increased threshold for more stable detection
+    minimumViewTime: 100, // Minimum time item must be visible
+  }).current;
+
+  // Handle scroll to detect when user is near the top
+  const handleScroll = (event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    scrollOffsetRef.current = offsetY;
+    
+    // Load previous content when user scrolls near the top (within 1.5 screen heights)
+    // This ensures we load before user reaches the very top
+    if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && !loading && page > 1) {
+      loadPrevious();
+    }
+  };
+
+  if (loading && reels.length === 0) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#FFD54A" />
+        <Text style={styles.loadingText}>Loading webseries...</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <FlatList
-        data={REELS}
+        ref={flatListRef}
+        data={reels}
         keyExtractor={(item) => item.id}
         pagingEnabled
         showsVerticalScrollIndicator={false}
         snapToInterval={SCREEN_HEIGHT}
         decelerationRate="fast"
-        renderItem={({ item }) => (
-          <ReelItem reel={item} navigation={navigation} />
+        renderItem={({ item, index }) => (
+          <ReelItem 
+            reel={item} 
+            navigation={navigation} 
+            isActive={index === currentIndex}
+            key={item.id}
+          />
         )}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={2}
+        updateCellsBatchingPeriod={50}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.3}
+        ListHeaderComponent={
+          loadingPrevious ? (
+            <View style={styles.headerLoader}>
+              <ActivityIndicator size="small" color="#FFD54A" />
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          loading ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator size="small" color="#FFD54A" />
+            </View>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -151,14 +453,16 @@ export default ReelPlayerScreen;
 
 /**
  * Single full-screen reel item
+ * Memoized to prevent unnecessary re-renders
  */
-const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
+const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }>(({
   reel,
   navigation,
+  isActive = false,
 }) => {
   const videoRef = useRef<Video | null>(null);
 
-  const [currentEpisode, setCurrentEpisode] = useState(1);
+  const [currentEpisode, setCurrentEpisode] = useState(reel.episodeNumber || 1);
   const [likes, setLikes] = useState(reel.initialLikes);
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -173,6 +477,11 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
   const [activeRangeId, setActiveRangeId] = useState(EPISODE_RANGES[0].id);
   const [showEpisodesSheet, setShowEpisodesSheet] = useState(false);
   const [showInfoSheet, setShowInfoSheet] = useState(false);
+  
+  // Real episodes from database
+  const [seasonEpisodes, setSeasonEpisodes] = useState<VideoType[]>([]);
+  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [hasTrackedView, setHasTrackedView] = useState(false);
 
   // comments
   const [comments, setComments] = useState<Comment[]>([
@@ -184,11 +493,71 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
   const sheetTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const infoTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
+  // Handle video playback based on isActive prop
+  useEffect(() => {
+    if (!videoRef.current) return;
+
+    const controlPlayback = async () => {
+      try {
+        if (isActive) {
+          // Small delay to ensure previous video has released focus
+          await new Promise(resolve => setTimeout(resolve, 100));
+          await videoRef.current?.playAsync();
+        } else {
+          await videoRef.current?.pauseAsync();
+        }
+      } catch (error: any) {
+        // Ignore audio focus errors - they're expected when switching videos quickly
+        if (error?.message?.includes('AudioFocusNotAcquired')) {
+          // Retry after a short delay
+          setTimeout(async () => {
+            try {
+              if (isActive && videoRef.current) {
+                await videoRef.current?.playAsync();
+              }
+            } catch (retryError) {
+              // Silently ignore retry errors
+            }
+          }, 300);
+        } else {
+          console.error('Error controlling playback:', error);
+        }
+      }
+    };
+
+    controlPlayback();
+  }, [isActive]);
+
+  // Load episodes from season when episodes sheet opens
+  const loadSeasonEpisodes = async () => {
+    if (!reel.seasonId) return;
+    
+    try {
+      setLoadingEpisodes(true);
+      const seasonId = typeof reel.seasonId === 'object' ? reel.seasonId._id : reel.seasonId;
+      const response = await videoService.getEpisodes(seasonId);
+      
+      if (response.success && response.data) {
+        setSeasonEpisodes(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading season episodes:', error);
+    } finally {
+      setLoadingEpisodes(false);
+    }
+  };
+
   // ---- helpers ----
-  const openEpisodesSheet = () => {
+  const openEpisodesSheet = async () => {
     if (showEpisodesSheet) return;
     // also ensure info sheet is not visible when opening episodes
     if (showInfoSheet) return;
+    
+    // Load episodes when opening the sheet
+    if (reel.seasonId) {
+      await loadSeasonEpisodes();
+    }
+    
     setShowEpisodesSheet(true);
     Animated.timing(sheetTranslateY, {
       toValue: SCREEN_HEIGHT * 0.2,
@@ -214,12 +583,18 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
     });
   };
 
-  const openInfoSheet = () => {
+  const openInfoSheet = async () => {
     // when opening info sheet, make sure episodes sheet is closed so there's no overlap
     if (showEpisodesSheet) {
       // force close episodes first (animate down)
       closeEpisodesSheet();
     }
+    
+    // Load episodes if we have a season
+    if (reel.seasonId && seasonEpisodes.length === 0) {
+      await loadSeasonEpisodes();
+    }
+    
     setShowInfoSheet(true);
     Animated.timing(infoTranslateY, {
       toValue: 0,
@@ -238,17 +613,59 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
     }).start(() => setShowInfoSheet(false));
   };
 
-  const handleNextEpisode = () => {
-    const next = currentEpisode === TOTAL_EPISODES ? 1 : currentEpisode + 1;
-    setCurrentEpisode(next);
-    // load new episode source here
+  const handleNextEpisode = async () => {
+    if (!reel.seasonId) return;
+    
+    try {
+      // Load episodes if not already loaded
+      if (seasonEpisodes.length === 0) {
+        await loadSeasonEpisodes();
+      }
+      
+      // Find current episode and get next one
+      const currentIndex = seasonEpisodes.findIndex((ep: any) => ep._id === reel.id);
+      if (currentIndex >= 0 && currentIndex < seasonEpisodes.length - 1) {
+        const nextEpisode = seasonEpisodes[currentIndex + 1];
+        await handleEpisodePress(nextEpisode);
+      } else {
+        // If episodes not loaded yet, fetch them
+        const seasonId = typeof reel.seasonId === 'object' ? reel.seasonId._id : reel.seasonId;
+        const response = await videoService.getEpisodes(seasonId);
+        if (response.success && response.data) {
+          const episodes = response.data.sort((a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0));
+          setSeasonEpisodes(episodes);
+          const currentIndex = episodes.findIndex((ep: any) => ep._id === reel.id);
+          if (currentIndex >= 0 && currentIndex < episodes.length - 1) {
+            const nextEpisode = episodes[currentIndex + 1];
+            await handleEpisodePress(nextEpisode);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading next episode:', error);
+    }
   };
 
-  const handleLike = () => {
-    setIsLiked((prev) => !prev);
-    setLikes((prev) => prev + (isLiked ? -1 : 1));
-    setShowReactions(true);
-    setTimeout(() => setShowReactions(false), 1500);
+  const handleLike = async () => {
+    try {
+      if (!isLiked) {
+        // Like the video
+        await videoService.likeVideo(reel.id);
+        setIsLiked(true);
+        setLikes((prev) => prev + 1);
+      } else {
+        // Unlike the video (you may need to add an unlike endpoint)
+        setIsLiked(false);
+        setLikes((prev) => Math.max(0, prev - 1));
+      }
+      setShowReactions(true);
+      setTimeout(() => setShowReactions(false), 1500);
+    } catch (error) {
+      console.error('Error liking video:', error);
+      // Still update UI even if API call fails
+      setIsLiked((prev) => !prev);
+      setLikes((prev) => prev + (isLiked ? -1 : 1));
+    }
   };
 
   const handleShare = async () => {
@@ -261,8 +678,54 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
     }
   };
 
-  const handleEpisodePress = (ep: number) => {
-    setCurrentEpisode(ep);
+  const handleEpisodePress = async (episode: VideoType | number) => {
+    // If it's a VideoType object, navigate to that episode
+    if (typeof episode === 'object' && episode._id) {
+      try {
+        // Get the video details
+        const response = await videoService.getVideoById(episode._id);
+        if (response.success && response.data) {
+          const video = response.data;
+          
+          // Get video URL
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find((v: any) => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+          
+          // Update the reel with new episode data
+          // This would ideally trigger a re-render with new video
+          // For now, we'll just update the current episode number
+          setCurrentEpisode(video.episodeNumber || 1);
+          
+          // Update video source
+          if (videoRef.current && videoUrl) {
+            videoRef.current.unloadAsync();
+            videoRef.current.loadAsync({ uri: videoUrl }, { shouldPlay: true });
+          }
+        }
+      } catch (error) {
+        console.error('Error loading episode:', error);
+      }
+    } else {
+      // If it's just a number, find the episode in the list
+      const episodeData = seasonEpisodes.find(ep => ep.episodeNumber === episode);
+      if (episodeData) {
+        await handleEpisodePress(episodeData);
+        return;
+      }
+      setCurrentEpisode(episode as number);
+    }
     closeEpisodesSheet();
   };
 
@@ -294,21 +757,20 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
   };
 
   // ---- Episodes list ----
-  const activeRange = EPISODE_RANGES.find((r) => r.id === activeRangeId)!;
-  const episodesArray = Array.from(
-    { length: activeRange.end - activeRange.start + 1 },
-    (_, idx) => activeRange.start + idx,
-  );
-
-  const renderEpisodeNumber = (ep: number) => {
-    const isActive = ep === currentEpisode;
-    const isUnlocked = ep <= TOTAL_EPISODES;
+  // Use real episodes from database if available, otherwise use mock ranges
+  const hasRealEpisodes = seasonEpisodes.length > 0;
+  
+  const renderEpisodeNumber = (episode: VideoType | number) => {
+    const episodeNum = typeof episode === 'object' ? episode.episodeNumber || 0 : episode;
+    const episodeId = typeof episode === 'object' ? episode._id : null;
+    const isActive = episodeNum === currentEpisode;
+    const isUnlocked = typeof episode === 'object' ? episode.isPublished !== false : episodeNum <= TOTAL_EPISODES;
 
     return (
       <TouchableOpacity
-        key={ep}
+        key={episodeId || episodeNum}
         disabled={!isUnlocked}
-        onPress={() => handleEpisodePress(ep)}
+        onPress={() => handleEpisodePress(episode)}
         style={[
           styles.episodeNumber,
           !isUnlocked && styles.episodeNumberLocked,
@@ -322,7 +784,7 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
             isActive && styles.episodeNumberTextActive,
           ]}
         >
-          {ep}
+          {episodeNum}
         </Text>
       </TouchableOpacity>
     );
@@ -339,6 +801,24 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
     setNewComment('');
   };
 
+  // Track video view when video starts playing
+  useEffect(() => {
+    if (videoRef.current && !hasTrackedView) {
+      const trackView = async () => {
+        try {
+          await videoService.incrementView(reel.id);
+          setHasTrackedView(true);
+        } catch (error) {
+          console.error('Error tracking view:', error);
+        }
+      };
+      
+      // Track view after a short delay to ensure video is actually playing
+      const timer = setTimeout(trackView, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [reel.id, hasTrackedView]);
+
   // hide side actions and reaction bar when info sheet is open
   const sideActionsVisible = !showInfoSheet;
 
@@ -350,8 +830,17 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
         source={{ uri: reel.videoUrl }}
         style={styles.video}
         isLooping
-        shouldPlay
+        shouldPlay={false}
         resizeMode="cover"
+        useNativeControls={false}
+        onLoad={() => {
+          // Reset view tracking when new video loads
+          setHasTrackedView(false);
+        }}
+        onPlaybackStatusUpdate={(status) => {
+          // Only handle status updates, don't trigger playback here
+          // Playback is controlled by the useEffect hook
+        }}
       />
 
       {/* TOP BAR */}
@@ -556,35 +1045,57 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Range chips – short horizontal pills */}
-        <View style={styles.rangeRow}>
-          {EPISODE_RANGES.map((range) => {
-            const isActive = range.id === activeRangeId;
-            return (
-              <TouchableOpacity
-                key={range.id}
-                style={[
-                  styles.rangeChip,
-                  isActive && styles.rangeChipActive,
-                ]}
-                onPress={() => setActiveRangeId(range.id)}
-              >
-                <Text
+        {/* Range chips – only show if using mock data */}
+        {!hasRealEpisodes && (
+          <View style={styles.rangeRow}>
+            {EPISODE_RANGES.map((range) => {
+              const isActive = range.id === activeRangeId;
+              return (
+                <TouchableOpacity
+                  key={range.id}
                   style={[
-                    styles.rangeChipText,
-                    isActive && styles.rangeChipTextActive,
+                    styles.rangeChip,
+                    isActive && styles.rangeChipActive,
                   ]}
+                  onPress={() => setActiveRangeId(range.id)}
                 >
-                  {range.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Text
+                    style={[
+                      styles.rangeChipText,
+                      isActive && styles.rangeChipTextActive,
+                    ]}
+                  >
+                    {range.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* Episodes grid – compact pills, multiple rows */}
         <View style={styles.episodesGrid}>
-          {episodesArray.map(renderEpisodeNumber)}
+          {loadingEpisodes ? (
+            <View style={styles.episodesLoadingContainer}>
+              <ActivityIndicator size="small" color="#FFD54A" />
+              <Text style={styles.episodesLoadingText}>Loading episodes...</Text>
+            </View>
+          ) : hasRealEpisodes ? (
+            // Render real episodes from database
+            seasonEpisodes
+              .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0))
+              .map(renderEpisodeNumber)
+          ) : (
+            // Fallback to mock episodes if no season data
+            (() => {
+              const activeRange = EPISODE_RANGES.find((r) => r.id === activeRangeId)!;
+              const episodesArray = Array.from(
+                { length: activeRange.end - activeRange.start + 1 },
+                (_, idx) => activeRange.start + idx,
+              );
+              return episodesArray.map(renderEpisodeNumber);
+            })()
+          )}
         </View>
       </Animated.View>
 
@@ -621,14 +1132,23 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
               <View style={styles.infoPosterRow}>
                 <View style={styles.posterWrapper}>
                   <Image
-                    source={{ uri: 'https://picsum.photos/340/460?random=99' }}
+                    source={{ 
+                      uri: reel.thumbnailUrl || reel.seasonId?.thumbnail || 'https://picsum.photos/340/460?random=99' 
+                    }}
                     style={styles.posterImage}
                   />
                   <TouchableOpacity style={styles.posterPlayOverlay}>
                     <Ionicons name="play" size={40} color="#fff" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.posterHeart}>
-                    <Ionicons name="heart-outline" size={24} color="#fff" />
+                  <TouchableOpacity 
+                    style={styles.posterHeart}
+                    onPress={handleLike}
+                  >
+                    <Ionicons 
+                      name={isLiked ? 'heart' : 'heart-outline'} 
+                      size={24} 
+                      color={isLiked ? '#FFD54A' : '#fff'} 
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -665,10 +1185,7 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
 
               {/* Description */}
               <Text style={styles.infoDescription}>
-                In Steven Spielberg&apos;s massive blockbuster, paleontologists Alan
-                Grant and Ellie Sattler are among a select group chosen to tour an
-                island theme park populated by dinosaurs created from prehistoric
-                DNA.
+                {reel.description || 'No description available'}
               </Text>
 
               {/* quick actions row */}
@@ -710,24 +1227,50 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
               </ScrollView>
 
               {/* Episodes */}
-              <Text style={styles.infoSectionHeading}>Episodes</Text>
-              {MOCK_EPISODES.map((ep) => (
-                <View key={ep.id} style={styles.infoEpisodeCard}>
-                  <Image
-                    source={{ uri: ep.image }}
-                    style={styles.infoEpisodeImage}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.infoEpisodeTitle}>{ep.title}</Text>
-                    <Text style={styles.infoEpisodeDesc} numberOfLines={2}>
-                      {ep.desc}
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.infoEpisodePlay}>
-                    <Ionicons name="play" size={18} color="#000" />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {reel.seasonId && (
+                <>
+                  <Text style={styles.infoSectionHeading}>Episodes</Text>
+                  {loadingEpisodes ? (
+                    <View style={styles.episodesLoadingContainer}>
+                      <ActivityIndicator size="small" color="#FFD54A" />
+                      <Text style={styles.episodesLoadingText}>Loading episodes...</Text>
+                    </View>
+                  ) : seasonEpisodes.length > 0 ? (
+                    seasonEpisodes
+                      .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0))
+                      .map((ep) => (
+                        <TouchableOpacity
+                          key={ep._id}
+                          style={styles.infoEpisodeCard}
+                          onPress={() => handleEpisodePress(ep)}
+                        >
+                          <Image
+                            source={{ 
+                              uri: ep.thumbnailUrl || ep.thumbnail || 'https://picsum.photos/160/90?random=21' 
+                            }}
+                            style={styles.infoEpisodeImage}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.infoEpisodeTitle}>
+                              {ep.title || `Episode ${ep.episodeNumber || ''}`}
+                            </Text>
+                            <Text style={styles.infoEpisodeDesc} numberOfLines={2}>
+                              {ep.description || 'No description available'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity 
+                            style={styles.infoEpisodePlay}
+                            onPress={() => handleEpisodePress(ep)}
+                          >
+                            <Ionicons name="play" size={18} color="#000" />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      ))
+                  ) : (
+                    <Text style={styles.episodesLoadingText}>No episodes available</Text>
+                  )}
+                </>
+              )}
 
               {/* More like this */}
               <Text style={styles.infoSectionHeading}>More Like This…</Text>
@@ -746,7 +1289,15 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({
       )}
     </View>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison function for React.memo
+  // Only re-render if isActive changes or reel data changes
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.reel.id === nextProps.reel.id &&
+    prevProps.reel.videoUrl === nextProps.reel.videoUrl
+  );
+}) as React.FC<{ reel: Reel; navigation?: any; isActive?: boolean }>;
 
 // ============================================
 // STYLES
@@ -758,6 +1309,27 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 16,
+  },
+  headerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
   },
 
   reelContainer: {
@@ -1307,5 +1879,16 @@ const styles = StyleSheet.create({
     height: 130,
     borderRadius: 10,
     marginRight: 10,
+  },
+  episodesLoadingContainer: {
+    width: '100%',
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  episodesLoadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 14,
   },
 });
