@@ -17,6 +17,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { API_BASE_URL } from '../../utils/api';
+import { getFcmToken } from '../../utils/fcm';
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -61,12 +62,21 @@ const OTPScreen: React.FC = () => {
 
     try {
       setLoading(true);
+
+      // Get FCM token (best effort)
+      let fcmToken: string | undefined;
+      try {
+        fcmToken = await getFcmToken();
+      } catch (tokenErr) {
+        console.warn('⚠️ Could not fetch FCM token', tokenErr);
+      }
       
       const response = await axios.post(
         `${API_BASE_URL}/api/auth/verify-otp`,
         { 
           phone, 
-          otp 
+          otp,
+          ...(fcmToken ? { fcmToken } : {})
         },
         {
           headers: {
@@ -97,6 +107,11 @@ const OTPScreen: React.FC = () => {
       await AsyncStorage.setItem('token', token);
       if (user) {
         await AsyncStorage.setItem('user', JSON.stringify(user));
+      }
+
+      // Persist FCM token locally to reuse (optional)
+      if (fcmToken) {
+        await AsyncStorage.setItem('fcmToken', fcmToken);
       }
 
       console.log('✅ Login successful:', user);
