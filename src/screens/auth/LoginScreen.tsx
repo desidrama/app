@@ -78,7 +78,6 @@ const LoginScreen: React.FC = () => {
       
       // Show dev OTP in development (if provided)
       if (response.data?.devOtp && __DEV__) {
-        console.log('🔐 DEV OTP:', response.data.devOtp);
         Alert.alert(
           'OTP Sent',
           `OTP has been sent to your WhatsApp.\n\n(Dev OTP: ${response.data.devOtp})`,
@@ -104,7 +103,6 @@ const LoginScreen: React.FC = () => {
 
     } catch (error: any) {
       setLoading(false);
-      console.error('❌ Send OTP error:', error);
       
       if (error.response) {
         // Server responded with error

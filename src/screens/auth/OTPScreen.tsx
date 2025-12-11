@@ -80,8 +80,6 @@ const OTPScreen: React.FC = () => {
         }
       );
 
-      console.log('✅ Verify OTP Response:', response.data);
-
       if (response.data?.success === false) {
         Alert.alert('Verification Failed', response.data?.message || 'Invalid OTP');
         setLoading(false);
@@ -170,10 +168,8 @@ const OTPScreen: React.FC = () => {
       
       // Show dev OTP in development
       if (response.data?.devOtp && __DEV__) {
-        console.log('🔐 DEV OTP:', response.data.devOtp);
         Alert.alert(
           'OTP Resent',
-          `A new OTP has been sent to your WhatsApp.\n\n(Dev OTP: ${response.data.devOtp})`
         );
       } else {
         Alert.alert(
