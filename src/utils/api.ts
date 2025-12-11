@@ -2,12 +2,14 @@
 // API_BASE_URL is configured via environment variables
 import Constants from 'expo-constants';
 
+
 // Get API_BASE_URL from environment variables
 // Priority order:
 // 1. EXPO_PUBLIC_API_BASE_URL (from .env file - recommended)
 // 2. API_BASE_URL (from .env file - alternative)
 // 3. Constants.expoConfig.extra.apiBaseUrl (from app.config.js)
 // 4. Fallback to development URL
+
 
 const getApiBaseUrl = (): string => {
   // Try EXPO_PUBLIC_ prefixed env variable first (Expo's recommended way)
