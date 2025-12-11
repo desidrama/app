@@ -17,11 +17,17 @@ import {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000, // Increased timeout for network issues
   headers: {
     'Content-Type': 'application/json',
   },
   withCredentials: true,
+});
+
+// Log API configuration on initialization
+console.log('🔧 API Configuration:', {
+  baseURL: API_BASE_URL,
+  timeout: 15000,
 });
 
 let isRefreshing = false;
@@ -164,9 +170,19 @@ api.interceptors.response.use(
 // Send OTP function
 export const sendOTP = async (phone: string) => {
   try {
+    console.log(`📤 Sending OTP request to: ${API_BASE_URL}/api/auth/send-otp`);
+    console.log(`📱 Phone number: ${phone}`);
     const response = await api.post('/api/auth/send-otp', { phone });
+    console.log('✅ OTP sent successfully:', response.data);
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
+    console.error('❌ Send OTP Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      url: error.config?.url,
+      baseURL: error.config?.baseURL,
+    });
     throw error;
   }
 };

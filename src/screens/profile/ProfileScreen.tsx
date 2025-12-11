@@ -42,8 +42,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   const profileData = {
     name: user?.name || 'User name',
-    email: user?.email || 'Digital***@gmail.com',
-    password: '••••••••',
+    phone: user?.phone || '',
     avatar: user?.avatar || 'https://via.placeholder.com/150',
   };
 
@@ -84,12 +83,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={styles.header}>
         <View style={{ width: 40 }} />
         <Text style={styles.headerTitle}>User name</Text>
-        <TouchableOpacity 
-          style={{ width: 40 }}
-          onPress={() => navigation.navigate('EditProfile')}
-        >
-          <Ionicons name="create-outline" size={28} color={PROFILE_COLORS.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
@@ -99,11 +93,7 @@ export default function ProfileScreen({ navigation }: any) {
       >
         {/* Avatar Section */}
         <View style={styles.avatarSection}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('EditProfile')}
-            activeOpacity={0.8}
-            style={styles.avatarTouchable}
-          >
+          <View style={styles.avatarTouchable}>
             {user?.avatar ? (
               <Image
                 source={{ uri: user.avatar }}
@@ -116,26 +106,15 @@ export default function ProfileScreen({ navigation }: any) {
                 color={PROFILE_COLORS.textPrimary} 
               />
             )}
-          </TouchableOpacity>
+          </View>
         </View>
         
         {/* Settings Card */}
         <View style={styles.settingsCard}>
-          {/* Email Row */}
+          {/* Phone Number Row */}
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Email</Text>
-            <Text style={styles.settingValue}>{profileData.email}</Text>
-          </View>
-
-          {/* Password Row */}
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Password</Text>
-            <View style={styles.passwordRow}>
-              <Text style={styles.settingValue}>{profileData.password}</Text>
-              <TouchableOpacity style={styles.editPasswordButton}>
-                <Ionicons name="pencil" size={16} color={PROFILE_COLORS.cardText} />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.settingLabel}>Phone Number</Text>
+            <Text style={styles.settingValue}>{profileData.phone || 'N/A'}</Text>
           </View>
 
           {/* AutoPlay Toggle */}
@@ -165,11 +144,6 @@ export default function ProfileScreen({ navigation }: any) {
 
         {/* Menu Items */}
         <View style={styles.menuSection}>
-          <MenuItem
-            icon="create-outline"
-            title="Edit Profile"
-            onPress={() => navigation.navigate('EditProfile')}
-          />
           <MenuItem
             icon="help-circle-outline"
             title="Help & Support"
@@ -303,14 +277,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: PROFILE_COLORS.textTertiary,
     marginRight: 12,
-  },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  editPasswordButton: {
-    padding: 6,
   },
   toggle: {
     transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],

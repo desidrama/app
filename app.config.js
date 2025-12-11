@@ -1,0 +1,57 @@
+// app.config.js
+// This file replaces app.json and allows dynamic configuration via environment variables
+// Load environment variables from .env file
+import 'dotenv/config';
+
+export default {
+  expo: {
+    name: 'desidrama',
+    slug: 'desi-drama',
+    version: '1.0.0',
+    orientation: 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: 'light',
+    newArchEnabled: true,
+    splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: 'contain',
+      backgroundColor: '#ffffff',
+    },
+    ios: {
+      supportsTablet: true,
+      bundleIdentifier: 'com.shubham1719.desidrama',
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+      },
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#ffffff',
+      },
+      edgeToEdgeEnabled: true,
+      googleServicesFile: './google-services.json',
+      predictiveBackGestureEnabled: false,
+      package: 'com.shubham1719.desidrama',
+    },
+    web: {
+      favicon: './assets/favicon.png',
+    },
+    plugins: [
+      ['@react-native-google-signin/google-signin'],
+      '@react-native-firebase/app',
+      '@react-native-firebase/messaging',
+    ],
+    extra: {
+      // API Base URL from environment variable (.env file)
+      // Priority: EXPO_PUBLIC_API_BASE_URL > API_BASE_URL > fallback
+      // Update .env file to change the API URL
+      apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'http://localhost:5000',
+      eas: {
+        projectId: '5f1d9380-986e-4ec4-9c9b-fa0a38eed832',
+      },
+    },
+    owner: 'shubham_raj666',
+  },
+};
+
