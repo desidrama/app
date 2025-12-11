@@ -28,11 +28,17 @@ export interface User {
   email: string;
   phone?: string;
   avatar?: string;
+  profilePicture?: string;
   coins: number;
+  coinsBalance?: number; // Backend field name
   username?: string;
   bio?: string;
   location?: string;
   referralCode?: string;
+  streak?: number;
+  lastLoginDate?: string;
+  lastDailyCheckInDate?: string;
+  currentCheckInDay?: number; // 1-7 for the 7-day cycle
   createdAt: string;
   updatedAt: string;
 }
@@ -56,4 +62,16 @@ export interface UserState {
   profile?: User;
   loading: boolean;
   error?: string;
+}
+
+export interface CoinTransaction {
+  _id: string;
+  userId: string;
+  type: 'earned' | 'redeemed';
+  source: 'ad_view' | 'social_follow' | 'daily_login' | 'referral' | 'signup_bonus';
+  amount: number;
+  description: string;
+  metadata?: any;
+  createdAt: string;
+  updatedAt: string;
 }

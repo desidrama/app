@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
-import { logout as logoutAPI, getUserProfile } from '../../services/api';
+import { logout as logoutAPI, getUserProfile, updateProfile } from '../../services/api';
 import { RootState } from '../../redux/store';
 import { logout } from '../../redux/slices/authSlice';
 import { setUser } from '../../redux/slices/userSlice';
@@ -54,9 +54,10 @@ export default function ProfileScreen({ navigation }: any) {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [autoPlay, setAutoPlay] = useState(true);
   const [notifications, setNotifications] = useState(true);
-  const [randomUsername, setRandomUsername] = useState<string>(generateRandomUsername());
+  const [username, setUsername] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [usernameModalVisible, setUsernameModalVisible] = useState(false);
   const [editingUsername, setEditingUsername] = useState<string>('');
@@ -78,33 +79,63 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   const handleUsernamePress = () => {
-    setEditingUsername(randomUsername);
+    setEditingUsername(username || '');
     setUsernameModalVisible(true);
   };
 
-  const handleSaveUsername = () => {
+  const handleSaveUsername = async () => {
     if (editingUsername.trim().length > 0) {
-      setRandomUsername(editingUsername.trim());
-      setUsernameModalVisible(false);
+      try {
+        setSaving(true);
+        await updateProfile({ username: editingUsername.trim() });
+        setUsername(editingUsername.trim());
+        setUsernameModalVisible(false);
+        // Update Redux store
+        const response = await getUserProfile();
+        if (response.success && response.data) {
+          dispatch(setUser(response.data));
+        }
+      } catch (error: any) {
+        console.error('Error saving username:', error);
+        Alert.alert('Error', 'Failed to save username. Please try again.');
+      } finally {
+        setSaving(false);
+      }
     } else {
       Alert.alert('Invalid Username', 'Username cannot be empty');
     }
   };
 
-  const handleSelectAvatar = (avatar: string) => {
-    setSelectedAvatar(avatar);
-    setAvatarModalVisible(false);
+  const handleSelectAvatar = async (avatar: string) => {
+    try {
+      setSaving(true);
+      await updateProfile({ profilePicture: avatar });
+      setSelectedAvatar(avatar);
+      setAvatarModalVisible(false);
+      // Update Redux store
+      const response = await getUserProfile();
+      if (response.success && response.data) {
+        dispatch(setUser(response.data));
+      }
+    } catch (error: any) {
+      console.error('Error saving avatar:', error);
+      Alert.alert('Error', 'Failed to save avatar. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Fetch user phone number from database
+  // Fetch user profile data from database
   useEffect(() => {
-    const fetchUserPhone = async () => {
+    const fetchUserProfile = async () => {
       // Check if user is authenticated and token exists before making API call
       const token = await getToken();
       
       if (!isAuthenticated || !token) {
         console.log('User not authenticated or token not available, using Redux store data');
         setPhoneNumber(user?.phone || '');
+        setUsername(user?.username || generateRandomUsername());
+        setSelectedAvatar(user?.profilePicture || '🔵');
         return;
       }
 
@@ -112,14 +143,32 @@ export default function ProfileScreen({ navigation }: any) {
         setLoading(true);
         const response = await getUserProfile();
         if (response.success && response.data) {
-          setPhoneNumber(response.data.phone || '');
+          const userData = response.data;
+          setPhoneNumber(userData.phone || '');
+          // Set username from database or generate one if not exists
+          if (userData.username) {
+            setUsername(userData.username);
+          } else {
+            // Generate and save a username if it doesn't exist
+            const generatedUsername = generateRandomUsername();
+            setUsername(generatedUsername);
+            try {
+              await updateProfile({ username: generatedUsername });
+            } catch (error) {
+              console.error('Error saving generated username:', error);
+            }
+          }
+          // Set avatar from database or use default
+          setSelectedAvatar(userData.profilePicture || '🔵');
           // Update Redux store with latest user data
-          dispatch(setUser(response.data));
+          dispatch(setUser(userData));
         }
       } catch (error: any) {
         console.error('Error fetching user profile:', error);
-        // Fallback to Redux store phone if API fails
+        // Fallback to Redux store data if API fails
         setPhoneNumber(user?.phone || '');
+        setUsername(user?.username || generateRandomUsername());
+        setSelectedAvatar(user?.profilePicture || '🔵');
         
         // If it's a 401 error, the user might need to login again
         if (error.response?.status === 401) {
@@ -130,13 +179,13 @@ export default function ProfileScreen({ navigation }: any) {
       }
     };
 
-    fetchUserPhone();
+    fetchUserProfile();
   }, [isAuthenticated, user?.phone]);
 
   const profileData = {
-    name: randomUsername,
+    name: username || user?.username || '',
     phone: phoneNumber || user?.phone || '',
-    avatar: user?.avatar || 'https://via.placeholder.com/150',
+    avatar: selectedAvatar || user?.profilePicture || '🔵',
   };
 
   const handleLogout = () => {
@@ -199,7 +248,7 @@ export default function ProfileScreen({ navigation }: any) {
             activeOpacity={0.7}
           >
             <View style={styles.usernameContainer}>
-              <Text style={styles.usernameText}>{randomUsername}</Text>
+              <Text style={styles.usernameText}>{username || 'Loading...'}</Text>
               <Ionicons name="create-outline" size={18} color={PROFILE_COLORS.accentGold} style={styles.editIcon} />
             </View>
           </TouchableOpacity>
@@ -360,11 +409,12 @@ export default function ProfileScreen({ navigation }: any) {
                 autoFocus={true}
               />
               <TouchableOpacity
-                style={styles.saveButton}
+                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                 onPress={handleSaveUsername}
                 activeOpacity={0.8}
+                disabled={saving}
               >
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -639,5 +689,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: PROFILE_COLORS.accentRed,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
 });

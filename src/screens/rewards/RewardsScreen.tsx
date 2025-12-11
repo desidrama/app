@@ -1,5 +1,5 @@
 // FILE: src/screens/rewards/CoinsScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,14 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { useSelector, useDispatch } from 'react-redux';
+import { useFocusEffect } from '@react-navigation/native';
+import { RootState } from '../../redux/store';
+import { setUser } from '../../redux/slices/userSlice';
+import { getUserProfile, getCoinHistory, claimDailyCheckIn } from '../../services/api';
+import { getToken } from '../../utils/storage';
+import { CoinTransaction } from '../../types';
+import { Alert } from 'react-native';
 
 type DailyReward = {
   day: number;
@@ -74,14 +82,183 @@ const MISSIONS: Mission[] = [
 const TAB_BAR_SAFE_PADDING = 140; // ensure content visible above tab bar / home indicator
 
 const CoinsScreen: React.FC<any> = ({ navigation }) => {
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.user.profile);
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [selectedDay, setSelectedDay] = useState(1);
-  const [userCoins, setUserCoins] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [coinHistory, setCoinHistory] = useState<CoinTransaction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [hasClaimedToday, setHasClaimedToday] = useState(false);
+  const [currentCheckInDay, setCurrentCheckInDay] = useState<number | undefined>(undefined);
 
-  const handleClaim = () => {
-    const reward = DAILY_REWARDS.find(r => r.day === selectedDay);
-    if (reward) {
-      setUserCoins(prev => prev + reward.coins);
-      // TODO: call API / redux here in real app
+  // Get coins from user profile (coinsBalance from backend or coins from frontend)
+  const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
+
+  // Fetch user profile to get latest coins
+  const fetchUserCoins = async () => {
+    const token = await getToken();
+    
+    if (!isAuthenticated || !token) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await getUserProfile();
+      if (response.success && response.data) {
+        dispatch(setUser(response.data));
+        
+        // Check if user has claimed today
+        const userData = response.data;
+        if (userData.lastDailyCheckInDate) {
+          const lastCheckIn = new Date(userData.lastDailyCheckInDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          lastCheckIn.setHours(0, 0, 0, 0);
+          setHasClaimedToday(lastCheckIn.getTime() === today.getTime());
+          
+          // Update selected day based on current check-in day
+          if (userData.currentCheckInDay) {
+            setCurrentCheckInDay(userData.currentCheckInDay);
+            setSelectedDay(userData.currentCheckInDay);
+          }
+        } else {
+          setHasClaimedToday(false);
+          setCurrentCheckInDay(undefined);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching user coins:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch coin transaction history
+  const fetchCoinHistory = async () => {
+    const token = await getToken();
+    
+    if (!isAuthenticated || !token) {
+      return;
+    }
+
+    try {
+      setLoadingHistory(true);
+      const response = await getCoinHistory(1);
+      if (response.success && response.data) {
+        setCoinHistory(response.data.transactions || []);
+      }
+    } catch (error: any) {
+      console.error('Error fetching coin history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Load coins and history when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUserCoins();
+      fetchCoinHistory();
+    }, [isAuthenticated])
+  );
+
+  // Also load on mount
+  useEffect(() => {
+    fetchUserCoins();
+    fetchCoinHistory();
+  }, [isAuthenticated]);
+
+  const handleClaim = async () => {
+    if (hasClaimedToday) {
+      Alert.alert('Already Claimed', 'You have already claimed your daily reward today. Come back tomorrow!');
+      return;
+    }
+
+    try {
+      setClaiming(true);
+      const response = await claimDailyCheckIn();
+      
+      if (response.success) {
+        // Update current check-in day from response
+        if (response.data.currentDay) {
+          setCurrentCheckInDay(response.data.currentDay);
+        }
+        
+        Alert.alert(
+          'Success!',
+          `You earned ${response.data.coins} coins!`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Refresh coins and history after claim
+                fetchUserCoins();
+                fetchCoinHistory();
+              },
+            },
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('Error claiming daily check-in:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to claim daily reward. Please try again.';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return 'Today';
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+    }
+  };
+
+  // Get source display name
+  const getSourceName = (source: string) => {
+    const sourceMap: Record<string, string> = {
+      ad_view: 'Ad View',
+      social_follow: 'Social Follow',
+      daily_login: 'Daily Login',
+      referral: 'Referral',
+      signup_bonus: 'Signup Bonus',
+    };
+    return sourceMap[source] || source;
+  };
+
+  // Get source icon
+  const getSourceIcon = (source: string, type: 'earned' | 'redeemed') => {
+    if (type === 'redeemed') {
+      return 'remove-circle';
+    }
+    switch (source) {
+      case 'ad_view':
+        return 'play-circle';
+      case 'social_follow':
+        return 'people';
+      case 'daily_login':
+        return 'calendar';
+      case 'referral':
+        return 'person-add';
+      case 'signup_bonus':
+        return 'gift';
+      default:
+        return 'coin';
     }
   };
 
@@ -147,8 +324,8 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
           </Text>
 
           <View style={styles.coinPill} accessible accessibilityLabel={`${userCoins} coins`}>
-            <Text style={styles.coinText}>{userCoins}</Text>
-            <FontAwesome5 name="rupee-sign" size={14} color="#F5B800" />
+            <Text style={styles.coinText}>{loading ? '...' : userCoins}</Text>
+            <FontAwesome5 name="coins" size={14} color="#F5B800" />
           </View>
         </View>
 
@@ -161,49 +338,79 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
           <Text style={styles.sectionTitle}>Daily Rewards</Text>
 
           <View style={styles.dailyCard}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.dailyScrollContent}
-            >
-              {DAILY_REWARDS.map(reward => {
-                const isSelected = reward.day === selectedDay;
-                return (
-                  <TouchableOpacity
-                    key={reward.day}
-                    style={[
-                      styles.dayItem,
-                      isSelected && styles.dayItemActive,
-                    ]}
-                    onPress={() => setSelectedDay(reward.day)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.dayCoinCircle}>
-                      <FontAwesome5
-                        name="rupee-sign"
-                        size={16}
-                        color="#F5B800"
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.dayLabel,
-                        isSelected && styles.dayLabelActive,
-                      ]}
-                    >
-                      Day {reward.day}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+             <ScrollView
+               horizontal
+               showsHorizontalScrollIndicator={false}
+               contentContainerStyle={styles.dailyScrollContent}
+             >
+               {DAILY_REWARDS.map(reward => {
+                 const isSelected = reward.day === selectedDay;
+                 // Day is completed if it's less than or equal to currentCheckInDay (when user has claimed)
+                 const isCompleted = currentCheckInDay !== undefined && reward.day < currentCheckInDay;
+                 const isTodayCompleted = hasClaimedToday && reward.day === currentCheckInDay;
+                 const showCompleted = isCompleted || isTodayCompleted;
+                 
+                 return (
+                   <TouchableOpacity
+                     key={reward.day}
+                     style={[
+                       styles.dayItem,
+                       isSelected && styles.dayItemActive,
+                       showCompleted && styles.dayItemCompleted,
+                     ]}
+                     onPress={() => !hasClaimedToday && setSelectedDay(reward.day)}
+                     activeOpacity={0.8}
+                     disabled={hasClaimedToday && !showCompleted}
+                   >
+                     {showCompleted && (
+                       <View style={styles.completedBadge}>
+                         <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                       </View>
+                     )}
+                     <View style={[
+                       styles.dayCoinCircle,
+                       showCompleted && styles.dayCoinCircleCompleted
+                     ]}>
+                       {showCompleted ? (
+                         <Ionicons name="checkmark" size={18} color="#10B981" />
+                       ) : (
+                         <FontAwesome5
+                           name="coins"
+                           size={16}
+                           color={isSelected ? "#F5B800" : "#9CA3AF"}
+                         />
+                       )}
+                     </View>
+                     <Text
+                       style={[
+                         styles.dayLabel,
+                         isSelected && !showCompleted && styles.dayLabelActive,
+                         showCompleted && styles.dayLabelCompleted,
+                       ]}
+                     >
+                       Day {reward.day}
+                     </Text>
+                   </TouchableOpacity>
+                 );
+               })}
+             </ScrollView>
 
             <TouchableOpacity
               onPress={handleClaim}
               activeOpacity={0.9}
-              style={styles.claimButton}
+              style={[
+                styles.claimButton,
+                (hasClaimedToday || claiming) && styles.claimButtonDisabled
+              ]}
+              disabled={hasClaimedToday || claiming}
             >
-              <Text style={styles.claimButtonText}>Get {DAILY_REWARDS.find(r => r.day === selectedDay)?.coins ?? 0} Coin</Text>
+              <Text style={styles.claimButtonText}>
+                {claiming 
+                  ? 'Claiming...' 
+                  : hasClaimedToday 
+                    ? 'Already Claimed Today' 
+                    : `Get ${DAILY_REWARDS.find(r => r.day === selectedDay)?.coins ?? 0} Coin`}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -249,6 +456,56 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
               <Text style={styles.missionCTAText}>Watch</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Coin History */}
+          <Text style={styles.sectionTitle}>Transaction History</Text>
+
+          {loadingHistory ? (
+            <View style={styles.historyLoadingContainer}>
+              <Text style={styles.historyLoadingText}>Loading history...</Text>
+            </View>
+          ) : coinHistory.length === 0 ? (
+            <View style={styles.emptyHistoryContainer}>
+              <Ionicons name="time-outline" size={48} color="#666" />
+              <Text style={styles.emptyHistoryText}>No transactions yet</Text>
+              <Text style={styles.emptyHistorySubtext}>Your coin transactions will appear here</Text>
+            </View>
+          ) : (
+            <View style={styles.historyContainer}>
+              {coinHistory.map((transaction) => (
+                <View key={transaction._id} style={styles.historyItem}>
+                  <View style={styles.historyItemLeft}>
+                    <View style={[
+                      styles.historyIconContainer,
+                      transaction.type === 'earned' ? styles.historyIconEarned : styles.historyIconRedeemed
+                    ]}>
+                      <Ionicons
+                        name={getSourceIcon(transaction.source, transaction.type) as any}
+                        size={20}
+                        color={transaction.type === 'earned' ? '#10B981' : '#EF4444'}
+                      />
+                    </View>
+                    <View style={styles.historyItemContent}>
+                      <Text style={styles.historyItemTitle}>
+                        {transaction.type === 'earned' ? 'Earned' : 'Redeemed'} - {getSourceName(transaction.source)}
+                      </Text>
+                      <Text style={styles.historyItemDescription}>{transaction.description}</Text>
+                      <Text style={styles.historyItemDate}>{formatDate(transaction.createdAt)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.historyItemRight}>
+                    <Text style={[
+                      styles.historyItemAmount,
+                      transaction.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed
+                    ]}>
+                      {transaction.type === 'earned' ? '+' : '-'}{transaction.amount}
+                    </Text>
+                    <FontAwesome5 name="coins" size={12} color="#F5B800" />
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -335,38 +592,69 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 12,
   },
-  dayItem: {
-    width: 68,
-    height: 80,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#3f3f46',
-    backgroundColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  dayItemActive: {
-    borderColor: '#F5B800',
-    backgroundColor: '#1d1b10',
-  },
-  dayCoinCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#27272f',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  dayLabel: {
-    fontSize: 12,
-    color: '#e5e5e5',
-    fontWeight: '600',
-  },
-  dayLabelActive: {
-    color: '#F5B800',
-  },
+   dayItem: {
+     width: 68,
+     height: 80,
+     borderRadius: 10,
+     borderWidth: 1,
+     borderColor: '#3f3f46',
+     backgroundColor: '#111827',
+     alignItems: 'center',
+     justifyContent: 'center',
+     marginRight: 10,
+     position: 'relative',
+   },
+   dayItemActive: {
+     borderColor: '#F5B800',
+     backgroundColor: '#1d1b10',
+     borderWidth: 2,
+   },
+   dayItemCompleted: {
+     borderColor: '#10B981',
+     backgroundColor: '#0f1f15',
+     borderWidth: 2,
+   },
+   completedBadge: {
+     position: 'absolute',
+     top: -6,
+     right: -6,
+     backgroundColor: '#090407',
+     borderRadius: 12,
+     zIndex: 10,
+     shadowColor: '#10B981',
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.6,
+     shadowRadius: 4,
+     elevation: 5,
+   },
+   dayCoinCircle: {
+     width: 36,
+     height: 36,
+     borderRadius: 18,
+     backgroundColor: '#27272f',
+     alignItems: 'center',
+     justifyContent: 'center',
+     marginBottom: 8,
+     borderWidth: 2,
+     borderColor: 'transparent',
+   },
+   dayCoinCircleCompleted: {
+     backgroundColor: 'rgba(16, 185, 129, 0.15)',
+     borderColor: '#10B981',
+   },
+   dayLabel: {
+     fontSize: 12,
+     color: '#e5e5e5',
+     fontWeight: '600',
+   },
+   dayLabelActive: {
+     color: '#F5B800',
+     fontWeight: '700',
+   },
+   dayLabelCompleted: {
+     color: '#10B981',
+     fontWeight: '700',
+   },
   claimButton: {
     marginTop: 10,
     backgroundColor: '#FFD54A',
@@ -379,6 +667,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#111827',
+  },
+  claimButtonDisabled: {
+    opacity: 0.6,
+    backgroundColor: '#9CA3AF',
   },
 
   // Missions
@@ -427,5 +719,104 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#111827',
+  },
+
+  // Coin History
+  historyContainer: {
+    marginBottom: 20,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1a1a20',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2a2a30',
+  },
+  historyItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  historyIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    backgroundColor: '#27272f',
+  },
+  historyIconEarned: {
+    backgroundColor: '#10B98120',
+  },
+  historyIconRedeemed: {
+    backgroundColor: '#EF444420',
+  },
+  historyItemContent: {
+    flex: 1,
+  },
+  historyItemTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  historyItemDescription: {
+    fontSize: 13,
+    color: '#d4d4d8',
+    marginBottom: 4,
+  },
+  historyItemDate: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  historyItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  historyItemAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  historyAmountEarned: {
+    color: '#10B981',
+  },
+  historyAmountRedeemed: {
+    color: '#EF4444',
+  },
+  historyLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyLoadingText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  emptyHistoryContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a20',
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  emptyHistoryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyHistorySubtext: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
 });

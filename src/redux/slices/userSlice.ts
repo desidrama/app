@@ -23,7 +23,10 @@ const userSlice = createSlice({
     },
     updateCoins: (state, action: PayloadAction<number>) => {
       if (state.profile) {
-        state.profile.coins = (state.profile.coins || 0) + action.payload;
+        // Update both coins and coinsBalance for compatibility
+        const currentBalance = state.profile.coinsBalance ?? state.profile.coins ?? 0;
+        state.profile.coins = currentBalance + action.payload;
+        state.profile.coinsBalance = currentBalance + action.payload;
       }
     },
   },

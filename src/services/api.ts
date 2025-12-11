@@ -215,6 +215,57 @@ export const getUserProfile = async () => {
 };
 
 /**
+ * Update user profile in database
+ */
+export const updateProfile = async (profileData: { username?: string; profilePicture?: string; name?: string; email?: string; bio?: string }) => {
+  try {
+    const response = await api.put('/api/user/profile', profileData);
+    return response.data;
+  } catch (error: any) {
+    console.error('Update Profile Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Get coin transaction history from database
+ */
+export const getCoinHistory = async (page: number = 1) => {
+  try {
+    const response = await api.get(`/api/user/coins/history?page=${page}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Get Coin History Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Claim daily check-in reward
+ */
+export const claimDailyCheckIn = async () => {
+  try {
+    const response = await api.post('/api/reward/daily-checkin');
+    return response.data;
+  } catch (error: any) {
+    console.error('Claim Daily Check-In Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
  * Logout function - clears all stored tokens and cookies
  * Note: Logout always succeeds locally even if API call fails
  */
