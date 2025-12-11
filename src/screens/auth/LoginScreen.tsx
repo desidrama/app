@@ -14,8 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import axios from 'axios';
-import { API_BASE_URL } from '../../utils/api';
+import { sendOTP } from '../../services/api';
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -50,21 +49,12 @@ const LoginScreen: React.FC = () => {
     try {
       setLoading(true);
       
-      const response = await axios.post(
-        `${API_BASE_URL}/api/auth/send-otp`,
-        { phone: onlyDigits },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000, // 10 second timeout
-        }
-      );
+      const response = await sendOTP(onlyDigits);
 
-      console.log('✅ Send OTP Response:', response.data);
+      console.log('✅ Send OTP Response:', response);
 
-      if (response.data?.success === false) {
-        Alert.alert('Error', response.data?.message || 'Failed to send OTP');
+      if (response?.success === false) {
+        Alert.alert('Error', response?.message || 'Failed to send OTP');
         setLoading(false);
         return;
       }
@@ -72,6 +62,7 @@ const LoginScreen: React.FC = () => {
       // Success - navigate to OTP screen
       setLoading(false);
       
+
       Alert.alert(
         'OTP Sent',
         'OTP has been sent to your WhatsApp number.',

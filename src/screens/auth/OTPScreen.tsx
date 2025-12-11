@@ -14,10 +14,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { API_BASE_URL } from '../../utils/api';
-import { getFcmToken } from '../../utils/fcm';
+
+import { useDispatch } from 'react-redux';
+import { verifyOTP, sendOTP } from '../../services/api';
+import { setToken } from '../../redux/slices/authSlice';
+import * as storage from '../../utils/storage';
+
 
 const logoImage = require('../../../assets/App Logo.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -25,6 +27,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const OTPScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const dispatch = useDispatch();
 
   const phone: string = route.params?.phone || '';
   const [otp, setOtp] = useState('');
@@ -71,31 +74,23 @@ const OTPScreen: React.FC = () => {
         console.warn('⚠️ Could not fetch FCM token', tokenErr);
       }
       
-      const response = await axios.post(
-        `${API_BASE_URL}/api/auth/verify-otp`,
-        { 
-          phone, 
-          otp,
-          ...(fcmToken ? { fcmToken } : {})
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000, // 10 second timeout
-        }
-      );
 
-      if (response.data?.success === false) {
-        Alert.alert('Verification Failed', response.data?.message || 'Invalid OTP');
+      const response = await verifyOTP(phone, otp);
+
+      console.log('✅ Verify OTP Response:', response);
+
+      if (response?.success === false) {
+        Alert.alert('Verification Failed', response?.message || 'Invalid OTP');
+
         setLoading(false);
         setOtp(''); // Clear OTP field
         return;
       }
 
       // Extract token and user data
-      const token = response.data?.data?.token;
-      const user = response.data?.data?.user;
+      const token = response?.data?.token;
+      const refreshToken = response?.data?.refreshToken;
+      const user = response?.data?.user;
 
       if (!token) {
         Alert.alert('Error', 'Authentication token not received. Please try again.');
@@ -103,16 +98,25 @@ const OTPScreen: React.FC = () => {
         return;
       }
 
-      // Store token and user data
-      await AsyncStorage.setItem('token', token);
+      // Store tokens and user data in AsyncStorage
+      await storage.setToken(token);
+      if (refreshToken) {
+        await storage.setRefreshToken(refreshToken);
+      }
       if (user) {
-        await AsyncStorage.setItem('user', JSON.stringify(user));
+        await storage.setUser(JSON.stringify(user));
       }
 
-      // Persist FCM token locally to reuse (optional)
-      if (fcmToken) {
-        await AsyncStorage.setItem('fcmToken', fcmToken);
-      }
+
+      // Dispatch Redux action to update authentication state
+      dispatch(
+        setToken({
+          token,
+          refreshToken,
+          user,
+        })
+      );
+
 
       console.log('✅ Login successful:', user);
       
@@ -152,23 +156,14 @@ const OTPScreen: React.FC = () => {
     try {
       setResending(true);
       
-      const response = await axios.post(
-        `${API_BASE_URL}/api/auth/send-otp`,
-        { phone },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000,
-        }
-      );
+      const response = await sendOTP(phone);
 
-      console.log('✅ Resend OTP Response:', response.data);
+      console.log('✅ Resend OTP Response:', response);
       
       setResending(false);
 
-      if (response.data?.success === false) {
-        Alert.alert('Error', response.data?.message || 'Failed to resend OTP.');
+      if (response?.success === false) {
+        Alert.alert('Error', response?.message || 'Failed to resend OTP.');
         return;
       }
 
@@ -178,9 +173,13 @@ const OTPScreen: React.FC = () => {
       setOtp('');
       
       // Show dev OTP in development
-      if (response.data?.devOtp && __DEV__) {
+
+      if (response?.devOtp && __DEV__) {
+        console.log('🔐 DEV OTP:', response.devOtp);
         Alert.alert(
           'OTP Resent',
+          `A new OTP has been sent to your WhatsApp`
+
         );
       } else {
         Alert.alert(

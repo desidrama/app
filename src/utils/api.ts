@@ -1,17 +1,27 @@
 // src/utils/api.ts
 // API_BASE_URL is configured via environment variables
-// For development: change the value below directly
-// For production: use EAS secrets or environment variables
+import Constants from 'expo-constants';
+
+
+// Get API_BASE_URL from environment - Expo reads from app.json or .env
+const envApiUrl = Constants.expoConfig?.extra?.apiBaseUrl;
+
+// Fallback URLs for development/production
+const DEV_API_URL = 'http://192.168.29.105:5000';
 
 // Development URL - Change this as needed
-<<<<<<< HEAD
-const DEV_API_URL = 'http://10.78.2.110:5000';
-=======
-const DEV_API_URL = 'http://192.168.1.4:5000';
->>>>>>> 52d9c8e486b12758ab84af0a5f92ef179046f24c
+
+
+
 const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
-export const API_BASE_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
+// Priority: env variable > .env files (via Constants) > fallback
+export const API_BASE_URL = 
+  envApiUrl || 
+  process.env.API_BASE_URL || 
+  (__DEV__ ? DEV_API_URL : PROD_API_URL);
+
+console.log('📡 API_BASE_URL:', API_BASE_URL);
 
 export const SEND_OTP_PATH = '/api/auth/send-otp';
 export const VERIFY_OTP_PATH = '/api/auth/verify-otp';
