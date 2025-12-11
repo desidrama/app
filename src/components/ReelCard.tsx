@@ -14,9 +14,12 @@ import {
 } from 'react-native';
 import { Video as ExpoVideo, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useDispatch } from 'react-redux';
 
 import { Video } from '../types';
 import { videoService } from '../services/video.service';
+import { getUserProfile } from '../services/api';
+import { setUser } from '../redux/slices/userSlice';
 import { COLORS } from '../utils/constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -27,6 +30,7 @@ interface ReelCardProps {
 }
 
 const ReelCard: React.FC<ReelCardProps> = ({ video, isActive }) => {
+  const dispatch = useDispatch();
   const videoRef = useRef<ExpoVideo>(null);
 
   const [isLiked, setIsLiked] = useState(false);
@@ -52,7 +56,28 @@ const ReelCard: React.FC<ReelCardProps> = ({ video, isActive }) => {
           await videoRef.current.setRateAsync(playbackSpeed, true);
           await videoRef.current.playAsync();
           if (isMounted) {
-            videoService.incrementView(video._id).catch(() => {});
+            // Track view and silently refresh coin balance if coins were deducted
+            console.log('🎬 Tracking view for video:', video._id, video.title);
+            videoService.incrementView(video._id)
+              .then(async (response) => {
+                console.log('✅ View tracked, response:', response);
+                // Always refresh coin balance after watching (coins may have been deducted)
+                try {
+                  const profileResponse = await getUserProfile();
+                  if (profileResponse.success && profileResponse.data) {
+                    // Update Redux state silently - no notification shown
+                    // This will trigger the rewards screen to refresh automatically
+                    dispatch(setUser(profileResponse.data));
+                    console.log('💰 Coin balance refreshed:', profileResponse.data.coinsBalance);
+                  }
+                } catch (profileError) {
+                  // Silently fail - don't interrupt user experience
+                  console.log('Background coin balance refresh failed:', profileError);
+                }
+              })
+              .catch((error) => {
+                console.error('❌ Error tracking view:', error);
+              });
           }
         } catch (err) {
           console.warn('play error', err);

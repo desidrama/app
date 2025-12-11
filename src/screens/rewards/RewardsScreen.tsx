@@ -165,6 +165,14 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
     }, [isAuthenticated])
   );
 
+  // Also refresh when user profile changes (e.g., coins deducted)
+  useEffect(() => {
+    if (user) {
+      // Refresh coin history when user profile changes to show latest transactions
+      fetchCoinHistory();
+    }
+  }, [user?.coinsBalance]);
+
   // Also load on mount
   useEffect(() => {
     fetchUserCoins();
@@ -237,6 +245,7 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
       daily_login: 'Daily Login',
       referral: 'Referral',
       signup_bonus: 'Signup Bonus',
+      reel_watch: 'Reel Watch',
     };
     return sourceMap[source] || source;
   };
@@ -257,6 +266,8 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
         return 'person-add';
       case 'signup_bonus':
         return 'gift';
+      case 'reel_watch':
+        return 'videocam';
       default:
         return 'coin';
     }

@@ -25,8 +25,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { useDispatch } from 'react-redux';
 import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
+import { getUserProfile } from '../../services/api';
+import { setUser } from '../../redux/slices/userSlice';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -460,6 +463,7 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
   navigation,
   isActive = false,
 }) => {
+  const dispatch = useDispatch();
   const videoRef = useRef<Video | null>(null);
 
   const [currentEpisode, setCurrentEpisode] = useState(reel.episodeNumber || 1);
@@ -803,13 +807,30 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
 
   // Track video view when video starts playing
   useEffect(() => {
-    if (videoRef.current && !hasTrackedView) {
+    if (isActive && videoRef.current && !hasTrackedView) {
       const trackView = async () => {
         try {
-          await videoService.incrementView(reel.id);
+          console.log('🎬 Tracking view for reel:', reel.id, reel.title);
+          const response = await videoService.incrementView(reel.id);
+          console.log('✅ View tracked, response:', response);
           setHasTrackedView(true);
+          
+          // Always refresh coin balance after watching (coins may have been deducted)
+          // This happens in the background without showing any notification
+          try {
+            const profileResponse = await getUserProfile();
+            if (profileResponse.success && profileResponse.data) {
+              // Update Redux state silently - no notification shown
+              // This will trigger the rewards screen to refresh automatically
+              dispatch(setUser(profileResponse.data));
+              console.log('💰 Coin balance refreshed:', profileResponse.data.coinsBalance);
+            }
+          } catch (profileError) {
+            // Silently fail - don't interrupt user experience
+            console.log('Background coin balance refresh failed:', profileError);
+          }
         } catch (error) {
-          console.error('Error tracking view:', error);
+          console.error('❌ Error tracking view:', error);
         }
       };
       
@@ -817,7 +838,7 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
       const timer = setTimeout(trackView, 2000);
       return () => clearTimeout(timer);
     }
-  }, [reel.id, hasTrackedView]);
+  }, [isActive, reel.id, hasTrackedView, dispatch]);
 
   // hide side actions and reaction bar when info sheet is open
   const sideActionsVisible = !showInfoSheet;
