@@ -4,6 +4,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'dedidrama_auth_token';
+const REFRESH_TOKEN_KEY = 'dedidrama_refresh_token';
+const COOKIES_KEY = 'dedidrama_cookies';
 const USER_KEY = 'dedidrama_user';
 
 /**
@@ -75,11 +77,79 @@ export const clearUser = async (): Promise<void> => {
 };
 
 /**
+ * Get stored refresh token
+ */
+export const getRefreshToken = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch (error) {
+    console.error('Error retrieving refresh token:', error);
+    return null;
+  }
+};
+
+/**
+ * Save refresh token
+ */
+export const setRefreshToken = async (token: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, token);
+  } catch (error) {
+    console.error('Error saving refresh token:', error);
+  }
+};
+
+/**
+ * Clear refresh token
+ */
+export const clearRefreshToken = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
+  } catch (error) {
+    console.error('Error clearing refresh token:', error);
+  }
+};
+
+/**
+ * Get stored cookies
+ */
+export const getCookies = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem(COOKIES_KEY);
+  } catch (error) {
+    console.error('Error retrieving cookies:', error);
+    return null;
+  }
+};
+
+/**
+ * Save cookies
+ */
+export const setCookies = async (cookies: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(COOKIES_KEY, cookies);
+  } catch (error) {
+    console.error('Error saving cookies:', error);
+  }
+};
+
+/**
+ * Clear cookies
+ */
+export const clearCookies = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(COOKIES_KEY);
+  } catch (error) {
+    console.error('Error clearing cookies:', error);
+  }
+};
+
+/**
  * Clear all stored data
  */
 export const clearAll = async (): Promise<void> => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, COOKIES_KEY, USER_KEY]);
   } catch (error) {
     console.error('Error clearing all storage:', error);
   }

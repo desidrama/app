@@ -4,9 +4,10 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { RootState } from '../redux/store';
+import { setAuthChecked, restoreAuth, logout } from '../redux/slices/authSlice';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OTPScreen from '../screens/auth/OTPScreen';
@@ -24,26 +25,46 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const [hasCheckedToken, setHasCheckedToken] = useState(false);
+  const dispatch = useDispatch();
+  const { isAuthenticated, authChecked } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // if you keep token in async-storage
+        // Check if token exists in AsyncStorage
         const token = await storage.getToken();
-        // OPTIONAL: dispatch redux action here to set isAuthenticated true/false
-        // depending on token
+        
+        if (token) {
+          // Token found - restore authentication state
+          const refreshToken = await storage.getRefreshToken();
+          const userData = await storage.getUser();
+          
+          // Dispatch action to restore auth in Redux
+          dispatch(
+            restoreAuth({
+              token,
+              refreshToken: refreshToken || undefined,
+              user: userData ? JSON.parse(userData) : undefined,
+            })
+          );
+        } else {
+          // No token found - user needs to login
+          dispatch(logout());
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        dispatch(logout());
       } finally {
-        setHasCheckedToken(true);
+        // Mark that we've checked authentication
+        dispatch(setAuthChecked(true));
       }
     };
 
     checkAuth();
-  }, []);
+  }, [dispatch]);
 
-  // until we know auth state, just show splash full-screen
-  if (!hasCheckedToken) {
+  // Until we know auth state, show splash full-screen
+  if (!authChecked) {
     return (
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -58,8 +79,7 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <>
-            {/* Animated posters splash – this will navigate to Login by itself
-                after the animation using navigation.replace('Login') */}
+            {/* Auth screens - shown only if not authenticated */}
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="OTPScreen" component={OTPScreen} />

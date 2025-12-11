@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logout as logoutAPI } from '../../services/api';
 import { RootState } from '../../redux/store';
 import { logout } from '../../redux/slices/authSlice';
 import { setUser } from '../../redux/slices/userSlice';
@@ -58,12 +58,17 @@ export default function ProfileScreen({ navigation }: any) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.removeItem('token');
-              await AsyncStorage.removeItem('user');
+              // Call logout API to clear server-side session
+              await logoutAPI();
+              
+              // Clear Redux state
               dispatch(logout());
               dispatch(setUser(null));
             } catch (error) {
               console.error('Logout error:', error);
+              // Even if API fails, clear local state
+              dispatch(logout());
+              dispatch(setUser(null));
             }
           },
         },
