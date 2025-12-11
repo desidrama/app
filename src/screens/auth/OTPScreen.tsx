@@ -264,7 +264,7 @@ const OTPScreen: React.FC = () => {
       setTimer(60);
       setCanResend(false);
       clearOtp();
-      anges
+
       Alert.alert(
         'OTP Resent',
         'A new OTP has been sent to your WhatsApp.'
