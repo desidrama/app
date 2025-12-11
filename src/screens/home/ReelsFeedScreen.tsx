@@ -1,5 +1,5 @@
 // ============================================
-// FILE: src/screens/home/ReelPlayerScreen.tsx
+// FILE: src/screens/home/ReelsFeedScreen.tsx
 // ============================================
 import React, { useRef, useState } from 'react';
 import {
@@ -19,15 +19,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-type ReelPlayerProps = {
-  navigation?: any;
-};
 
 type Reel = {
   id: string;
@@ -72,53 +69,14 @@ const REELS: Reel[] = [
   },
 ];
 
-// ---- MOCK DATA FOR INFO SHEET ----
-const MOCK_CAST = [
-  { id: '1', name: 'Laura Dern', image: 'https://picsum.photos/80/80?random=11' },
-  { id: '2', name: 'Jeff Goldblum', image: 'https://picsum.photos/80/80?random=12' },
-  { id: '3', name: 'Sam Neill', image: 'https://picsum.photos/80/80?random=13' },
-  { id: '4', name: 'Richard A.', image: 'https://picsum.photos/80/80?random=14' },
-];
-
-const MOCK_EPISODES = [
-  {
-    id: 'e1',
-    title: 'A Wednesday',
-    desc: 'Learning to tap into her powers as a psychic while unraveling mystery after.',
-    image: 'https://picsum.photos/160/90?random=21',
-  },
-  {
-    id: 'e2',
-    title: 'Magician',
-    desc: 'Learning to tap into her powers as a psychic while unraveling mystery after.',
-    image: 'https://picsum.photos/160/90?random=22',
-  },
-  {
-    id: 'e3',
-    title: 'The Knight',
-    desc: 'Learning to tap into her powers as a psychic while unraveling mystery after.',
-    image: 'https://picsum.photos/160/90?random=23',
-  },
-];
-
-const MOCK_MORE_LIKE = [
-  { id: 'm1', image: 'https://picsum.photos/90/130?random=31' },
-  { id: 'm2', image: 'https://picsum.photos/90/130?random=32' },
-  { id: 'm3', image: 'https://picsum.photos/90/130?random=33' },
-];
-
+// small helper types / mocks for info sheet/episodes
 const EPISODE_RANGES = [
   { id: '1-18', label: '1 - 18', start: 1, end: 18 },
   { id: '19-41', label: '19 - 41', start: 19, end: 41 },
   { id: '41-62', label: '41 - 62', start: 41, end: 62 },
   { id: '62-83', label: '62 - 83', start: 62, end: 83 },
 ];
-
-const TOTAL_EPISODES = 18; // mock
-
-const SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0] as const;
-const QUALITY_OPTIONS = ['Auto', '480p', '720p', '1080p'] as const;
-type Quality = (typeof QUALITY_OPTIONS)[number];
+const TOTAL_EPISODES = 18;
 
 type Comment = {
   id: string;
@@ -126,68 +84,61 @@ type Comment = {
   text: string;
 };
 
-const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
+export default function ReelsFeedScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <FlatList
         data={REELS}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(r) => r.id}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={SCREEN_HEIGHT}
         decelerationRate="fast"
-        renderItem={({ item }) => <ReelItem reel={item} navigation={navigation} />}
+        snapToInterval={SCREEN_HEIGHT}
+        renderItem={({ item }) => <FullReel reel={item} navigation={navigation} />}
       />
     </SafeAreaView>
   );
-};
+}
 
-export default ReelPlayerScreen;
-
-/**
- * Single full-screen reel item
- */
-const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation }) => {
+function FullReel({ reel, navigation }: { reel: Reel; navigation?: any }) {
   const videoRef = useRef<Video | null>(null);
 
-  const [currentEpisode, setCurrentEpisode] = useState(1);
-  const [likes, setLikes] = useState(reel.initialLikes);
+  // states per reel
   const [isLiked, setIsLiked] = useState(false);
+  const [likes, setLikes] = useState(reel.initialLikes);
   const [isSaved, setIsSaved] = useState(false);
 
   const [showReactions, setShowReactions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showComments, setShowComments] = useState(false);
-
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-  const [quality, setQuality] = useState<Quality>('Auto');
-
-  const [activeRangeId, setActiveRangeId] = useState(EPISODE_RANGES[0].id);
   const [showEpisodesSheet, setShowEpisodesSheet] = useState(false);
   const [showInfoSheet, setShowInfoSheet] = useState(false);
 
-  // comments
   const [comments, setComments] = useState<Comment[]>([
     { id: 'c1', user: 'Amit', text: 'Family movie night favourite 🍿' },
     { id: 'c2', user: 'Priya', text: 'Kids loved the dinosaurs!' },
   ]);
   const [newComment, setNewComment] = useState('');
 
+  // for settings
+  const SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0] as const;
+  const QUALITY_OPTIONS = ['Auto', '480p', '720p', '1080p'] as const;
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [quality, setQuality] = useState<typeof QUALITY_OPTIONS[number]>('Auto');
+
   const sheetTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const infoTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-  // ---- helpers ----
   const openEpisodesSheet = () => {
-    if (showEpisodesSheet) return;
     setShowEpisodesSheet(true);
     Animated.timing(sheetTranslateY, {
-      toValue: SCREEN_HEIGHT * 0.18,
+      toValue: SCREEN_HEIGHT * 0.2,
       duration: 260,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
   };
-
   const closeEpisodesSheet = () => {
     Animated.timing(sheetTranslateY, {
       toValue: SCREEN_HEIGHT,
@@ -206,7 +157,6 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
       useNativeDriver: true,
     }).start();
   };
-
   const closeInfoSheet = () => {
     Animated.timing(infoTranslateY, {
       toValue: SCREEN_HEIGHT,
@@ -216,16 +166,11 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
     }).start(() => setShowInfoSheet(false));
   };
 
-  const handleNextEpisode = () => {
-    const next = currentEpisode === TOTAL_EPISODES ? 1 : currentEpisode + 1;
-    setCurrentEpisode(next);
-  };
-
   const handleLike = () => {
-    setIsLiked((prev) => !prev);
-    setLikes((prev) => prev + (isLiked ? -1 : 1));
+    setIsLiked((p) => !p);
+    setLikes((p) => p + (isLiked ? -1 : 1));
     setShowReactions(true);
-    setTimeout(() => setShowReactions(false), 1200);
+    setTimeout(() => setShowReactions(false), 1400);
   };
 
   const handleShare = async () => {
@@ -233,120 +178,66 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
       await Share.share({
         message: `Check out "${reel.title}" on Digital Kalakar!`,
       });
-    } catch (err) {
-      console.warn(err);
+    } catch (e) {
+      console.warn(e);
     }
   };
 
-  const handleEpisodePress = (ep: number) => {
-    setCurrentEpisode(ep);
-    closeEpisodesSheet();
+  const addComment = () => {
+    const trimmed = newComment.trim();
+    if (!trimmed) return;
+    const c: Comment = { id: `c-${Date.now()}`, user: 'You', text: trimmed };
+    setComments((p) => [c, ...p]);
+    setNewComment('');
   };
 
-  // ---- Settings: Speed & Quality ----
   const cycleSpeed = async () => {
-    const currentIndex = SPEED_OPTIONS.indexOf(playbackSpeed as any);
-    const nextIndex = (currentIndex + 1) % SPEED_OPTIONS.length;
-    const nextSpeed = SPEED_OPTIONS[nextIndex];
-    setPlaybackSpeed(nextSpeed);
-
+    const idx = SPEED_OPTIONS.indexOf(playbackSpeed as any);
+    const next = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
+    setPlaybackSpeed(next);
     if (videoRef.current) {
       try {
-        await videoRef.current.setStatusAsync({
-          rate: nextSpeed,
-          shouldPlay: true,
-        });
+        await videoRef.current.setStatusAsync({ rate: next, shouldPlay: true });
       } catch (e) {
-        console.warn('Error setting speed', e);
+        /* ignore in mock */
       }
     }
   };
 
   const cycleQuality = () => {
-    const currentIndex = QUALITY_OPTIONS.indexOf(quality);
-    const nextIndex = (currentIndex + 1) % QUALITY_OPTIONS.length;
-    const nextQuality = QUALITY_OPTIONS[nextIndex];
-    setQuality(nextQuality);
+    const idx = QUALITY_OPTIONS.indexOf(quality);
+    setQuality(QUALITY_OPTIONS[(idx + 1) % QUALITY_OPTIONS.length]);
   };
 
-  // ---- Episodes list ----
+  // episodes helpers
+  const [activeRangeId, setActiveRangeId] = useState(EPISODE_RANGES[0].id);
   const activeRange = EPISODE_RANGES.find((r) => r.id === activeRangeId)!;
-  const episodesArray = Array.from(
-    { length: activeRange.end - activeRange.start + 1 },
-    (_, idx) => activeRange.start + idx,
-  );
-
-  const renderEpisodeNumber = (ep: number) => {
-    const isActive = ep === currentEpisode;
-    const isUnlocked = ep <= TOTAL_EPISODES;
-
-    return (
-      <TouchableOpacity
-        key={ep}
-        disabled={!isUnlocked}
-        onPress={() => handleEpisodePress(ep)}
-        style={[
-          styles.episodeNumber,
-          !isUnlocked && styles.episodeNumberLocked,
-          isActive && styles.episodeNumberActive,
-        ]}
-      >
-        <Text
-          style={[
-            styles.episodeNumberText,
-            !isUnlocked && styles.episodeNumberTextLocked,
-            isActive && styles.episodeNumberTextActive,
-          ]}
-        >
-          {ep}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  // ---- Comment helpers ----
-  const handleAddComment = () => {
-    const trimmed = newComment.trim();
-    if (!trimmed) return;
-    setComments((prev) => [
-      ...prev,
-      { id: `c-${Date.now()}`, user: 'You', text: trimmed },
-    ]);
-    setNewComment('');
-  };
+  const episodesArray = Array.from({ length: activeRange.end - activeRange.start + 1 }, (_, i) => activeRange.start + i);
 
   return (
     <View style={styles.reelContainer}>
-      {/* VIDEO */}
       <Video
         ref={videoRef}
         source={{ uri: reel.videoUrl }}
         style={styles.video}
-        isLooping
         shouldPlay
+        isLooping
         resizeMode="cover"
       />
 
-      {/* TOP BAR */}
+      {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation?.goBack?.()}
-        >
-          <Ionicons name="chevron-back" size={28} color="#fff" />
+        <TouchableOpacity style={styles.circleBtn} onPress={() => navigation?.goBack?.()}>
+          <Ionicons name="chevron-back" size={26} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.nextEpisodeButton}
-          onPress={handleNextEpisode}
-          activeOpacity={0.9}
-        >
+        <TouchableOpacity style={styles.nextEpisodeButton} onPress={() => { /* next episode logic */ }}>
           <Text style={styles.nextEpisodeText}>Next Episode</Text>
-          <Ionicons name="play" size={18} color="#000" />
+          <Ionicons name="play" size={16} color="#000" />
         </TouchableOpacity>
       </View>
 
-      {/* REACTION BAR – placed to the left of Rate */}
+      {/* Reaction emojis (left of Rate) */}
       {showReactions && (
         <View style={styles.reactionBar}>
           <Text style={styles.reactionEmoji}>😍</Text>
@@ -356,97 +247,33 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
         </View>
       )}
 
-      {/* SETTINGS POPOVER (bigger tappable options) */}
+      {/* Settings popover */}
       {showSettings && (
         <View style={styles.settingsPopup}>
           <TouchableOpacity style={styles.settingsItem} onPress={cycleSpeed}>
-            <MaterialIcons name="slow-motion-video" size={22} color="#fff" />
+            <MaterialIcons name="slow-motion-video" size={20} color="#fff" />
             <Text style={styles.settingsText}>Speed {playbackSpeed.toFixed(1)}x</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.settingsItem} onPress={cycleQuality}>
-            <Ionicons name="sparkles-outline" size={22} color="#fff" />
+            <Ionicons name="sparkles-outline" size={18} color="#fff" />
             <Text style={styles.settingsText}>Quality {quality}</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* COMMENTS OVERLAY (covers ~65%) */}
-      {showComments && (
-        <View style={styles.commentsOverlay}>
-          <Pressable
-            style={styles.commentsBackdrop}
-            onPress={() => setShowComments(false)}
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.commentsCard}>
-              <View style={styles.commentsHeader}>
-                <Text style={styles.commentsTitle}>Comments</Text>
-                <TouchableOpacity onPress={() => setShowComments(false)}>
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <FlatList
-                data={comments}
-                keyExtractor={(item) => item.id}
-                style={{ maxHeight: SCREEN_HEIGHT * 0.52 }}
-                renderItem={({ item }) => (
-                  <View style={styles.commentRow}>
-                    <View style={styles.commentAvatar}>
-                      <Text style={styles.commentAvatarText}>
-                        {item.user.charAt(0)}
-                      </Text>
-                    </View>
-                    <View style={styles.commentBubble}>
-                      <Text style={styles.commentUser}>{item.user}</Text>
-                      <Text style={styles.commentText}>{item.text}</Text>
-                    </View>
-                  </View>
-                )}
-              />
-
-              <View style={styles.commentInputRow}>
-                <TextInput
-                  style={styles.commentInput}
-                  placeholder="Add a family-friendly comment..."
-                  placeholderTextColor="#888"
-                  value={newComment}
-                  onChangeText={setNewComment}
-                />
-                <TouchableOpacity onPress={handleAddComment}>
-                  <Ionicons name="send" size={22} color="#FFD54A" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      )}
-
-      {/* RIGHT ACTIONS - BIGGER ICONS (shifted down) */}
+      {/* Right action column */}
       <View style={styles.rightActions}>
         <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
-          <Ionicons
-            name={isLiked ? 'heart' : 'heart-outline'}
-            size={34}
-            color={isLiked ? '#FF6B6B' : '#fff'}
-          />
+          <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={34} color={isLiked ? '#FF6B6B' : '#fff'} />
           <Text style={styles.actionLabel}>Rate</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => setShowComments(true)}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={30} color="#fff" />
+        <TouchableOpacity style={styles.actionButton} onPress={() => setShowComments(true)}>
+          <Ionicons name="chatbubble-ellipses-outline" size={32} color="#fff" />
           <Text style={styles.actionLabel}>Comment</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => setShowSettings((prev) => !prev)}
-        >
+        <TouchableOpacity style={styles.actionButton} onPress={() => setShowSettings((p) => !p)}>
           <Ionicons name="settings-outline" size={30} color="#fff" />
           <Text style={styles.actionLabel}>Settings</Text>
         </TouchableOpacity>
@@ -456,15 +283,8 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
           <Text style={styles.actionLabel}>Share</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => setIsSaved((prev) => !prev)}
-        >
-          <Ionicons
-            name={isSaved ? 'bookmark' : 'bookmark-outline'}
-            size={28}
-            color="#fff"
-          />
+        <TouchableOpacity style={styles.actionButton} onPress={() => setIsSaved((p) => !p)}>
+          <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={30} color="#fff" />
           <Text style={styles.actionLabel}>Save</Text>
         </TouchableOpacity>
 
@@ -474,12 +294,12 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
         </TouchableOpacity>
       </View>
 
-      {/* BOTTOM INFO – pulled further up so it never hides behind tab bar */}
+      {/* Bottom info (pulled up so it never overlaps with comments) */}
       <View style={styles.bottomInfo}>
         <View style={styles.titleRow}>
           <Text style={styles.movieTitle}>{reel.title}</Text>
-          <TouchableOpacity onPress={openInfoSheet} style={styles.infoButton}>
-            <Ionicons name="information-circle-outline" size={22} color="#fff" />
+          <TouchableOpacity onPress={openInfoSheet} style={{ marginLeft: 8 }}>
+            <Ionicons name="information-circle-outline" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
 
@@ -492,7 +312,76 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
         </View>
       </View>
 
-      {/* EPISODES BOTTOM SHEET (redesigned to match the reference) */}
+      {/* COMMENTS OVERLAY (covers > 50% of screen; positioned so title/meta remain visible) */}
+      {showComments && (
+        <View style={styles.commentsOverlay}>
+          <Pressable style={styles.commentsBackdrop} onPress={() => setShowComments(false)} />
+
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.commentsCard}>
+              <View style={styles.commentsHeader}>
+                <Text style={styles.commentsTitle}>Comments</Text>
+                <TouchableOpacity onPress={() => setShowComments(false)}>
+                  <Ionicons name="close" size={26} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ marginBottom: 8 }}>
+                {/* movie title + small meta inside comments sheet header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.commentsMovieTitle}>{reel.title}</Text>
+                  <TouchableOpacity onPress={openInfoSheet} style={{ marginLeft: 8 }}>
+                    <Ionicons name="information-circle-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={styles.commentSmallMeta}>{reel.year}</Text>
+                  <View style={[styles.ratingChip, { marginHorizontal: 8 }]}>
+                    <Text style={styles.ratingChipText}>{reel.rating}</Text>
+                  </View>
+                  <Text style={styles.commentSmallMeta}>{reel.duration}</Text>
+                </View>
+              </View>
+
+              {/* comments list */}
+              <FlatList
+                data={comments}
+                keyExtractor={(c) => c.id}
+                style={{ maxHeight: SCREEN_HEIGHT * 0.45 }}
+                renderItem={({ item }) => (
+                  <View style={styles.commentRow}>
+                    <View style={styles.commentAvatar}>
+                      <Text style={styles.commentAvatarText}>{item.user.charAt(0)}</Text>
+                    </View>
+                    <View style={styles.commentBubble}>
+                      <Text style={styles.commentUser}>{item.user}</Text>
+                      <Text style={styles.commentText}>{item.text}</Text>
+                    </View>
+                  </View>
+                )}
+                ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+              />
+
+              {/* input */}
+              <View style={styles.commentInputRow}>
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder="Add a family-friendly comment..."
+                  placeholderTextColor="#999"
+                  value={newComment}
+                  onChangeText={setNewComment}
+                />
+                <TouchableOpacity onPress={addComment} style={styles.sendBtn}>
+                  <Ionicons name="send" size={20} color="#000" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+
+      {/* EPISODES SHEET */}
       <Animated.View
         pointerEvents={showEpisodesSheet ? 'auto' : 'none'}
         style={[
@@ -517,51 +406,56 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
           </TouchableOpacity>
         </View>
 
-        {/* Range chips */}
         <View style={styles.rangeRow}>
-          {EPISODE_RANGES.map((range) => {
-            const isActive = range.id === activeRangeId;
+          {EPISODE_RANGES.map((r) => {
+            const active = r.id === activeRangeId;
             return (
               <TouchableOpacity
-                key={range.id}
-                style={[styles.rangeChip, isActive && styles.rangeChipActive]}
-                onPress={() => setActiveRangeId(range.id)}
+                key={r.id}
+                style={[styles.rangeChip, active && styles.rangeChipActive]}
+                onPress={() => setActiveRangeId(r.id)}
               >
-                <Text style={[styles.rangeChipText, isActive && styles.rangeChipTextActive]}>
-                  {range.label}
+                <Text style={[styles.rangeChipText, active && styles.rangeChipTextActive]}>
+                  {r.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* Episodes grid */}
-        <View style={styles.episodesGrid}>
-          {episodesArray.map(renderEpisodeNumber)}
-        </View>
+        <ScrollView contentContainerStyle={styles.episodesGrid}>
+          {episodesArray.map((ep) => {
+            const unlocked = ep <= TOTAL_EPISODES;
+            const active = ep === 1; // for demo, episode 1 active
+            return (
+              <TouchableOpacity
+                key={ep}
+                disabled={!unlocked}
+                style={[
+                  styles.episodeNumber,
+                  !unlocked && styles.episodeNumberLocked,
+                  active && styles.episodeNumberActive,
+                ]}
+              >
+                <Text style={[
+                  styles.episodeNumberText,
+                  !unlocked && styles.episodeNumberTextLocked,
+                  active && styles.episodeNumberTextActive,
+                ]}>
+                  {ep}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </Animated.View>
 
-      {/* INFO SHEET (Play / Download / Description / Cast / Episodes / More Like This) */}
+      {/* INFO SHEET */}
       {showInfoSheet && (
-        <Animated.View
-          style={[
-            styles.infoSheetContainer,
-            { transform: [{ translateY: infoTranslateY }] },
-          ]}
-        >
-          {/* translucent backdrop tap to close */}
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={closeInfoSheet}
-            style={styles.infoBackdrop}
-          />
-
+        <Animated.View style={[styles.infoSheetContainer, { transform: [{ translateY: infoTranslateY }] }]}>
+          <Pressable style={styles.infoBackdrop} onPress={closeInfoSheet} />
           <View style={styles.infoSheet}>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            >
-              {/* top close */}
+            <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.infoTopBar}>
                 <View style={{ width: 28 }} />
                 <View style={styles.infoHandle} />
@@ -570,33 +464,18 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
                 </TouchableOpacity>
               </View>
 
-              {/* Poster + heart */}
               <View style={styles.infoPosterRow}>
                 <View style={styles.posterWrapper}>
-                  <Image
-                    source={{ uri: 'https://picsum.photos/340/460?random=99' }}
-                    style={styles.posterImage}
-                  />
+                  <Image source={{ uri: 'https://picsum.photos/340/460?random=99' }} style={styles.posterImage} />
                   <TouchableOpacity style={styles.posterPlayOverlay}>
                     <Ionicons name="play" size={40} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.posterHeart}>
-                    <Ionicons name="heart-outline" size={24} color="#fff" />
+                    <Ionicons name="heart-outline" size={22} color="#fff" />
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* Tags */}
-              <View style={styles.tagRow}>
-                <View style={styles.tagChip}>
-                  <Text style={styles.tagText}>Action</Text>
-                </View>
-                <View style={styles.tagChip}>
-                  <Text style={styles.tagText}>Thriller</Text>
-                </View>
-              </View>
-
-              {/* Title + meta */}
               <Text style={styles.infoTitle}>{reel.title}</Text>
               <View style={styles.infoMetaRow}>
                 <Text style={styles.infoMetaText}>{reel.year}</Text>
@@ -606,104 +485,29 @@ const ReelItem: React.FC<{ reel: Reel; navigation?: any }> = ({ reel, navigation
                 <Text style={styles.infoMetaText}>{reel.duration}</Text>
               </View>
 
-              {/* Play / Download big buttons */}
               <TouchableOpacity style={styles.infoPrimaryButton}>
-                <Ionicons name="play" size={20} color="#000" />
+                <Ionicons name="play" size={18} color="#000" />
                 <Text style={styles.infoPrimaryText}>Play</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.infoSecondaryButton}>
-                <Ionicons name="download-outline" size={20} color="#000" />
+                <Ionicons name="download-outline" size={18} color="#000" />
                 <Text style={styles.infoPrimaryText}>Download</Text>
               </TouchableOpacity>
 
-              {/* Description */}
               <Text style={styles.infoDescription}>
-                In Steven Spielberg&apos;s massive blockbuster, paleontologists Alan
-                Grant and Ellie Sattler are among a select group chosen to tour an
-                island theme park populated by dinosaurs created from prehistoric
-                DNA.
+                Quick description goes here. This area explains the show in family-friendly language so parents can decide easily.
               </Text>
-
-              {/* quick actions row */}
-              <View style={styles.infoQuickRow}>
-                <TouchableOpacity style={styles.infoQuickItem}>
-                  <Ionicons name="add" size={22} color="#fff" />
-                  <Text style={styles.infoQuickText}>My list</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.infoQuickItem}>
-                  <Ionicons name="share-social-outline" size={22} color="#fff" />
-                  <Text style={styles.infoQuickText}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.infoQuickItem}>
-                  <Ionicons
-                    name="chatbubble-ellipses-outline"
-                    size={22}
-                    color="#fff"
-                  />
-                  <Text style={styles.infoQuickText}>Comment</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Cast */}
-              <Text style={styles.infoSectionHeading}>Cast</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 16 }}
-              >
-                {MOCK_CAST.map((person) => (
-                  <View key={person.id} style={styles.castItem}>
-                    <Image
-                      source={{ uri: person.image }}
-                      style={styles.castAvatar}
-                    />
-                    <Text style={styles.castName}>{person.name}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-
-              {/* Episodes */}
-              <Text style={styles.infoSectionHeading}>Episodes</Text>
-              {MOCK_EPISODES.map((ep) => (
-                <View key={ep.id} style={styles.infoEpisodeCard}>
-                  <Image
-                    source={{ uri: ep.image }}
-                    style={styles.infoEpisodeImage}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.infoEpisodeTitle}>{ep.title}</Text>
-                    <Text style={styles.infoEpisodeDesc} numberOfLines={2}>
-                      {ep.desc}
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.infoEpisodePlay}>
-                    <Ionicons name="play" size={18} color="#000" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-              {/* More like this */}
-              <Text style={styles.infoSectionHeading}>More Like This…</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {MOCK_MORE_LIKE.map((item) => (
-                  <Image
-                    key={item.id}
-                    source={{ uri: item.image }}
-                    style={styles.moreLikeImage}
-                  />
-                ))}
-              </ScrollView>
             </ScrollView>
           </View>
         </Animated.View>
       )}
     </View>
   );
-};
+}
 
-// ============================================
-// STYLES
-// ============================================
+/* =========================
+   STYLES
+   ========================= */
 const EPISODES_PER_ROW = 6;
 const RANGE_PER_ROW = 4;
 
@@ -732,10 +536,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  circleBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -743,10 +547,10 @@ const styles = StyleSheet.create({
   nextEpisodeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   nextEpisodeText: {
     marginRight: 8,
@@ -755,19 +559,19 @@ const styles = StyleSheet.create({
     color: '#000',
   },
 
-  // reactions – placed to the left of Rate button
+  // reactions - shown left of Rate button
   reactionBar: {
     position: 'absolute',
-    right: 86,
+    right: 84, // left-of-rate placement
     top: SCREEN_HEIGHT * 0.34,
     flexDirection: 'row',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   reactionEmoji: {
-    fontSize: 22,
+    fontSize: 26,
     marginHorizontal: 6,
   },
 
@@ -776,15 +580,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 70,
     top: SCREEN_HEIGHT * 0.54,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
     backgroundColor: 'rgba(0,0,0,0.9)',
   },
   settingsItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   settingsText: {
     marginLeft: 10,
@@ -793,7 +597,66 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // comments overlay
+  // right actions
+  rightActions: {
+    position: 'absolute',
+    right: 12,
+    top: SCREEN_HEIGHT * 0.28,
+    alignItems: 'center',
+  },
+  actionButton: {
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  actionLabel: {
+    marginTop: 6,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // bottom info - pulled up so comments sheet doesn't hide it
+  bottomInfo: {
+    position: 'absolute',
+    left: 16,
+    bottom: 128, // higher than tabbar so visible above comments
+    right: 110,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  movieTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  metaText: {
+    color: '#f1f1f1',
+    fontSize: 12,
+    marginRight: 10,
+  },
+  ratingChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderWidth: 1,
+    borderColor: '#42a5f5',
+    marginRight: 8,
+  },
+  ratingChipText: {
+    color: '#42a5f5',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // COMMENTS overlay
   commentsOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
@@ -803,28 +666,40 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   commentsCard: {
-    backgroundColor: '#111017',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 18,
+    backgroundColor: '#0e0b10',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 18,
-    maxHeight: SCREEN_HEIGHT * 0.65, // covers ~65%
+    maxHeight: SCREEN_HEIGHT * 0.68, // covers > 50% but leaves top area visible
   },
   commentsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   commentsTitle: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '900',
+  },
+  commentsMovieTitle: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '800',
   },
+  commentSmallMeta: {
+    color: '#cfcfd6',
+    fontSize: 12,
+    marginRight: 10,
+  },
+
   commentRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: 10,
+    alignItems: 'flex-start',
   },
   commentAvatar: {
     width: 36,
@@ -840,22 +715,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   commentBubble: {
-    backgroundColor: '#1b1a23',
+    backgroundColor: '#15141a',
     borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flex: 1,
   },
   commentUser: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   commentText: {
-    color: '#e0e0e5',
+    color: '#e2e2e6',
     fontSize: 13,
     marginTop: 4,
   },
+
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -863,110 +739,56 @@ const styles = StyleSheet.create({
   },
   commentInput: {
     flex: 1,
-    backgroundColor: '#1b1a23',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#15141a',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     color: '#fff',
-    marginRight: 8,
     fontSize: 14,
-  },
-
-  // right actions
-  rightActions: {
-    position: 'absolute',
-    right: 12,
-    top: SCREEN_HEIGHT * 0.29, // shifted down a bit
-    alignItems: 'center',
-  },
-  actionButton: {
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  actionLabel: {
-    marginTop: 6,
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // bottom info – higher above tab bar
-  bottomInfo: {
-    position: 'absolute',
-    left: 16,
-    bottom: 150,
-    right: 110,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  movieTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  infoButton: {
-    marginLeft: 6,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  metaText: {
-    color: '#f1f1f1',
-    fontSize: 12,
     marginRight: 10,
   },
-  ratingChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderWidth: 1,
-    borderColor: '#42a5f5',
-    marginRight: 10,
-  },
-  ratingChipText: {
-    color: '#42a5f5',
-    fontSize: 11,
-    fontWeight: '700',
+  sendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFD54A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  // episodes sheet – like reference
+  // episodes sheet
   episodesSheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: SCREEN_HEIGHT * 0.82,
+    height: SCREEN_HEIGHT * 0.78,
     backgroundColor: '#120606',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 12,
   },
   episodesHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   episodesTitle: {
     color: '#fff',
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   episodesMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   ratingChipSmall: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderWidth: 1,
     borderColor: '#42a5f5',
@@ -974,25 +796,22 @@ const styles = StyleSheet.create({
   },
   ratingChipSmallText: {
     color: '#42a5f5',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
 
-  // range chips row (pill style)
   rangeRow: {
     flexDirection: 'row',
-    marginTop: 8,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   rangeChip: {
-    width:
-      (SCREEN_WIDTH - 40 - (RANGE_PER_ROW - 1) * 12) / RANGE_PER_ROW, // 4 per row
+    width: (SCREEN_WIDTH - 40 - (RANGE_PER_ROW - 1) * 10) / RANGE_PER_ROW,
     paddingVertical: 12,
-    borderRadius: 28,
+    borderRadius: 26,
     backgroundColor: '#1b1419',
     borderWidth: 1,
     borderColor: '#2c222a',
-    marginRight: 12,
+    marginRight: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1001,25 +820,23 @@ const styles = StyleSheet.create({
     borderColor: '#FFD54A',
   },
   rangeChipText: {
-    fontSize: 16,
-    color: '#f5f5f5',
+    fontSize: 15,
+    color: '#fff',
     fontWeight: '800',
   },
   rangeChipTextActive: {
     color: '#000',
-    fontWeight: '900',
   },
 
-  // episodes grid as rounded squares
   episodesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    paddingBottom: 40,
   },
   episodeNumber: {
-    width:
-      (SCREEN_WIDTH - 40 - (EPISODES_PER_ROW - 1) * 8) / EPISODES_PER_ROW,
-    paddingVertical: 14,
-    borderRadius: 14,
+    width: (SCREEN_WIDTH - 40 - (EPISODES_PER_ROW - 1) * 8) / EPISODES_PER_ROW,
+    paddingVertical: 12,
+    borderRadius: 12,
     marginRight: 8,
     marginBottom: 12,
     alignItems: 'center',
@@ -1034,7 +851,7 @@ const styles = StyleSheet.create({
   },
   episodeNumberText: {
     fontSize: 14,
-    color: '#f5f5f5',
+    color: '#fff',
     fontWeight: '700',
   },
   episodeNumberTextLocked: {
@@ -1042,10 +859,9 @@ const styles = StyleSheet.create({
   },
   episodeNumberTextActive: {
     color: '#000',
-    fontWeight: '800',
   },
 
-  // INFO SHEET
+  // info sheet
   infoSheetContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
@@ -1059,12 +875,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: SCREEN_HEIGHT * 0.9,
+    maxHeight: SCREEN_HEIGHT * 0.88,
     backgroundColor: '#050509',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 12,
   },
   infoTopBar: {
     flexDirection: 'row',
@@ -1084,9 +900,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   posterWrapper: {
-    width: SCREEN_WIDTH * 0.62,
+    width: SCREEN_WIDTH * 0.6,
     aspectRatio: 2 / 3,
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   posterImage: {
@@ -1101,50 +917,29 @@ const styles = StyleSheet.create({
   },
   posterHeart: {
     position: 'absolute',
-    right: 10,
-    top: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    right: 8,
+    top: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tagRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  tagChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    marginHorizontal: 4,
-  },
-  tagText: {
-    color: '#f5f5f5',
-    fontSize: 12,
-  },
+
   infoTitle: {
     fontSize: 20,
     fontWeight: '900',
     color: '#fff',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   infoMetaRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
     marginBottom: 12,
-  },
-  infoMetaText: {
-    color: '#d7d7dd',
-    fontSize: 12,
-    marginHorizontal: 6,
   },
   infoPrimaryButton: {
     flexDirection: 'row',
@@ -1170,86 +965,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#000',
   },
-  infoDescription: {
-    color: '#f0f0f3',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  infoQuickRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 18,
-  },
-  infoQuickItem: {
-    alignItems: 'center',
-  },
-  infoQuickText: {
-    marginTop: 4,
-    color: '#e5e5ea',
-    fontSize: 12,
-  },
 
-  infoSectionHeading: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 10,
-  },
-
-  castItem: {
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  castAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 6,
-  },
-  castName: {
-    color: '#f5f5f7',
-    fontSize: 11,
-  },
-
-  infoEpisodeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#15151d',
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 10,
-  },
-  infoEpisodeImage: {
-    width: 90,
-    height: 54,
-    borderRadius: 10,
-    marginRight: 10,
-  },
-  infoEpisodeTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  infoEpisodeDesc: {
-    color: '#c7c7cf',
-    fontSize: 11,
-  },
-  infoEpisodePlay: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFD54A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-
-  moreLikeImage: {
-    width: 90,
-    height: 130,
-    borderRadius: 10,
-    marginRight: 10,
-  },
+  // small util
+  commentSmall: { color: '#cfcfd6' },
 });
