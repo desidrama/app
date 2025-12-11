@@ -1,10 +1,11 @@
 // ============================================
 // FILE: src/navigation/AppNavigator.tsx
 // ============================================
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
+import { CommonActions } from '@react-navigation/native';
 
 import { RootState } from '../redux/store';
 import { setAuthChecked, restoreAuth, logout } from '../redux/slices/authSlice';
@@ -27,6 +28,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function AppNavigator() {
   const dispatch = useDispatch();
   const { isAuthenticated, authChecked } = useSelector((state: RootState) => state.auth);
+  const navigationRef = useRef<any>(null);
+  const prevAuthState = useRef<boolean | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -63,6 +66,50 @@ export default function AppNavigator() {
     checkAuth();
   }, [dispatch]);
 
+  // Handle navigation when authentication state changes
+  useEffect(() => {
+    // Skip on initial mount or if auth hasn't been checked yet
+    if (!authChecked) {
+      if (prevAuthState.current === null) {
+        prevAuthState.current = isAuthenticated;
+      }
+      return;
+    }
+
+    // If user logged out (was authenticated, now not)
+    if (prevAuthState.current === true && isAuthenticated === false) {
+      // Reset navigation to Login screen after React re-renders
+      // The navigation structure changes based on isAuthenticated, so we need to wait
+      // for the re-render to complete before resetting
+      const timeoutId = setTimeout(() => {
+        if (navigationRef.current?.isReady()) {
+          try {
+            const state = navigationRef.current.getState();
+            const currentRoute = state?.routes[state?.index || 0]?.name;
+            
+            // Only reset if we're not already on an auth screen
+            if (currentRoute && currentRoute !== 'Login' && currentRoute !== 'Splash' && currentRoute !== 'OTPScreen') {
+              navigationRef.current.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                })
+              );
+            }
+          } catch (error) {
+            // Navigation reset failed, but that's OK - React will handle the screen change
+            // The conditional rendering will show Login screen automatically
+          }
+        }
+      }, 300);
+
+      return () => clearTimeout(timeoutId);
+    }
+
+    // Update previous auth state
+    prevAuthState.current = isAuthenticated;
+  }, [isAuthenticated, authChecked]);
+
   // Until we know auth state, show splash full-screen
   if (!authChecked) {
     return (
@@ -75,7 +122,7 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <>

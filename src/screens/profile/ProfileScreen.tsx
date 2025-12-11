@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,39 +10,132 @@ import {
   Alert,
   Switch,
   Dimensions,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
-import { logout as logoutAPI } from '../../services/api';
+import { logout as logoutAPI, getUserProfile } from '../../services/api';
 import { RootState } from '../../redux/store';
 import { logout } from '../../redux/slices/authSlice';
 import { setUser } from '../../redux/slices/userSlice';
-import ProfilePhotoUpload from '../../components/ProfilePhotoUpload';
+import { getToken } from '../../utils/storage';
+import { COLORS, TAB_COLORS } from '../../utils/constants';
 
 const { width } = Dimensions.get('window');
 
 const PROFILE_COLORS = {
-  background: '#000000',
-  cardBg: '#FFF8E7',
-  cardText: '#000000',
+  background: '#050509', // Match app theme
+  cardBg: '#15151C', // Dark card background
+  cardBgSecondary: '#221107', // Secondary card background
+  cardText: '#FFFFFF',
   textPrimary: '#FFFFFF',
-  textSecondary: '#B0B0B0',
-  textTertiary: '#888888',
-  accentOrange: '#FF6B35',
-  accentRed: '#FF3B30',
-  accentBlue: '#2196F3',
+  textSecondary: '#9CA3AF', // Match app theme
+  textTertiary: '#666666',
+  accentGold: '#FFD54A', // Match app gold theme
+  accentGoldDark: '#FFD700',
+  accentRed: '#EF4444', // Match app danger color
+  border: '#1F2933', // Match app border color
+};
+
+// Generate a random username
+const generateRandomUsername = (): string => {
+  const adjectives = ['Cool', 'Swift', 'Bright', 'Bold', 'Smart', 'Fast', 'Brave', 'Wise', 'Sharp', 'Elite'];
+  const nouns = ['Tiger', 'Eagle', 'Wolf', 'Lion', 'Falcon', 'Panther', 'Hawk', 'Dragon', 'Phoenix', 'Viper'];
+  const numbers = Math.floor(Math.random() * 9999) + 1;
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  return `${adjective}${noun}${numbers}`;
 };
 
 export default function ProfileScreen({ navigation }: any) {
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.user.profile);
-  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [autoPlay, setAutoPlay] = useState(true);
   const [notifications, setNotifications] = useState(true);
+  const [randomUsername, setRandomUsername] = useState<string>(generateRandomUsername());
+  const [phoneNumber, setPhoneNumber] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [usernameModalVisible, setUsernameModalVisible] = useState(false);
+  const [editingUsername, setEditingUsername] = useState<string>('');
+
+  // Predefined list of avatars
+  const AVATAR_LIST = [
+    '🔵', // Blue circle - default
+    '👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓',
+    '👨‍⚕️', '👩‍⚕️', '👨‍🔬', '👩‍🔬', '👨‍🎨', '👩‍🎨', '👨‍🚀', '👩‍🚀',
+    '🦸', '🦸‍♀️', '🧙', '🧙‍♀️', '🧚', '🧚‍♀️', '🧛', '🧛‍♀️',
+    '🎭', '🤖', '👽', '👾', '🤡', '😎', '🥷', '🕵️',
+  ];
+
+  // Initialize with blue emoji as default
+  const [selectedAvatar, setSelectedAvatar] = useState<string>('🔵');
+
+  const handleAvatarPress = () => {
+    setAvatarModalVisible(true);
+  };
+
+  const handleUsernamePress = () => {
+    setEditingUsername(randomUsername);
+    setUsernameModalVisible(true);
+  };
+
+  const handleSaveUsername = () => {
+    if (editingUsername.trim().length > 0) {
+      setRandomUsername(editingUsername.trim());
+      setUsernameModalVisible(false);
+    } else {
+      Alert.alert('Invalid Username', 'Username cannot be empty');
+    }
+  };
+
+  const handleSelectAvatar = (avatar: string) => {
+    setSelectedAvatar(avatar);
+    setAvatarModalVisible(false);
+  };
+
+  // Fetch user phone number from database
+  useEffect(() => {
+    const fetchUserPhone = async () => {
+      // Check if user is authenticated and token exists before making API call
+      const token = await getToken();
+      
+      if (!isAuthenticated || !token) {
+        console.log('User not authenticated or token not available, using Redux store data');
+        setPhoneNumber(user?.phone || '');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const response = await getUserProfile();
+        if (response.success && response.data) {
+          setPhoneNumber(response.data.phone || '');
+          // Update Redux store with latest user data
+          dispatch(setUser(response.data));
+        }
+      } catch (error: any) {
+        console.error('Error fetching user profile:', error);
+        // Fallback to Redux store phone if API fails
+        setPhoneNumber(user?.phone || '');
+        
+        // If it's a 401 error, the user might need to login again
+        if (error.response?.status === 401) {
+          console.warn('Authentication failed, user may need to login again');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserPhone();
+  }, [isAuthenticated, user?.phone]);
 
   const profileData = {
-    name: user?.name || 'User name',
-    phone: user?.phone || '',
+    name: randomUsername,
+    phone: phoneNumber || user?.phone || '',
     avatar: user?.avatar || 'https://via.placeholder.com/150',
   };
 
@@ -59,13 +152,11 @@ export default function ProfileScreen({ navigation }: any) {
             try {
               // Call logout API to clear server-side session
               await logoutAPI();
-              
-              // Clear Redux state
-              dispatch(logout());
-              dispatch(setUser(null));
             } catch (error) {
-              console.error('Logout error:', error);
-              // Even if API fails, clear local state
+              console.error('Logout API error:', error);
+              // Continue with logout even if API fails
+            } finally {
+              // Clear Redux state - AppNavigator will handle navigation to Login screen
               dispatch(logout());
               dispatch(setUser(null));
             }
@@ -82,7 +173,7 @@ export default function ProfileScreen({ navigation }: any) {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ width: 40 }} />
-        <Text style={styles.headerTitle}>User name</Text>
+        <Text style={styles.headerTitle}>Profile</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -93,50 +184,74 @@ export default function ProfileScreen({ navigation }: any) {
       >
         {/* Avatar Section */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatarTouchable}>
-            {user?.avatar ? (
-              <Image
-                source={{ uri: user.avatar }}
-                style={styles.avatarImage}
-              />
-            ) : (
-              <Ionicons 
-                name="person-circle" 
-                size={120} 
-                color={PROFILE_COLORS.textPrimary} 
-              />
-            )}
-          </View>
+          <TouchableOpacity 
+            style={styles.avatarContainer}
+            onPress={handleAvatarPress}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.avatarEmoji}>{selectedAvatar}</Text>
+            <View style={styles.avatarEditIndicator}>
+              <Ionicons name="camera" size={16} color={PROFILE_COLORS.textPrimary} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={handleUsernamePress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.usernameContainer}>
+              <Text style={styles.usernameText}>{randomUsername}</Text>
+              <Ionicons name="create-outline" size={18} color={PROFILE_COLORS.accentGold} style={styles.editIcon} />
+            </View>
+          </TouchableOpacity>
         </View>
         
         {/* Settings Card */}
         <View style={styles.settingsCard}>
           {/* Phone Number Row */}
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Phone Number</Text>
-            <Text style={styles.settingValue}>{profileData.phone || 'N/A'}</Text>
+            <View style={styles.settingLeft}>
+              <Ionicons name="call-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
+              <Text style={styles.settingLabel}>Phone Number</Text>
+            </View>
+            {loading ? (
+              <Text style={styles.settingValue}>Loading...</Text>
+            ) : (
+              <Text style={styles.settingValue}>{profileData.phone || 'N/A'}</Text>
+            )}
           </View>
+
+          <View style={styles.divider} />
 
           {/* AutoPlay Toggle */}
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>AutoPlay</Text>
+            <View style={styles.settingLeft}>
+              <Ionicons name="play-circle-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
+              <Text style={styles.settingLabel}>AutoPlay</Text>
+            </View>
             <Switch
               value={autoPlay}
               onValueChange={setAutoPlay}
-              trackColor={{ false: '#767577', true: '#FFD700' }}
-              thumbColor={autoPlay ? '#FFD700' : '#f4f3f4'}
+              trackColor={{ false: '#333333', true: PROFILE_COLORS.accentGold }}
+              thumbColor={autoPlay ? '#FFFFFF' : '#f4f3f4'}
+              ios_backgroundColor="#333333"
               style={styles.toggle}
             />
           </View>
 
+          <View style={styles.divider} />
+
           {/* Notifications Toggle */}
           <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Notifications</Text>
+            <View style={styles.settingLeft}>
+              <Ionicons name="notifications-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
+              <Text style={styles.settingLabel}>Notifications</Text>
+            </View>
             <Switch
               value={notifications}
               onValueChange={setNotifications}
-              trackColor={{ false: '#767577', true: '#FFD700' }}
-              thumbColor={notifications ? '#FFD700' : '#f4f3f4'}
+              trackColor={{ false: '#333333', true: PROFILE_COLORS.accentGold }}
+              thumbColor={notifications ? '#FFFFFF' : '#f4f3f4'}
+              ios_backgroundColor="#333333"
               style={styles.toggle}
             />
           </View>
@@ -155,6 +270,7 @@ export default function ProfileScreen({ navigation }: any) {
             onPress={() => {}}
           />
         </View>
+
         {/* Logout */}
         <View style={styles.logoutSection}>
           <TouchableOpacity
@@ -170,12 +286,90 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Photo Upload Modal */}
-      <ProfilePhotoUpload
-        visible={photoModalVisible}
-        onClose={() => setPhotoModalVisible(false)}
-        currentPhotoUri={profileData.avatar}
-      />
+      {/* Avatar Selection Modal */}
+      <Modal
+        visible={avatarModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setAvatarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choose Your Avatar</Text>
+              <TouchableOpacity
+                onPress={() => setAvatarModalVisible(false)}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={24} color={PROFILE_COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView 
+              contentContainerStyle={styles.avatarGrid}
+              showsVerticalScrollIndicator={false}
+            >
+              {AVATAR_LIST.map((avatar, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.avatarGridOption,
+                    selectedAvatar === avatar && styles.avatarGridOptionSelected
+                  ]}
+                  onPress={() => handleSelectAvatar(avatar)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.avatarGridEmoji}>{avatar}</Text>
+                  {selectedAvatar === avatar && (
+                    <View style={styles.selectedCheckmark}>
+                      <Ionicons name="checkmark-circle" size={24} color={PROFILE_COLORS.accentGold} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Username Edit Modal */}
+      <Modal
+        visible={usernameModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setUsernameModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Username</Text>
+              <TouchableOpacity
+                onPress={() => setUsernameModalVisible(false)}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={24} color={PROFILE_COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.usernameInputContainer}>
+              <TextInput
+                style={styles.usernameInput}
+                value={editingUsername}
+                onChangeText={setEditingUsername}
+                placeholder="Enter username"
+                placeholderTextColor={PROFILE_COLORS.textSecondary}
+                maxLength={30}
+                autoFocus={true}
+              />
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveUsername}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -183,7 +377,7 @@ export default function ProfileScreen({ navigation }: any) {
 const MenuItem = ({ icon, title, onPress }: any) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
     <View style={styles.menuItemLeft}>
-      <Ionicons name={icon} size={20} color={PROFILE_COLORS.textPrimary} />
+      <Ionicons name={icon} size={20} color={PROFILE_COLORS.accentGold} />
       <Text style={styles.menuItemText}>{title}</Text>
     </View>
     <Ionicons name="chevron-forward" size={20} color={PROFILE_COLORS.textSecondary} />
@@ -205,9 +399,10 @@ const styles = StyleSheet.create({
     backgroundColor: PROFILE_COLORS.background,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: PROFILE_COLORS.textPrimary,
+    letterSpacing: 0.5,
   },
   scrollView: {
     flex: 1,
@@ -217,69 +412,186 @@ const styles = StyleSheet.create({
   },
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 20,
-  },
-  avatarTouchable: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+    paddingVertical: 30,
   },
   avatarContainer: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: PROFILE_COLORS.cardBg,
+    borderWidth: 3,
+    borderColor: PROFILE_COLORS.accentGold,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  avatarEmoji: {
+    fontSize: 70,
+  },
+  avatarEditIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: PROFILE_COLORS.accentGold,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: PROFILE_COLORS.background,
+  },
+  usernameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  usernameText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: PROFILE_COLORS.textPrimary,
+    marginRight: 8,
+  },
+  editIcon: {
+    marginLeft: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: PROFILE_COLORS.cardBg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: 40,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: PROFILE_COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: PROFILE_COLORS.textPrimary,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: PROFILE_COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatar: {
-    width: '100%',
-    height: '100%',
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    padding: 20,
+    gap: 12,
+  },
+  avatarGridOption: {
+    width: (width - 80) / 4,
+    height: (width - 80) / 4,
+    borderRadius: (width - 80) / 8,
+    backgroundColor: PROFILE_COLORS.background,
+    borderWidth: 2,
+    borderColor: PROFILE_COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  avatarGridOptionSelected: {
+    borderColor: PROFILE_COLORS.accentGold,
+    borderWidth: 3,
+    backgroundColor: PROFILE_COLORS.cardBgSecondary,
+  },
+  avatarGridEmoji: {
+    fontSize: 40,
+  },
+  selectedCheckmark: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: PROFILE_COLORS.background,
+    borderRadius: 12,
+  },
+  usernameInputContainer: {
+    padding: 20,
+  },
+  usernameInput: {
+    backgroundColor: PROFILE_COLORS.background,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: PROFILE_COLORS.textPrimary,
+    borderWidth: 1,
+    borderColor: PROFILE_COLORS.border,
+    marginBottom: 16,
+  },
+  saveButton: {
+    backgroundColor: PROFILE_COLORS.accentGold,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: PROFILE_COLORS.background,
+    fontSize: 16,
+    fontWeight: '700',
   },
   settingsCard: {
     backgroundColor: PROFILE_COLORS.cardBg,
     marginHorizontal: 16,
-    borderRadius: 20,
-    paddingVertical: 0,
+    borderRadius: 16,
+    paddingVertical: 8,
     marginBottom: 24,
     overflow: 'hidden',
-    shadowColor: 'rgba(0, 0, 0, 0.1)',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: PROFILE_COLORS.border,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+    paddingVertical: 16,
+  },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingIcon: {
+    marginRight: 12,
   },
   settingLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: PROFILE_COLORS.cardText,
+    color: PROFILE_COLORS.textPrimary,
     flex: 1,
   },
   settingValue: {
-    fontSize: 14,
-    color: PROFILE_COLORS.textTertiary,
-    marginRight: 12,
+    fontSize: 15,
+    color: PROFILE_COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: PROFILE_COLORS.border,
+    marginHorizontal: 16,
   },
   toggle: {
-    transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
+    transform: [{ scaleX: 1.0 }, { scaleY: 1.0 }],
   },
   menuSection: {
     paddingHorizontal: 16,
@@ -290,10 +602,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: PROFILE_COLORS.cardBg,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: PROFILE_COLORS.border,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -314,11 +628,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
+    backgroundColor: PROFILE_COLORS.cardBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: PROFILE_COLORS.accentRed + '40',
   },
   logoutText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: PROFILE_COLORS.accentRed,
   },

@@ -198,16 +198,39 @@ export const verifyOTP = async (phone: string, otp: string) => {
 };
 
 /**
+ * Get user profile from database
+ */
+export const getUserProfile = async () => {
+  try {
+    const response = await api.get('/api/user/profile');
+    return response.data;
+  } catch (error: any) {
+    console.error('Get User Profile Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
  * Logout function - clears all stored tokens and cookies
+ * Note: Logout always succeeds locally even if API call fails
  */
 export const logout = async () => {
   try {
-    // Call logout endpoint if it exists
+    // Try to call logout endpoint (may fail if token is expired/invalid, which is OK)
     await api.post('/api/auth/logout');
-  } catch (error) {
-    console.error('Logout API error:', error);
+  } catch (error: any) {
+    // Silently ignore errors - logout should always succeed locally
+    // Token might be expired/invalid, which is fine for logout
+    if (error.response?.status !== 401) {
+      // Only log non-401 errors (401 is expected if token is expired)
+      console.warn('Logout API warning:', error.message);
+    }
   } finally {
-    // Clear all stored data
+    // Always clear all stored data regardless of API response
     await clearAll();
   }
 };
