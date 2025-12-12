@@ -203,9 +203,14 @@ export const sendOTP = async (phone: string) => {
 };
 
 // Verify OTP function
-export const verifyOTP = async (phone: string, otp: string) => {
+export const verifyOTP = async (phone: string, otp: string, fcmToken?: string) => {
   try {
-    const response = await api.post('/api/auth/verify-otp', { phone, otp });
+    // Send FCM token when available so backend can store it for push notifications
+    const response = await api.post('/api/auth/verify-otp', {
+      phone,
+      otp,
+      ...(fcmToken ? { fcmToken } : {}),
+    });
     return response.data;
   } catch (error) {
     throw error;
@@ -272,6 +277,23 @@ export const claimDailyCheckIn = async () => {
     return response.data;
   } catch (error: any) {
     console.error('Claim Daily Check-In Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Persist FCM token for authenticated user
+ */
+export const updateFcmToken = async (fcmToken: string) => {
+  try {
+    const response = await api.post('/api/user/fcm-token', { fcmToken });
+    return response.data;
+  } catch (error: any) {
+    console.error('Update FCM Token Error:', {
       message: error.message,
       response: error.response?.data,
       status: error.response?.status,
