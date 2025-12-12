@@ -38,4 +38,15 @@ export const videoService = {
     const response = await api.post(`/api/content/videos/${videoId}/like`);
     return response.data;
   },
+
+  async getLatestVideos(limit: number = 10, type?: 'reel' | 'episode') {
+    const typeParam = type ? `&type=${type}` : '';
+    const response = await api.get(`/api/content/latest?limit=${limit}${typeParam}`);
+    return response.data;
+  },
+
+  async getTrendingVideos(limit: number = 10) {
+    const response = await api.get(`/api/content/trending?limit=${limit}`);
+    return response.data;
+  },
 };

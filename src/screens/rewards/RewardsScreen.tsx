@@ -1,5 +1,5 @@
 // FILE: src/screens/rewards/CoinsScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
@@ -19,6 +20,8 @@ import { getUserProfile, getCoinHistory, claimDailyCheckIn } from '../../service
 import { getToken } from '../../utils/storage';
 import { CoinTransaction } from '../../types';
 import { Alert } from 'react-native';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 
 type DailyReward = {
   day: number;
@@ -97,7 +100,7 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
   const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
 
   // Fetch user profile to get latest coins
-  const fetchUserCoins = async () => {
+  const fetchUserCoins = useCallback(async () => {
     const token = await getToken();
     
     if (!isAuthenticated || !token) {
@@ -134,10 +137,10 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dispatch, isAuthenticated]);
 
   // Fetch coin transaction history
-  const fetchCoinHistory = async () => {
+  const fetchCoinHistory = useCallback(async () => {
     const token = await getToken();
     
     if (!isAuthenticated || !token) {
@@ -155,14 +158,14 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
     } finally {
       setLoadingHistory(false);
     }
-  };
+  }, [isAuthenticated]);
 
   // Load coins and history when screen is focused
   useFocusEffect(
     React.useCallback(() => {
       fetchUserCoins();
       fetchCoinHistory();
-    }, [isAuthenticated])
+    }, [fetchCoinHistory, fetchUserCoins, isAuthenticated])
   );
 
   // Also refresh when user profile changes (e.g., coins deducted)
@@ -177,7 +180,19 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
   useEffect(() => {
     fetchUserCoins();
     fetchCoinHistory();
-  }, [isAuthenticated]);
+  }, [fetchCoinHistory, fetchUserCoins, isAuthenticated]);
+
+  const refreshData = useCallback(async () => {
+    await Promise.all([fetchUserCoins(), fetchCoinHistory()]);
+  }, [fetchCoinHistory, fetchUserCoins]);
+
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll: handlePullScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(refreshData, { completionDelayMs: 800 });
 
   const handleClaim = async () => {
     if (hasClaimedToday) {
@@ -340,10 +355,32 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Pull-to-Refresh Indicator */}
+        {(pullDistance > 0 || refreshing) && (
+          <PullToRefreshIndicator
+            pullDistance={pullDistance}
+            threshold={threshold}
+            refreshing={refreshing}
+            color="#F5B800"
+            topOffset={topOffset + 60}
+          />
+        )}
+
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: TAB_BAR_SAFE_PADDING }]}
           showsVerticalScrollIndicator={false}
+          onScroll={handlePullScroll}
+          scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#090407"
+              colors={['#090407']}
+              progressViewOffset={-1000}
+            />
+          }
         >
           {/* Daily Rewards */}
           <Text style={styles.sectionTitle}>Daily Rewards</Text>

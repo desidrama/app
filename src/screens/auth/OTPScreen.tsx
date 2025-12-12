@@ -16,9 +16,11 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useDispatch } from 'react-redux';
-import { verifyOTP, sendOTP } from '../../services/api';
+import { verifyOTP, sendOTP, updateFcmToken } from '../../services/api';
 import { setToken } from '../../redux/slices/authSlice';
 import * as storage from '../../utils/storage';
+import { getFcmToken } from '../../utils/fcm';
+import { collectClientMetadata } from '../../utils/metadata';
 
 
 const logoImage = require('../../../assets/App Logo.png');
@@ -159,6 +161,9 @@ const OTPScreen: React.FC = () => {
     try {
       setLoading(true);
 
+      // Clear any cached auth/session data before a new login to avoid stale state
+      await storage.clearAll();
+
       // Get FCM token (best effort)
       let fcmToken: string | undefined;
       try {
@@ -166,9 +171,12 @@ const OTPScreen: React.FC = () => {
       } catch (tokenErr) {
         console.warn('⚠️ Could not fetch FCM token', tokenErr);
       }
+      console.log('FCM token before verify:', fcmToken);
       
 
-      const response = await verifyOTP(phone, otp);
+      const metadata = await collectClientMetadata();
+
+      const response = await verifyOTP(phone, otp, fcmToken, metadata);
 
       console.log('✅ Verify OTP Response:', response);
 
@@ -198,6 +206,15 @@ const OTPScreen: React.FC = () => {
       }
       if (user) {
         await storage.setUser(JSON.stringify(user));
+      }
+
+      // Ensure FCM token is stored on the backend after login (best effort)
+      if (fcmToken) {
+        try {
+          await updateFcmToken(fcmToken);
+        } catch (updateErr) {
+          console.warn('⚠️ Could not update FCM token after login', updateErr);
+        }
       }
 
 

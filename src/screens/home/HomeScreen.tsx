@@ -1,5 +1,5 @@
 // FILE: src/screens/home/HomeScreen.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Dimensions,
   SafeAreaView,
   Platform,
+<<<<<<< HEAD
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -23,6 +24,16 @@ import VideoCard from '../../components/VideoCard';
 import { carouselService, CarouselItem } from '../../services/carousel.service';
 import { API_BASE_URL } from '../../utils/api';
 import { videoService } from '../../services/video.service';
+=======
+  RefreshControl,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import VideoCard from '../../components/VideoCard';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { videoService } from '../../services/video.service';
+import { Video as VideoType } from '../../types';
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -37,14 +48,72 @@ type CarouselBannerItem = {
 export default function HomeScreen({ navigation }: any) {
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('New & Hot');
+<<<<<<< HEAD
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselItems, setCarouselItems] = useState<CarouselBannerItem[]>([]);
   const [carouselLoading, setCarouselLoading] = useState(true);
   const [carouselError, setCarouselError] = useState<string | null>(null);
   const [carouselRawData, setCarouselRawData] = useState<CarouselItem[]>([]); // Store full carousel data
+=======
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroData, setHeroData] = useState<HeroItem[]>(HERO_DATA);
+  const [latestTrendingData, setLatestTrendingData] = useState([
+    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
+    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
+    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
+  ]);
+
+  const refreshHomeContent = useCallback(async () => {
+    try {
+      // Fetch trending videos for hero carousel
+      const trendingResponse = await videoService.getTrendingVideos(5);
+      if (trendingResponse.success && trendingResponse.data) {
+        const transformedHero: HeroItem[] = trendingResponse.data.slice(0, 3).map((video: VideoType, index: number) => ({
+          id: video._id,
+          title: video.title || 'Untitled',
+          subtitle: `${video.type === 'episode' ? 'Episode' : 'Reel'} · ${Math.floor((video.duration || 0) / 60)} min`,
+          tag: index === 0 ? 'New & Hot' : index === 1 ? 'Trending' : 'Original',
+          imageUrl: video.thumbnailUrl || video.thumbnail || `https://picsum.photos/800/1200?random=${21 + index}`,
+        }));
+        if (transformedHero.length > 0) {
+          setHeroData(transformedHero);
+        }
+      }
+
+      // Fetch latest videos for "Latest & Trending" section
+      const latestResponse = await videoService.getLatestVideos(10, 'episode');
+      if (latestResponse.success && latestResponse.data) {
+        const transformedLatest = latestResponse.data.map((video: VideoType) => ({
+          title: video.title || 'Untitled',
+          imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/110/160?random=4',
+        }));
+        if (transformedLatest.length > 0) {
+          setLatestTrendingData(transformedLatest);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing home content:', error);
+      // Keep existing data on error
+    }
+  }, []);
+
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll: handlePullScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(refreshHomeContent, { completionDelayMs: 600 });
+
+  // Load initial data on mount
+  useEffect(() => {
+    refreshHomeContent();
+  }, [refreshHomeContent]);
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
 
   const carouselRef = useRef<FlatList<CarouselBannerItem>>(null);
 
+<<<<<<< HEAD
   // Fetch carousel data from API
   useEffect(() => {
     const fetchCarousel = async () => {
@@ -98,6 +167,14 @@ export default function HomeScreen({ navigation }: any) {
 
     fetchCarousel();
   }, []);
+=======
+  const extendedHeroData = useMemo(() => {
+    if (heroData.length <= 1) return heroData;
+    const first = heroData[0];
+    const last = heroData[heroData.length - 1];
+    return [last, ...heroData, first];
+  }, [heroData]);
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
 
   const continueWatchingData = [
     { title: 'Jurassic Park', imageUrl: 'https://picsum.photos/110/160?random=1' },
@@ -105,14 +182,12 @@ export default function HomeScreen({ navigation }: any) {
     { title: 'John Wick', imageUrl: 'https://picsum.photos/110/160?random=3' },
   ];
 
-  const latestTrendingData = [
-    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
-    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
-    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
-  ];
-
   useEffect(() => {
+<<<<<<< HEAD
     const n = carouselItems.length;
+=======
+    const n = heroData.length;
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
     if (n <= 1) return;
 
     const interval = setInterval(() => {
@@ -122,13 +197,37 @@ export default function HomeScreen({ navigation }: any) {
     }, 4000);
 
     return () => clearInterval(interval);
+<<<<<<< HEAD
   }, [carouselIndex, carouselItems.length]);
+=======
+  }, [heroIndex, heroData.length]);
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
 
   const onCarouselScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
+<<<<<<< HEAD
     const bannerWidth = SCREEN_WIDTH - 32; // Account for padding
     const viewIndex = Math.round(x / bannerWidth);
     setCarouselIndex(viewIndex);
+=======
+    const viewIndex = Math.round(x / SCREEN_WIDTH);
+    const n = heroData.length;
+
+    if (n <= 1) {
+      setHeroIndex(0);
+      return;
+    }
+
+    if (viewIndex === 0) {
+      heroRef.current?.scrollToIndex({ index: n, animated: false });
+      setHeroIndex(n - 1);
+    } else if (viewIndex === n + 1) {
+      heroRef.current?.scrollToIndex({ index: 1, animated: false });
+      setHeroIndex(0);
+    } else {
+      setHeroIndex(viewIndex - 1);
+    }
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
   };
 
   const getCarouselItemLayout = (_: CarouselBannerItem[] | null | undefined, index: number) => {
@@ -231,11 +330,35 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </View>
 
+          {/* Pull-to-Refresh Indicator */}
+          {(pullDistance > 0 || refreshing) && (
+            <PullToRefreshIndicator
+              pullDistance={pullDistance}
+              threshold={threshold}
+              refreshing={refreshing}
+              topOffset={
+                Platform.OS === 'android' 
+                  ? (StatusBar.currentHeight || 0) + 16 + 14 + 40 + 12 + 8
+                  : 16 + 14 + 40 + 12 + 8
+              }
+            />
+          )}
+
           {/* Content */}
           <ScrollView
             style={styles.content}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
+            onScroll={handlePullScroll}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#050509"
+                colors={['#050509']}
+                progressViewOffset={-1000}
+              />
+            }
           >
             {/* Category Tabs */}
             <ScrollView
@@ -314,6 +437,7 @@ export default function HomeScreen({ navigation }: any) {
                     )}
                   />
 
+<<<<<<< HEAD
                   {/* Dots Indicator */}
                   {carouselItems.length > 1 && (
                     <View style={styles.carouselDotsRow}>
@@ -330,6 +454,37 @@ export default function HomeScreen({ navigation }: any) {
                   )}
                 </>
               )}
+=======
+                        <View style={styles.heroButtonsRow}>
+                          <TouchableOpacity style={styles.heroPrimaryButton}>
+                            <Ionicons name="play" size={18} color="#000" />
+                            <Text style={styles.heroPrimaryText}>Play</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity style={styles.heroSecondaryButton}>
+                            <Ionicons name="add" size={18} color="#fff" />
+                            <Text style={styles.heroSecondaryText}>Watchlist</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </ImageBackground>
+                  </View>
+                )}
+              />
+
+              {/* Dots */}
+              <View style={styles.heroDotsRow}>
+                {heroData.map((item, index) => {
+                  const isActive = index === heroIndex;
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.heroDot, isActive && styles.heroDotActive]}
+                    />
+                  );
+                })}
+              </View>
+>>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
             </View>
 
             {/* Continue Watching */}
@@ -587,7 +742,7 @@ const styles = StyleSheet.create({
   },
 
   bottomPadding: {
-    height: 140, // ensures content rises above bottom nav / home bar on modern devices
+    height: 100, // ensures content rises above fixed bottom nav bar
   },
 
   // CAROUSEL LOADING/ERROR STATES
