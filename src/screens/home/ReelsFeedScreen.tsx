@@ -24,9 +24,10 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useDispatch } from 'react-redux';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
 import { getUserProfile } from '../../services/api';
@@ -52,6 +53,7 @@ type Reel = {
   year: string;
   rating: string;
   duration: string;
+  durationSeconds?: number;
   videoUrl: string;
   initialLikes: number;
   description?: string;
@@ -108,139 +110,304 @@ const SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0] as const;
 const QUALITY_OPTIONS = ['Auto', '480p', '720p', '1080p'] as const;
 type Quality = (typeof QUALITY_OPTIONS)[number];
 
+const PROGRESS_SAVE_INTERVAL_SECONDS = 2; // Save every 2 seconds for smoother tracking
+const MIN_RESUME_SECONDS = 3;
+const PERIODIC_SAVE_INTERVAL_MS = 3000; // Save every 3 seconds regardless of status updates
+
 type Comment = {
   id: string;
   user: string;
   text: string;
 };
 
-const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
+const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
+  const route = useRoute<any>();
+  const tabNavigation = useNavigation<any>();
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [hasPrevious, setHasPrevious] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1, will be set when reels load or target is found
+  const [currentResumeTime, setCurrentResumeTime] = useState<number | undefined>(undefined); // Track resume time for current reel
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef(0);
   const previousReelsCountRef = useRef(0);
-  const initialVideoIdRef = useRef<string | null>(null);
-
-  const initialVideoId = route?.params?.initialVideoId;
-  const initialSeasonId = route?.params?.initialSeasonId;
-
-  const transformVideoToReel = useCallback((video: VideoType): Reel => {
-    let videoUrl = video.masterPlaylistUrl || '';
-    if (!videoUrl && video.variants && video.variants.length > 0) {
-      const preferredOrder = ['720p', '1080p', '480p', '360p'];
-      for (const res of preferredOrder) {
-        const variant = video.variants.find(v => v.resolution === res);
-        if (variant) {
-          videoUrl = variant.url;
-          break;
-        }
-      }
-      if (!videoUrl) {
-        videoUrl = video.variants[0].url;
-      }
-    }
-
-    const formatDuration = (seconds: number) => {
-      if (!seconds) return '0m';
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-      }
-      return `${minutes}m`;
-    };
-
-    return {
-      id: video._id,
-      title: video.title || 'Untitled',
-      year: new Date(video.createdAt).getFullYear().toString(),
-      rating: video.ageRating || 'UA 16+',
-      duration: formatDuration(video.duration || 0),
-      videoUrl,
-      initialLikes: video.likes || 0,
-      description: video.description,
-      seasonId: video.seasonId,
-      episodeNumber: video.episodeNumber,
-      thumbnailUrl: video.thumbnailUrl || video.thumbnail,
-    };
-  }, []);
-
-  const refreshFeed = useCallback(async () => {
-    try {
-      setPage(1);
-      setHasMore(true);
-      setHasPrevious(false);
-      setCurrentIndex(0);
-      const response = await videoService.getWebseriesFeed(1);
-      if (response.success && response.data) {
-        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
-        setReels(transformedReels);
-        // Reset scroll position to top quietly
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-      }
-    } finally {
-      // usePullToRefresh handles completion delay and state reset
-    }
-  }, [transformVideoToReel]);
-
-  const {
-    refreshing,
-    onRefresh,
-    handleScroll: handlePullScroll,
-    pullDistance,
-    threshold,
-  } = usePullToRefresh(refreshFeed, { completionDelayMs: 750 });
+  const pendingTargetRef = useRef<{ id: string; resumeTime?: number } | null>(null);
+  const isJumpingRef = useRef(false);
 
   useEffect(() => {
     loadWebseries();
   }, []);
 
-  // Handle scroll to index failed
-  const onScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
-    // Wait a bit and try again, or scroll to offset
-    setTimeout(() => {
-      if (flatListRef.current) {
-        const offset = info.index * info.averageItemLength;
-        flatListRef.current.scrollToOffset({ offset, animated: false });
-        setCurrentIndex(info.index);
-      }
-    }, 100);
-  };
-
-  // Handle initial video when reels are loaded
+  // Capture navigation params to jump to a specific reel (from Continue Watching)
   useEffect(() => {
-    if (reels.length > 0 && initialVideoId && !initialVideoIdRef.current) {
-      initialVideoIdRef.current = initialVideoId;
-      // Find the index of the initial video
-      const videoIndex = reels.findIndex(reel => reel.id === initialVideoId);
-      if (videoIndex >= 0) {
-        // Scroll to that video after a short delay to ensure FlatList is ready
+    const targetVideoId = (route.params as any)?.targetVideoId;
+    const resumeTime = (route.params as any)?.resumeTime;
+    if (targetVideoId) {
+      const normalizedId = String(targetVideoId).trim();
+      console.log(`🎯🎯🎯 NAVIGATION TARGET RECEIVED: ${normalizedId}, resumeTime: ${resumeTime}`);
+      
+      // Always set new target, even if there was a previous one
+      // This ensures subsequent clicks work correctly
+      const previousTarget = pendingTargetRef.current?.id;
+      if (previousTarget && previousTarget !== normalizedId) {
+        console.log(`🔄 NEW TARGET RECEIVED: Previous was ${previousTarget}, new is ${normalizedId}`);
+      }
+      
+      // Store the exact target ID and reset jumping flag
+      pendingTargetRef.current = { id: normalizedId, resumeTime };
+      isJumpingRef.current = false; // Reset jumping flag for new target
+      
+      // Force the jump logic to re-run by clearing and re-setting
+      console.log(`✅ Target set in pendingTargetRef: ${normalizedId}`);
+    } else {
+      // Only clear if we explicitly navigate away (no targetVideoId)
+      // Don't clear on initial mount
+    }
+  }, [route.params]);
+
+  // Also listen for screen focus to handle navigation
+  useFocusEffect(
+    React.useCallback(() => {
+      const targetVideoId = (route.params as any)?.targetVideoId;
+      const resumeTime = (route.params as any)?.resumeTime;
+      if (targetVideoId) {
+        const normalizedId = String(targetVideoId).trim();
+        console.log(`🎯 Screen focused with target: ${normalizedId}`);
+        
+        // Always update target on focus, even if it's the same
+        // This ensures navigation works when coming back to the screen
+        pendingTargetRef.current = { id: normalizedId, resumeTime };
+        isJumpingRef.current = false; // Reset to allow new jump
+        console.log(`✅ Target updated on focus: ${normalizedId}`);
+      }
+    }, [route.params])
+  );
+
+  // When reels list updates, attempt to jump to pending target (e.g., from Home continue watching)
+  useEffect(() => {
+    if (!pendingTargetRef.current) {
+      console.log(`⏸️ No pending target, skipping jump logic`);
+      return;
+    }
+    if (reels.length === 0 || loading) {
+      console.log(`⏸️ Reels not ready (length: ${reels.length}, loading: ${loading}), skipping jump logic`);
+      return;
+    }
+    
+    // If jump is in progress, wait a bit and retry
+    if (isJumpingRef.current) {
+      console.log(`⏸️ Jump already in progress, will retry...`);
+      const retryTimeout = setTimeout(() => {
+        if (pendingTargetRef.current && !isJumpingRef.current) {
+          console.log(`🔄 Retrying jump after previous attempt`);
+          // Force re-evaluation by toggling a dependency
+        }
+      }, 500);
+      return () => clearTimeout(retryTimeout);
+    }
+
+    const targetId = pendingTargetRef.current.id;
+    // Robust ID normalization - handle ObjectId, string, etc.
+    const normalizeId = (id: any): string => {
+      if (!id) return '';
+      // Handle MongoDB ObjectId
+      if (typeof id === 'object' && id.toString) {
+        return String(id.toString()).trim();
+      }
+      return String(id).trim();
+    };
+    const targetIdNormalized = normalizeId(targetId);
+    
+    console.log(`🔍🔍🔍 SEARCHING FOR TARGET VIDEO`);
+    console.log(`   Target ID (raw): ${targetId}`);
+    console.log(`   Target ID (normalized): ${targetIdNormalized}`);
+    console.log(`   Searching in ${reels.length} reels`);
+    console.log(`   Available reel IDs: ${reels.map((r, idx) => `${idx}: ${normalizeId(r.id)} (${r.title})`).join(', ')}`);
+    
+    // Check if target video is in the current reels list
+    const targetIndex = reels.findIndex((r, idx) => {
+      const reelId = normalizeId(r.id);
+      const matches = reelId === targetIdNormalized;
+      if (matches) {
+        console.log(`✅✅✅ FOUND EXACT MATCH at index ${idx}: ${reelId} === ${targetIdNormalized} (${r.title})`);
+      }
+      return matches;
+    });
+    
+    if (targetIndex >= 0) {
+      // Video found in list, jump to it directly
+      const video = reels[targetIndex];
+      const resumeTime = pendingTargetRef.current?.resumeTime;
+      console.log(`✅✅✅ TARGET VIDEO FOUND at index ${targetIndex}: ${video.title} (ID: ${video.id}), Resume: ${resumeTime}s`);
+      
+      // Verify it's the exact video
+      if (normalizeId(video.id) !== targetIdNormalized) {
+        console.error(`❌❌❌ MISMATCH! Video at index ${targetIndex} has ID ${video.id} but we're looking for ${targetIdNormalized}`);
+        return;
+      }
+      
+      // Set jumping flag to prevent duplicate attempts and prevent other logic from interfering
+      isJumpingRef.current = true;
+      
+      // Set current index and resume time immediately - this MUST be the video we want
+      console.log(`🎯🎯🎯 SETTING TARGET VIDEO: Index ${targetIndex}, Title: ${video.title}, ID: ${normalizeId(video.id)}`);
+      setCurrentIndex(targetIndex);
+      setCurrentResumeTime(resumeTime);
+      console.log(`📍 Set currentIndex to ${targetIndex}, resumeTime to ${resumeTime}s`);
+      
+      // Force a small delay to ensure state is set before scrolling
+      setTimeout(() => {
+        // Scroll to target with retry logic
+        const attemptScroll = (attempt = 0) => {
+          if (attempt > 4) {
+          console.error(`❌ Failed to scroll after 4 attempts, using offset fallback`);
+          // Final fallback: use scrollToOffset
+          const offset = targetIndex * SCREEN_HEIGHT;
+          flatListRef.current?.scrollToOffset({
+            offset: offset,
+            animated: true,
+          });
+          setTimeout(() => {
+            pendingTargetRef.current = null;
+            isJumpingRef.current = false;
+            tabNavigation.setParams?.({ targetVideoId: undefined, resumeTime: undefined, progress: undefined });
+          }, 500);
+          return;
+        }
+
         setTimeout(() => {
           try {
-            flatListRef.current?.scrollToIndex({
-              index: videoIndex,
-              animated: false,
+            if (!flatListRef.current) {
+              console.log(`⏳ FlatList not ready, retrying... (attempt ${attempt + 1})`);
+              attemptScroll(attempt + 1);
+              return;
+            }
+
+            // Verify currentIndex is still set to target (check state, not closure)
+            // We'll verify after scroll
+            
+            // Try scrollToIndex first
+            flatListRef.current.scrollToIndex({
+              index: targetIndex,
+              animated: attempt === 0,
             });
-            setCurrentIndex(videoIndex);
-          } catch (error) {
-            // Fallback to scrollToOffset if scrollToIndex fails
-            const offset = videoIndex * SCREEN_HEIGHT;
-            flatListRef.current?.scrollToOffset({ offset, animated: false });
-            setCurrentIndex(videoIndex);
+            
+            console.log(`✅✅✅ SUCCESSFULLY SCROLLED to index ${targetIndex}: ${video.title} (ID: ${normalizeId(video.id)})`);
+            
+            // Clear after successful scroll - but only if this was the target we just jumped to
+            setTimeout(() => {
+              // Verify we're still on the target we jumped to (might have changed if user clicked another video)
+              const currentTargetId = pendingTargetRef.current?.id;
+              if (currentTargetId === targetIdNormalized) {
+                console.log(`🧹 Clearing pending target after successful jump to ${targetIdNormalized}`);
+                pendingTargetRef.current = null;
+                isJumpingRef.current = false;
+                tabNavigation.setParams?.({ targetVideoId: undefined, resumeTime: undefined, progress: undefined });
+              } else {
+                console.log(`⚠️ Target changed during jump (current: ${currentTargetId}, jumped to: ${targetIdNormalized}), keeping new target`);
+                isJumpingRef.current = false; // Still clear jumping flag to allow new jump
+              }
+            }, 500);
+          } catch (error: any) {
+            console.log(`⚠️ Scroll attempt ${attempt + 1} failed:`, error?.message || error);
+            // Retry with scrollToOffset as fallback
+            if (attempt >= 2) {
+              const offset = targetIndex * SCREEN_HEIGHT;
+              try {
+                flatListRef.current?.scrollToOffset({
+                  offset: offset,
+                  animated: true,
+                });
+                console.log(`✅ Used scrollToOffset fallback to index ${targetIndex}`);
+                setTimeout(() => {
+                  pendingTargetRef.current = null;
+                  isJumpingRef.current = false;
+                  tabNavigation.setParams?.({ targetVideoId: undefined, resumeTime: undefined, progress: undefined });
+                }, 500);
+              } catch (offsetError) {
+                attemptScroll(attempt + 1);
+              }
+            } else {
+              attemptScroll(attempt + 1);
+            }
           }
-        }, 500);
-      } else if (initialSeasonId) {
-        // If video not found but we have seasonId, try loading episodes from that season
-        loadEpisodesFromSeason(initialSeasonId, initialVideoId);
-      }
+        }, attempt === 0 ? 300 : 400);
+        };
+
+        attemptScroll();
+      }, 100); // Small delay to ensure currentIndex is set
+    } else {
+      // Video not found, fetch it
+      console.log(`🔍 Target video ${targetIdNormalized} not found in current reels, fetching...`);
+      isJumpingRef.current = true;
+      
+      const fetchAndAddVideo = async () => {
+        try {
+          const response = await videoService.getVideoById(targetId);
+          if (response.success && response.data) {
+            const video = response.data;
+            const videoUrl = video.masterPlaylistUrl || video.variants?.[0]?.url || '';
+            
+            if (!videoUrl) {
+              console.error(`❌ No video URL found for ${targetId}`);
+              isJumpingRef.current = false;
+              return;
+            }
+
+            const formatDuration = (seconds: number) => {
+              if (!seconds) return '0m';
+              const hours = Math.floor(seconds / 3600);
+              const minutes = Math.floor((seconds % 3600) / 60);
+              if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+              }
+              return `${minutes}m`;
+            };
+
+            const newReel: Reel = {
+              id: video._id,
+              title: video.title || 'Untitled',
+              year: new Date(video.createdAt).getFullYear().toString(),
+              rating: video.ageRating || 'UA 16+',
+              duration: formatDuration(video.duration || 0),
+              durationSeconds: video.duration || 0,
+              videoUrl,
+              initialLikes: video.likes || 0,
+              description: video.description,
+              seasonId: video.seasonId,
+              episodeNumber: video.episodeNumber,
+              thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+            };
+
+            // Add to reels - the useEffect will re-run and find it
+            setReels(prev => {
+              const exists = prev.some(r => normalizeId(r.id) === normalizeId(newReel.id));
+              if (!exists) {
+                console.log(`✅ Fetched video ${newReel.title} and adding to reels.`);
+                return [newReel, ...prev];
+              }
+              console.log(`⚠️ Fetched video ${newReel.title} already exists, not adding.`);
+              return prev;
+            });
+            // Reset jumping flag so useEffect can handle the jump
+            isJumpingRef.current = false;
+            console.log(`⏳ State updated, useEffect will re-evaluate for jump.`);
+          } else {
+            console.error(`❌ Failed to fetch target video ${targetId}`);
+            isJumpingRef.current = false;
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching target video ${targetId}:`, error);
+          isJumpingRef.current = false;
+        }
+      };
+      
+      fetchAndAddVideo();
     }
-  }, [reels, initialVideoId, initialSeasonId]);
+  }, [reels, loading, route.params?.targetVideoId]); // Re-run when targetVideoId in route params changes
 
   const loadWebseries = async () => {
     try {
@@ -249,11 +416,59 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
       
       if (response.success && response.data) {
         // Transform backend video data to Reel format
-        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
+        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
+          // Get video URL - prefer masterPlaylistUrl, fallback to best variant
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            // Prefer 720p, then 1080p, then 480p, then 360p
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find(v => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            // If no preferred resolution found, use first available
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          // Format duration
+          const formatDuration = (seconds: number) => {
+            if (!seconds) return '0m';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+              return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+          };
+
+          return {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            durationSeconds: video.duration || 0,
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+        });
 
         if (page === 1) {
           setReels(transformedReels);
           setHasPrevious(false); // First page, no previous content
+          // Don't set currentIndex to 0 if we have a pending target
+          if (!pendingTargetRef.current) {
+            setCurrentIndex(0);
+          }
         } else {
           setReels(prev => [...prev, ...transformedReels]);
         }
@@ -265,6 +480,8 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
         setHasPrevious(response.pagination?.hasPrevious !== undefined 
           ? response.pagination.hasPrevious 
           : currentPage > 1);
+
+        // Note: The useEffect that watches 'reels' will handle jumping to pending target
       }
     } catch (error) {
       console.error('Error loading webseries:', error);
@@ -312,6 +529,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
             year: new Date(video.createdAt).getFullYear().toString(),
             rating: video.ageRating || 'UA 16+',
             duration: formatDuration(video.duration || 0),
+            durationSeconds: video.duration || 0,
             videoUrl,
             initialLikes: video.likes || 0,
             description: video.description,
@@ -447,6 +665,12 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
 
   // Handle viewability change to track which video should play
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    // Don't update currentIndex if we have a pending target jump
+    if (pendingTargetRef.current || isJumpingRef.current) {
+      console.log(`⏸️ Skipping viewable items update - jump in progress`);
+      return;
+    }
+    
     if (viewableItems.length > 0) {
       const newIndex = viewableItems[0].index;
       if (newIndex !== null && newIndex !== currentIndex) {
@@ -474,6 +698,171 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
     if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && !loading && page > 1) {
       loadPrevious();
     }
+  };
+
+  const jumpToTargetIfNeeded = async (targetId?: string) => {
+    if (!targetId) return;
+    
+    // Prevent duplicate jump attempts
+    if (isJumpingRef.current) {
+      console.log(`⏸️ Jump already in progress for ${targetId}, skipping...`);
+      return;
+    }
+    
+    isJumpingRef.current = true;
+
+    // Normalize IDs for comparison (handle both string and ObjectId)
+    const normalizeId = (id: string) => String(id).trim();
+    const targetIdNormalized = normalizeId(targetId);
+
+    // First, try to find in current reels - use the most up-to-date reels array
+    // We need to check again in case reels were updated
+    let targetIndex = reels.findIndex(r => normalizeId(r.id) === targetIdNormalized);
+    
+    console.log(`🔍 Searching for video ${targetIdNormalized} in ${reels.length} reels...`);
+    if (targetIndex >= 0) {
+      console.log(`✅ Found target video at index ${targetIndex}: ${reels[targetIndex].title}`);
+    }
+    
+    // If not found in current reels, fetch the video directly
+    if (targetIndex === -1) {
+      console.log(`🎯 Target video ${targetId} not found in current reels, fetching...`);
+      try {
+        const response = await videoService.getVideoById(targetId);
+        if (response.success && response.data) {
+          const video = response.data;
+          
+          // Transform to Reel format
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find((v: any) => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          const formatDuration = (seconds: number) => {
+            if (!seconds) return '0m';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            if (hours > 0) {
+              return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+          };
+
+          const newReel: Reel = {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            durationSeconds: video.duration || 0,
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+
+          // Check if video already exists to avoid duplicates
+          setReels(prev => {
+            const existsIndex = prev.findIndex(r => normalizeId(r.id) === targetIdNormalized);
+            if (existsIndex === -1) {
+              // Insert at the beginning of the reels list
+              console.log(`✅ Target video fetched and will be inserted at index 0`);
+              return [newReel, ...prev];
+            } else {
+              console.log(`✅ Target video already exists at index ${existsIndex}`);
+              return prev; // Don't modify if it already exists
+            }
+          });
+          
+          // After updating state, let the useEffect handle finding and jumping
+          // Reset the jumping flag so useEffect can handle it
+          isJumpingRef.current = false;
+          console.log(`⏳ State updated, waiting for useEffect to handle jump...`);
+          return; // Exit early, let useEffect handle the jump
+        } else {
+          console.error(`❌ Failed to fetch target video ${targetId}`);
+          isJumpingRef.current = false;
+          return;
+        }
+      } catch (error) {
+        console.error(`❌ Error fetching target video ${targetId}:`, error);
+        isJumpingRef.current = false;
+        return;
+      }
+    }
+
+    // If we found the video in current reels, jump to it immediately
+    if (targetIndex >= 0 && targetIndex < reels.length) {
+      // Verify the video at this index is correct
+      const videoAtTarget = reels[targetIndex];
+      if (normalizeId(videoAtTarget.id) === targetIdNormalized) {
+        console.log(`🎯 Jumping to video at index ${targetIndex}: ${videoAtTarget.title}`);
+        setCurrentIndex(targetIndex);
+      } else {
+        console.error(`❌ Video at index ${targetIndex} (${videoAtTarget.id}) does not match target ${targetIdNormalized}`);
+        isJumpingRef.current = false;
+        return;
+      }
+    } else {
+      console.error(`❌ Invalid target index: ${targetIndex} (reels length: ${reels.length})`);
+      isJumpingRef.current = false;
+      return;
+    }
+    
+    // Use multiple attempts to ensure scrolling works
+    const attemptScroll = (attempt = 0) => {
+      if (attempt > 5) {
+        console.error(`❌ Failed to scroll to index ${targetIndex} after 5 attempts`);
+        // Clear pending target even on failure to prevent infinite loops
+        pendingTargetRef.current = null;
+        isJumpingRef.current = false;
+        tabNavigation.setParams?.({ targetVideoId: undefined, resumeTime: undefined, progress: undefined });
+        return;
+      }
+
+      try {
+        if (!flatListRef.current) {
+          setTimeout(() => attemptScroll(attempt + 1), 100);
+          return;
+        }
+
+        flatListRef.current.scrollToIndex({
+          index: targetIndex,
+          animated: attempt === 0, // Only animate first attempt
+        });
+        
+        console.log(`✅ Successfully scrolled to index ${targetIndex} (attempt ${attempt + 1})`);
+        
+        // Clear pending target and route params after successful scroll
+        setTimeout(() => {
+          pendingTargetRef.current = null;
+          isJumpingRef.current = false;
+          tabNavigation.setParams?.({ targetVideoId: undefined, resumeTime: undefined, progress: undefined });
+        }, 300);
+      } catch (error: any) {
+        console.log(`⚠️ Scroll attempt ${attempt + 1} failed:`, error?.message || error);
+        setTimeout(() => attemptScroll(attempt + 1), 150);
+      }
+    };
+
+    // Start scrolling attempt
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        attemptScroll();
+      });
+    }, 100);
   };
 
   if (loading && reels.length === 0) {
@@ -505,6 +894,36 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
         showsVerticalScrollIndicator={false}
         snapToInterval={SCREEN_HEIGHT}
         decelerationRate="fast"
+        getItemLayout={(data, index) => ({
+          length: SCREEN_HEIGHT,
+          offset: SCREEN_HEIGHT * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          console.log('⚠️ Scroll to index failed:', info);
+          const wait = new Promise(resolve => setTimeout(resolve, 500));
+          wait.then(() => {
+            // Fallback: scroll to offset
+            const offset = info.index * SCREEN_HEIGHT;
+            flatListRef.current?.scrollToOffset({
+              offset: offset,
+              animated: true,
+            });
+            console.log(`✅ Fallback scroll to offset ${offset} for index ${info.index}`);
+          });
+        }}
+        renderItem={({ item, index }) => {
+          const isActiveItem = index === currentIndex;
+          return (
+            <ReelItem 
+              reel={item} 
+              navigation={navigation} 
+              isActive={isActiveItem}
+              {...(isActiveItem && currentResumeTime !== undefined ? { resumeTime: currentResumeTime } : {})}
+              key={item.id}
+            />
+          );
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -559,13 +978,19 @@ export default ReelPlayerScreen;
  * Single full-screen reel item
  * Memoized to prevent unnecessary re-renders
  */
-const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }>(({
+const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean; resumeTime?: number }>(({
   reel,
   navigation,
   isActive = false,
+  resumeTime = undefined,
 }) => {
   const dispatch = useDispatch();
   const videoRef = useRef<Video | null>(null);
+  const lastSavedProgressRef = useRef(0);
+  const resumePositionRef = useRef(0);
+  const hasFetchedResumeRef = useRef(false);
+  const pendingSeekRef = useRef(false);
+  const isCompletedRef = useRef(false);
 
   const [currentEpisode, setCurrentEpisode] = useState(reel.episodeNumber || 1);
   const [likes, setLikes] = useState(reel.initialLikes);
@@ -598,6 +1023,25 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
   const sheetTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const infoTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
+  // Store last known position and duration for cleanup saves
+  const lastKnownPositionRef = useRef(0);
+  const lastKnownDurationRef = useRef(0);
+  const saveInProgressRef = useRef(false);
+  const pendingSaveRef = useRef<{ position: number; duration: number } | null>(null);
+
+  // Reset progress trackers when reel changes
+  useEffect(() => {
+    hasFetchedResumeRef.current = false;
+    resumePositionRef.current = 0;
+    pendingSeekRef.current = false;
+    lastSavedProgressRef.current = 0;
+    lastKnownPositionRef.current = 0;
+    lastKnownDurationRef.current = 0;
+    isCompletedRef.current = false;
+    saveInProgressRef.current = false;
+    pendingSaveRef.current = null;
+  }, [reel.id]);
+
   // Handle video playback based on isActive prop
   useEffect(() => {
     if (!videoRef.current) return;
@@ -609,7 +1053,11 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
           await new Promise(resolve => setTimeout(resolve, 100));
           await videoRef.current?.playAsync();
         } else {
+          // CRITICAL: Pause video immediately when not active
+          // This prevents background playback and progress saving
           await videoRef.current?.pauseAsync();
+          // Also stop updating position when paused
+          console.log(`⏸️ Video paused for ${reel.title} (isActive: false)`);
         }
       } catch (error: any) {
         // Ignore audio focus errors - they're expected when switching videos quickly
@@ -619,6 +1067,9 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
             try {
               if (isActive && videoRef.current) {
                 await videoRef.current?.playAsync();
+              } else if (!isActive && videoRef.current) {
+                // Make sure it's paused if not active
+                await videoRef.current?.pauseAsync();
               }
             } catch (retryError) {
               // Silently ignore retry errors
@@ -631,7 +1082,39 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
     };
 
     controlPlayback();
-  }, [isActive]);
+  }, [isActive, reel.id]);
+
+  // Load saved watch progress when reel becomes active
+  useEffect(() => {
+    if (!isActive || hasFetchedResumeRef.current) return;
+
+    const loadResumePoint = async () => {
+      try {
+        // If resumeTime is provided from navigation (continue watching), use that first
+        if (resumeTime !== undefined && resumeTime > MIN_RESUME_SECONDS) {
+          console.log(`⏱️ Using resumeTime from navigation: ${resumeTime}s`);
+          resumePositionRef.current = resumeTime;
+          pendingSeekRef.current = true; // Will be handled in onLoad
+        } else {
+          // Otherwise, load from database
+          const response = await videoService.getWatchProgress(reel.id);
+          const resumeSeconds = response?.data?.currentTime || 0;
+
+          if (response?.success && resumeSeconds > MIN_RESUME_SECONDS) {
+            resumePositionRef.current = resumeSeconds;
+            pendingSeekRef.current = true; // Will be handled in onLoad
+            console.log(`📀 Loaded resume position from database: ${resumeSeconds}s`);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading resume point:', error);
+      } finally {
+        hasFetchedResumeRef.current = true;
+      }
+    };
+
+    loadResumePoint();
+  }, [isActive, reel.id, resumeTime]);
 
   // Load episodes from season when episodes sheet opens
   const loadSeasonEpisodes = async () => {
@@ -651,6 +1134,254 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
       setLoadingEpisodes(false);
     }
   };
+
+  const persistProgress = async (positionSeconds: number, durationSeconds?: number, forceSave = false) => {
+    // Store latest values for cleanup
+    if (positionSeconds > 0) {
+      lastKnownPositionRef.current = positionSeconds;
+    }
+    if (durationSeconds && durationSeconds > 0) {
+      lastKnownDurationRef.current = durationSeconds;
+    }
+
+    // Try to get duration from video status if not provided
+    let validDuration = durationSeconds && durationSeconds > 0 ? durationSeconds : lastKnownDurationRef.current;
+    
+    // If still no duration, try to get it from video ref
+    if (!validDuration || validDuration <= 0) {
+      try {
+        const status = await videoRef.current?.getStatusAsync();
+        if (status?.isLoaded && status.durationMillis) {
+          validDuration = status.durationMillis / 1000;
+          lastKnownDurationRef.current = validDuration;
+        }
+      } catch (error) {
+        // Ignore errors getting status
+      }
+    }
+
+    // Still need valid duration to save
+    if (!validDuration || validDuration <= 0) {
+      // Queue save for later if we have position but no duration yet
+      if (positionSeconds >= MIN_RESUME_SECONDS) {
+        pendingSaveRef.current = { position: positionSeconds, duration: 0 };
+      }
+      return; // Can't save without duration
+    }
+
+    // Only save if watched at least minimum time
+    if (positionSeconds < MIN_RESUME_SECONDS) {
+      return;
+    }
+
+    // Calculate progress percentage
+    const progressPercent = (positionSeconds / validDuration) * 100;
+    
+    // Only save if progress is between 5% and 85%
+    // Videos watched less than 5% or more than 85% should not appear in continue watching
+    if (progressPercent < 5) {
+      // Too little progress, don't save
+      return;
+    }
+    
+    if (progressPercent >= 85) {
+      // Video is essentially completed, mark as completed and don't save
+      isCompletedRef.current = true;
+      return;
+    }
+
+    // Throttle saves unless forced
+    if (!forceSave && positionSeconds - lastSavedProgressRef.current < PROGRESS_SAVE_INTERVAL_SECONDS) {
+      return;
+    }
+
+    // If a save is already in progress, queue this one
+    if (saveInProgressRef.current) {
+      pendingSaveRef.current = { position: positionSeconds, duration: validDuration };
+      return;
+    }
+
+    saveInProgressRef.current = true;
+    try {
+      await videoService.saveWatchProgress(
+        reel.id,
+        Math.floor(positionSeconds),
+        Math.floor(validDuration)
+      );
+      lastSavedProgressRef.current = positionSeconds;
+      console.log(`💾 Progress saved: ${reel.title} - ${Math.floor(positionSeconds)}s / ${Math.floor(validDuration)}s (${Math.round(progressPercent)}%)`);
+      
+      // Process pending save if any
+      if (pendingSaveRef.current) {
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        if (pending.duration > 0) {
+          await persistProgress(pending.position, pending.duration, true);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error saving watch progress for ${reel.title}:`, error);
+      // Retry once after a short delay
+      setTimeout(async () => {
+        try {
+          await videoService.saveWatchProgress(
+            reel.id,
+            Math.floor(positionSeconds),
+            Math.floor(validDuration)
+          );
+          lastSavedProgressRef.current = positionSeconds;
+          console.log(`✅ Retry successful: ${reel.title}`);
+        } catch (retryError) {
+          console.error(`❌ Retry failed for ${reel.title}:`, retryError);
+        } finally {
+          saveInProgressRef.current = false;
+        }
+      }, 1000);
+      return;
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  };
+
+  // Periodic save that runs independently of playback status updates
+  // CRITICAL: Only runs when isActive is true
+  useEffect(() => {
+    if (!isActive) {
+      // Clear any pending saves when becoming inactive
+      pendingSaveRef.current = null;
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      // Double-check isActive before saving (in case it changed)
+      if (!isActive || !videoRef.current || isCompletedRef.current) {
+        return;
+      }
+
+      try {
+        const status = await videoRef.current.getStatusAsync();
+        if (status?.isLoaded && status.isPlaying) {
+          // Only save if video is actually playing
+          const currentSeconds = (status.positionMillis || 0) / 1000;
+          const durationSeconds = 
+            reel.durationSeconds && reel.durationSeconds > 0
+              ? reel.durationSeconds
+              : (status.durationMillis || 0) / 1000;
+
+          if (currentSeconds >= MIN_RESUME_SECONDS && durationSeconds > 0) {
+            // Force save on periodic interval
+            await persistProgress(currentSeconds, durationSeconds, true);
+          }
+        }
+      } catch (error) {
+        // Silently handle errors - video might not be ready
+      }
+    }, PERIODIC_SAVE_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isActive, reel.id, reel.durationSeconds]);
+
+  // Save progress when reel becomes inactive (user navigated away)
+  // CRITICAL: Use the last known position from when it was active, not current position
+  useEffect(() => {
+    if (!isActive) {
+      const saveOnInactive = async () => {
+        // Use the last known position from when video was active
+        // Don't get current status as video might still be playing in background
+        const position = lastKnownPositionRef.current;
+        const duration = lastKnownDurationRef.current;
+
+        // Only save if we have valid data from when it was active
+        if (position >= MIN_RESUME_SECONDS && duration > 0) {
+          const progressPercent = (position / duration) * 100;
+          // Only save if progress is between 5% and 85%
+          if (progressPercent >= 5 && progressPercent < 85 && !isCompletedRef.current) {
+            try {
+              // Force save immediately with the last known position
+              saveInProgressRef.current = true;
+              await videoService.saveWatchProgress(
+                reel.id,
+                Math.floor(position),
+                Math.floor(duration)
+              );
+              lastSavedProgressRef.current = position;
+              console.log(`💾✅ Progress saved on inactive: ${reel.title} - ${Math.floor(position)}s / ${Math.floor(duration)}s (saved from last active position)`);
+            } catch (error) {
+              console.error(`❌ Error saving progress on inactive for ${reel.title}:`, error);
+              // Retry once
+              setTimeout(async () => {
+                try {
+                  await videoService.saveWatchProgress(
+                    reel.id,
+                    Math.floor(position),
+                    Math.floor(duration)
+                  );
+                  console.log(`💾✅ Retry successful on inactive: ${reel.title}`);
+                } catch (retryError) {
+                  console.error(`❌ Retry failed on inactive for ${reel.title}:`, retryError);
+                }
+              }, 500);
+            } finally {
+              saveInProgressRef.current = false;
+            }
+          }
+        }
+      };
+
+      // Small delay to ensure video has paused
+      setTimeout(() => {
+        saveOnInactive();
+      }, 100);
+    }
+  }, [isActive, reel.id, reel.title]);
+
+  // Aggressive cleanup save when component unmounts
+  // CRITICAL: Use last known position from when video was active
+  useEffect(() => {
+    return () => {
+      // Cleanup: save progress when leaving this reel
+      const saveFinalProgress = async () => {
+        // Use last known position - don't get current status as video might be playing in background
+        const position = lastKnownPositionRef.current;
+        const duration = lastKnownDurationRef.current;
+
+        // Only save if we have valid data from when it was active
+        if (position >= MIN_RESUME_SECONDS && duration > 0) {
+          const progressPercent = (position / duration) * 100;
+          // Only save if progress is between 5% and 85%
+          if (progressPercent >= 5 && progressPercent < 85 && !isCompletedRef.current) {
+            try {
+              // Force save immediately with last known position
+              await videoService.saveWatchProgress(
+                reel.id,
+                Math.floor(position),
+                Math.floor(duration)
+              );
+              console.log(`💾✅ Final progress saved on unmount: ${reel.title} - ${Math.floor(position)}s / ${Math.floor(duration)}s (from last active position)`);
+            } catch (error) {
+              console.error(`❌ Error saving final progress for ${reel.title}:`, error);
+              // Retry once
+              setTimeout(async () => {
+                try {
+                  await videoService.saveWatchProgress(
+                    reel.id,
+                    Math.floor(position),
+                    Math.floor(duration)
+                  );
+                  console.log(`💾✅ Retry successful on unmount: ${reel.title}`);
+                } catch (retryError) {
+                  console.error(`❌ Final retry failed for ${reel.title}:`, retryError);
+                }
+              }, 500);
+            }
+          }
+        }
+      };
+
+      // Execute immediately - don't await, but it will run
+      saveFinalProgress();
+    };
+  }, [reel.id, reel.title]);
 
   // ---- helpers ----
   const openEpisodesSheet = async () => {
@@ -869,7 +1600,10 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
     const episodeNum = typeof episode === 'object' ? episode.episodeNumber || 0 : episode;
     const episodeId = typeof episode === 'object' ? episode._id : null;
     const isActive = episodeNum === currentEpisode;
-    const isUnlocked = typeof episode === 'object' ? episode.isPublished !== false : episodeNum <= TOTAL_EPISODES;
+    const isUnlocked =
+      typeof episode === 'object'
+        ? (episode as any).isPublished !== false
+        : episodeNum <= TOTAL_EPISODES;
 
     return (
       <TouchableOpacity
@@ -953,15 +1687,93 @@ const ReelItem = React.memo<{ reel: Reel; navigation?: any; isActive?: boolean }
         style={styles.video}
         isLooping
         shouldPlay={false}
-        resizeMode="cover"
+        resizeMode={ResizeMode.COVER}
         useNativeControls={false}
-        onLoad={() => {
+        onLoad={async () => {
           // Reset view tracking when new video loads
           setHasTrackedView(false);
+          lastSavedProgressRef.current = 0;
+          isCompletedRef.current = false;
+
+          // Set duration from reel metadata if available
+          if (reel.durationSeconds && reel.durationSeconds > 0) {
+            lastKnownDurationRef.current = reel.durationSeconds;
+          }
+
+          // Handle pending seek from resume position
+          if (pendingSeekRef.current && resumePositionRef.current > MIN_RESUME_SECONDS && videoRef.current) {
+            try {
+              const seekTime = resumePositionRef.current * 1000;
+              console.log(`⏸️ Seeking to resume position: ${resumePositionRef.current}s`);
+              await videoRef.current.setPositionAsync(seekTime);
+              console.log(`✅ Successfully seeked to: ${resumePositionRef.current}s`);
+              pendingSeekRef.current = false;
+            } catch (error) {
+              console.error('Error seeking on video load:', error);
+              pendingSeekRef.current = false;
+            }
+          }
         }}
         onPlaybackStatusUpdate={(status) => {
-          // Only handle status updates, don't trigger playback here
-          // Playback is controlled by the useEffect hook
+          if (!status.isLoaded) return;
+
+          // CRITICAL: Stop all processing if reel is not active
+          // This prevents background videos from continuing to save progress
+          if (!isActive) {
+            // Only update duration ref if we don't have it yet, but don't update position
+            if (status.durationMillis && !lastKnownDurationRef.current) {
+              lastKnownDurationRef.current = (status.durationMillis || 0) / 1000;
+            }
+            return; // Exit early - don't process anything if not active
+          }
+
+          const currentSeconds = (status.positionMillis || 0) / 1000;
+          const durationSeconds =
+            reel.durationSeconds && reel.durationSeconds > 0
+              ? reel.durationSeconds
+              : (status.durationMillis || 0) / 1000;
+
+          // Only update refs when active
+          if (currentSeconds > 0) {
+            lastKnownPositionRef.current = currentSeconds;
+          }
+          if (durationSeconds > 0) {
+            lastKnownDurationRef.current = durationSeconds;
+          }
+
+          // Check if video is finished (only if not looping and we have valid duration)
+          const progressPercent = durationSeconds > 0 ? (currentSeconds / durationSeconds) * 100 : 0;
+          const isFinished =
+            status.didJustFinish ||
+            (durationSeconds > 0 && currentSeconds >= durationSeconds - 2 && !status.isLooping) ||
+            (progressPercent >= 85); // Mark as completed if watched 85% or more
+
+          if (isFinished && !status.isLooping && !isCompletedRef.current) {
+            isCompletedRef.current = true;
+            videoService
+              .deleteWatchProgress(reel.id)
+              .catch((error) => console.error('Error deleting watch progress:', error));
+            return;
+          }
+
+          // Only save progress if we have valid data (we already checked isActive above)
+          if (currentSeconds < MIN_RESUME_SECONDS) return;
+          if (currentSeconds < MIN_RESUME_SECONDS) return;
+          if (!durationSeconds || durationSeconds <= 0) {
+            // If we don't have duration yet, try to use stored duration
+            if (lastKnownDurationRef.current > 0) {
+              persistProgress(currentSeconds, lastKnownDurationRef.current);
+            }
+            return;
+          }
+
+          // Save at key thresholds (5s, 10s, 15s, 30s, 60s, etc.) to ensure we capture progress
+          const keyThresholds = [5, 10, 15, 30, 60, 120, 300];
+          const shouldForceSave = keyThresholds.some(threshold => 
+            currentSeconds >= threshold && lastSavedProgressRef.current < threshold
+          );
+
+          persistProgress(currentSeconds, durationSeconds, shouldForceSave);
         }}
       />
 

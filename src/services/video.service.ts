@@ -39,14 +39,28 @@ export const videoService = {
     return response.data;
   },
 
-  async getLatestVideos(limit: number = 10, type?: 'reel' | 'episode') {
-    const typeParam = type ? `&type=${type}` : '';
-    const response = await api.get(`/api/content/latest?limit=${limit}${typeParam}`);
+  // ========== Watch Progress Methods ==========
+  async saveWatchProgress(videoId: string, currentTime: number, duration: number) {
+    const response = await api.post('/api/content/watch-progress', {
+      videoId,
+      currentTime,
+      duration,
+    });
     return response.data;
   },
 
-  async getTrendingVideos(limit: number = 10) {
-    const response = await api.get(`/api/content/trending?limit=${limit}`);
+  async getContinueWatching(limit: number = 10) {
+    const response = await api.get(`/api/content/continue-watching?limit=${limit}`);
+    return response.data;
+  },
+
+  async getWatchProgress(videoId: string) {
+    const response = await api.get(`/api/content/watch-progress/${videoId}`);
+    return response.data;
+  },
+
+  async deleteWatchProgress(videoId: string) {
+    const response = await api.delete(`/api/content/watch-progress/${videoId}`);
     return response.data;
   },
 };
