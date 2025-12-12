@@ -3,7 +3,7 @@
 // Updated to fetch webseries from backend and display in reels feed
 // ============================================
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video } from 'expo-av';
@@ -30,6 +31,8 @@ import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
 import { getUserProfile } from '../../services/api';
 import { setUser } from '../../redux/slices/userSlice';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -116,6 +119,72 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef(0);
   const previousReelsCountRef = useRef(0);
+  const transformVideoToReel = useCallback((video: VideoType): Reel => {
+    let videoUrl = video.masterPlaylistUrl || '';
+    if (!videoUrl && video.variants && video.variants.length > 0) {
+      const preferredOrder = ['720p', '1080p', '480p', '360p'];
+      for (const res of preferredOrder) {
+        const variant = video.variants.find(v => v.resolution === res);
+        if (variant) {
+          videoUrl = variant.url;
+          break;
+        }
+      }
+      if (!videoUrl) {
+        videoUrl = video.variants[0].url;
+      }
+    }
+
+    const formatDuration = (seconds: number) => {
+      if (!seconds) return '0m';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${minutes}m`;
+    };
+
+    return {
+      id: video._id,
+      title: video.title || 'Untitled',
+      year: new Date(video.createdAt).getFullYear().toString(),
+      rating: video.ageRating || 'UA 16+',
+      duration: formatDuration(video.duration || 0),
+      videoUrl,
+      initialLikes: video.likes || 0,
+      description: video.description,
+      seasonId: video.seasonId,
+      episodeNumber: video.episodeNumber,
+      thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+    };
+  }, []);
+
+  const refreshFeed = useCallback(async () => {
+    try {
+      setPage(1);
+      setHasMore(true);
+      setHasPrevious(false);
+      setCurrentIndex(0);
+      const response = await videoService.getWebseriesFeed(1);
+      if (response.success && response.data) {
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
+        setReels(transformedReels);
+        // Reset scroll position to top quietly
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+      }
+    } finally {
+      // usePullToRefresh handles completion delay and state reset
+    }
+  }, [transformVideoToReel]);
+
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll: handlePullScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(refreshFeed, { completionDelayMs: 750 });
 
   useEffect(() => {
     loadWebseries();
@@ -128,50 +197,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       
       if (response.success && response.data) {
         // Transform backend video data to Reel format
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
-          // Get video URL - prefer masterPlaylistUrl, fallback to best variant
-          let videoUrl = video.masterPlaylistUrl || '';
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            // Prefer 720p, then 1080p, then 480p, then 360p
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
-              const variant = video.variants.find(v => v.resolution === res);
-              if (variant) {
-                videoUrl = variant.url;
-                break;
-              }
-            }
-            // If no preferred resolution found, use first available
-            if (!videoUrl) {
-              videoUrl = video.variants[0].url;
-            }
-          }
-
-          // Format duration
-          const formatDuration = (seconds: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) {
-              return `${hours}h ${minutes}m`;
-            }
-            return `${minutes}m`;
-          };
-
-          return {
-            id: video._id,
-            title: video.title || 'Untitled',
-            year: new Date(video.createdAt).getFullYear().toString(),
-            rating: video.ageRating || 'UA 16+',
-            duration: formatDuration(video.duration || 0),
-            videoUrl,
-            initialLikes: video.likes || 0,
-            description: video.description,
-            seasonId: video.seasonId,
-            episodeNumber: video.episodeNumber,
-            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
-          };
-        });
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
 
         if (page === 1) {
           setReels(transformedReels);
@@ -196,7 +222,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
   };
 
   const loadPrevious = async () => {
-    if (loadingPrevious || !hasPrevious || page <= 1) return;
+    if (loadingPrevious || refreshing || !hasPrevious || page <= 1) return;
 
     const previousPage = page - 1;
     try {
@@ -204,46 +230,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       const response = await videoService.getWebseriesFeed(previousPage);
       
       if (response.success && response.data) {
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
-          let videoUrl = video.masterPlaylistUrl || '';
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
-              const variant = video.variants.find(v => v.resolution === res);
-              if (variant) {
-                videoUrl = variant.url;
-                break;
-              }
-            }
-            if (!videoUrl) {
-              videoUrl = video.variants[0].url;
-            }
-          }
-
-          const formatDuration = (seconds: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) {
-              return `${hours}h ${minutes}m`;
-            }
-            return `${minutes}m`;
-          };
-
-          return {
-            id: video._id,
-            title: video.title || 'Untitled',
-            year: new Date(video.createdAt).getFullYear().toString(),
-            rating: video.ageRating || 'UA 16+',
-            duration: formatDuration(video.duration || 0),
-            videoUrl,
-            initialLikes: video.likes || 0,
-            description: video.description,
-            seasonId: video.seasonId,
-            episodeNumber: video.episodeNumber,
-            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
-          };
-        });
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
 
         // Store current scroll position
         previousReelsCountRef.current = reels.length;
@@ -280,7 +267,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   const loadMore = async () => {
     // Prevent multiple simultaneous loads
-    if (loading || loadingPrevious || !hasMore) {
+    if (loading || loadingPrevious || refreshing || !hasMore) {
       return;
     }
 
@@ -290,46 +277,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       const response = await videoService.getWebseriesFeed(nextPage);
       
       if (response.success && response.data) {
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
-          let videoUrl = video.masterPlaylistUrl || '';
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
-              const variant = video.variants.find(v => v.resolution === res);
-              if (variant) {
-                videoUrl = variant.url;
-                break;
-              }
-            }
-            if (!videoUrl) {
-              videoUrl = video.variants[0].url;
-            }
-          }
-
-          const formatDuration = (seconds: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) {
-              return `${hours}h ${minutes}m`;
-            }
-            return `${minutes}m`;
-          };
-
-          return {
-            id: video._id,
-            title: video.title || 'Untitled',
-            year: new Date(video.createdAt).getFullYear().toString(),
-            rating: video.ageRating || 'UA 16+',
-            duration: formatDuration(video.duration || 0),
-            videoUrl,
-            initialLikes: video.likes || 0,
-            description: video.description,
-            seasonId: video.seasonId,
-            episodeNumber: video.episodeNumber,
-            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
-          };
-        });
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
 
         if (transformedReels.length > 0) {
           setReels(prev => [...prev, ...transformedReels]);
@@ -385,6 +333,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   // Handle scroll to detect when user is near the top
   const handleScroll = (event: any) => {
+    handlePullScroll(event);
     const offsetY = event.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
     
@@ -406,6 +355,16 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Pull-to-Refresh Indicator */}
+      {(pullDistance > 0 || refreshing) && (
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          threshold={threshold}
+          refreshing={refreshing}
+          topOffset={60}
+        />
+      )}
+
       <FlatList
         ref={flatListRef}
         data={reels}
@@ -414,6 +373,15 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
         snapToInterval={SCREEN_HEIGHT}
         decelerationRate="fast"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#000000"
+            colors={['#000000']}
+            progressViewOffset={-1000}
+          />
+        }
         renderItem={({ item, index }) => (
           <ReelItem 
             reel={item} 
