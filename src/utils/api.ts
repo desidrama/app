@@ -29,7 +29,7 @@ const getApiBaseUrl = (): string => {
   }
 
   // Fallback URLs for development/production
-  const DEV_API_URL = 'http://192.168.1.4:5000';
+  const DEV_API_URL = 'http://10.78.2.110:5000';
   const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
   // Use development URL in dev mode, production URL otherwise

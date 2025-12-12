@@ -1,5 +1,8 @@
 // FILE: src/screens/home/HomeScreen.tsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+
 import {
   View,
   Text,
@@ -15,7 +18,11 @@ import {
   Dimensions,
   SafeAreaView,
   Platform,
+
+  RefreshControl,
   ActivityIndicator,
+  Image,
+
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -23,22 +30,32 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
-import { videoService } from '../../services/video.service';
+
+
 import {
   setContinueWatching,
   setContinueWatchingLoading,
 } from '../../redux/slices/videoSlice';
 import { RootState } from '../../redux/store';
+import { carouselService, CarouselItem } from '../../services/carousel.service';
+import { API_BASE_URL } from '../../utils/api';
+import { videoService } from '../../services/video.service';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { Video as VideoType } from '../../types';
+
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type HeroItem = {
+type CarouselBannerItem = {
   id: string;
   title: string;
-  subtitle: string;
-  tag: string;
   imageUrl: string;
+  contentType?: 'webseries' | 'reels' | 'trending' | 'custom';
+  contentId?: string;
 };
+
 
 const HERO_DATA: HeroItem[] = [
   {
@@ -68,9 +85,9 @@ type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('New & Hot');
-  const [heroIndex, setHeroIndex] = useState(0);
 
   const dispatch = useDispatch();
   const { continueWatching, continueWatchingLoading } = useSelector(
@@ -78,12 +95,106 @@ export default function HomeScreen() {
   );
 
   const heroRef = useRef<FlatList<HeroItem>>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [carouselItems, setCarouselItems] = useState<CarouselBannerItem[]>([]);
+  const [carouselLoading, setCarouselLoading] = useState(true);
+  const [carouselError, setCarouselError] = useState<string | null>(null);
+  const [carouselRawData, setCarouselRawData] = useState<CarouselItem[]>([]); // Store full carousel data
 
-  const extendedHeroData = useMemo(() => {
-    if (HERO_DATA.length <= 1) return HERO_DATA;
-    const first = HERO_DATA[0];
-    const last = HERO_DATA[HERO_DATA.length - 1];
-    return [last, ...HERO_DATA, first];
+  const [latestTrendingData, setLatestTrendingData] = useState([
+    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
+    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
+    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
+  ]);
+
+  const refreshHomeContent = useCallback(async () => {
+    try {
+      // Fetch latest videos for "Latest & Trending" section
+      const latestResponse = await videoService.getLatestVideos(10, 'episode');
+      if (latestResponse.success && latestResponse.data) {
+        const transformedLatest = latestResponse.data.map((video: VideoType) => ({
+          title: video.title || 'Untitled',
+          imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/110/160?random=4',
+        }));
+        if (transformedLatest.length > 0) {
+          setLatestTrendingData(transformedLatest);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing home content:', error);
+      // Keep existing data on error
+    }
+  }, []);
+
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll: handlePullScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(refreshHomeContent, { completionDelayMs: 600 });
+
+  // Load initial data on mount
+  useEffect(() => {
+    refreshHomeContent();
+  }, [refreshHomeContent]);
+
+
+  const carouselRef = useRef<FlatList<CarouselBannerItem>>(null);
+
+
+  // Fetch carousel data from API
+  useEffect(() => {
+    const fetchCarousel = async () => {
+      try {
+        setCarouselLoading(true);
+        setCarouselError(null);
+        const items = await carouselService.getActiveCarouselItems();
+        
+        // Store raw carousel data for navigation
+        setCarouselRawData(items);
+
+        // Transform API data to CarouselBannerItem format
+        const transformedItems: CarouselBannerItem[] = items
+          .filter((item: CarouselItem) => item.title) // Only include items with titles
+          .map((item: CarouselItem) => {
+            // Format image URL - if it's a relative path, prepend API base URL
+            let imageUrl = item.imageUrl;
+            if (imageUrl && imageUrl.trim() && !imageUrl.startsWith('http')) {
+              // Handle relative paths (e.g., /uploads/filename.jpg)
+              if (imageUrl.startsWith('/')) {
+                imageUrl = `${API_BASE_URL}${imageUrl}`;
+              } else {
+                imageUrl = `${API_BASE_URL}/${imageUrl}`;
+              }
+            }
+
+            // Use fallback only if no imageUrl is available
+            if (!imageUrl || !imageUrl.trim()) {
+              imageUrl = 'https://picsum.photos/800/1200?random=1';
+            }
+
+            return {
+              id: item._id,
+              title: item.title,
+              imageUrl: imageUrl,
+              contentType: item.contentType,
+              contentId: item.contentId,
+            };
+          });
+
+        setCarouselItems(transformedItems);
+      } catch (error: any) {
+        console.error('Failed to fetch carousel:', error);
+        setCarouselError(error.message || 'Failed to load carousel');
+        // Fallback to empty array or keep previous data
+        setCarouselItems([]);
+      } finally {
+        setCarouselLoading(false);
+      }
+    };
+
+    fetchCarousel();
   }, []);
 
   const latestTrendingData = [
@@ -122,36 +233,89 @@ export default function HomeScreen() {
   useFocusEffect(fetchContinueWatching);
 
   useEffect(() => {
-    const n = HERO_DATA.length;
+    const n = carouselItems.length;
     if (n <= 1) return;
 
     const interval = setInterval(() => {
-      const next = (heroIndex + 1) % n;
-      heroRef.current?.scrollToIndex({ index: next + 1, animated: true });
-      setHeroIndex(next);
+      const next = (carouselIndex + 1) % n;
+      carouselRef.current?.scrollToIndex({ index: next, animated: true });
+      setCarouselIndex(next);
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [heroIndex]);
+  }, [carouselIndex, carouselItems.length]);
 
-  const onHeroScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const onCarouselScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const viewIndex = Math.round(x / SCREEN_WIDTH);
-    const n = HERO_DATA.length;
+    const bannerWidth = SCREEN_WIDTH - 32; // Account for padding
+    const viewIndex = Math.round(x / bannerWidth);
+    setCarouselIndex(viewIndex);
+  };
 
-    if (n <= 1) {
-      setHeroIndex(0);
-      return;
-    }
+  const getCarouselItemLayout = (data: ArrayLike<CarouselBannerItem> | null | undefined, index: number) => {
+    const bannerWidth = SCREEN_WIDTH - 32;
+    return {
+      length: bannerWidth,
+      offset: bannerWidth * index,
+      index,
+    };
+  };
 
-    if (viewIndex === 0) {
-      heroRef.current?.scrollToIndex({ index: n, animated: false });
-      setHeroIndex(n - 1);
-    } else if (viewIndex === n + 1) {
-      heroRef.current?.scrollToIndex({ index: 1, animated: false });
-      setHeroIndex(0);
-    } else {
-      setHeroIndex(viewIndex - 1);
+  // Handle carousel banner click
+  const handleCarouselPress = async (item: CarouselBannerItem) => {
+    try {
+      // If it's a webseries, navigate to first episode
+      if (item.contentType === 'webseries' && item.contentId) {
+        // Fetch episodes for this season
+        const episodesResponse = await videoService.getEpisodes(item.contentId);
+        
+        if (episodesResponse.success && episodesResponse.data && episodesResponse.data.length > 0) {
+          // Sort episodes by episodeNumber and get the first one
+          const sortedEpisodes = [...episodesResponse.data].sort(
+            (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
+          );
+          const firstEpisode = sortedEpisodes[0];
+          
+          // Navigate to Reels tab and pass the episode ID
+          // The ReelsFeedScreen will need to handle this initial video
+          if (navigation) {
+            navigation.navigate('Main', {
+              screen: 'Reels',
+              params: {
+                initialVideoId: firstEpisode._id,
+                initialSeasonId: item.contentId,
+              },
+            });
+          }
+        } else {
+          console.warn('No episodes found for season:', item.contentId);
+        }
+      } else if (item.contentType === 'reels' && item.contentId) {
+        // For reels, navigate directly to that video
+        if (navigation) {
+          navigation.navigate('Main', {
+            screen: 'Reels',
+            params: {
+              initialVideoId: item.contentId,
+            },
+          });
+        }
+      } else {
+        // For other types (trending, custom), just navigate to Reels tab
+        if (navigation) {
+          navigation.navigate('Main', {
+            screen: 'Reels',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error handling carousel press:', error);
+      // Fallback: just navigate to Reels tab
+      if (navigation) {
+        navigation.navigate('Main', {
+          screen: 'Reels',
+        });
+      }
     }
   };
 
@@ -229,11 +393,35 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Pull-to-Refresh Indicator */}
+          {(pullDistance > 0 || refreshing) && (
+            <PullToRefreshIndicator
+              pullDistance={pullDistance}
+              threshold={threshold}
+              refreshing={refreshing}
+              topOffset={
+                Platform.OS === 'android' 
+                  ? (StatusBar.currentHeight || 0) + 16 + 14 + 40 + 12 + 8
+                  : 16 + 14 + 40 + 12 + 8
+              }
+            />
+          )}
+
           {/* Content */}
           <ScrollView
             style={styles.content}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
+            onScroll={handlePullScroll}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#050509"
+                colors={['#050509']}
+                progressViewOffset={-1000}
+              />
+            }
           >
             {/* Category Tabs */}
             <ScrollView
@@ -262,63 +450,72 @@ export default function HomeScreen() {
               })}
             </ScrollView>
 
-            {/* Hero Carousel */}
-            <View style={styles.heroWrapper}>
-              <FlatList
-                ref={heroRef}
-                data={extendedHeroData}
-                keyExtractor={(_, index) => `hero-${index}`}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                initialScrollIndex={1}
-                getItemLayout={getHeroItemLayout}
-                onMomentumScrollEnd={onHeroScrollEnd}
-                decelerationRate="fast"
-                renderItem={({ item }) => (
-                  <View style={styles.heroSlide}>
-                    <ImageBackground
-                      source={{ uri: item.imageUrl }}
-                      style={styles.heroImage}
-                      imageStyle={styles.heroImageRadius}
-                    >
-                      <View style={styles.heroGradient} />
-                      <View style={styles.heroContent}>
-                        <View style={styles.heroTagRow}>
-                          <Text style={styles.heroTag}>{item.tag}</Text>
+            {/* Carousel Banner */}
+            <View style={styles.carouselWrapper}>
+              {carouselLoading ? (
+                <View style={styles.carouselLoadingContainer}>
+                  <ActivityIndicator size="large" color="#FFD54A" />
+                  <Text style={styles.carouselLoadingText}>Loading featured content...</Text>
+                </View>
+              ) : carouselError ? (
+                <View style={styles.carouselErrorContainer}>
+                  <Ionicons name="alert-circle-outline" size={24} color="#FF6B6B" />
+                  <Text style={styles.carouselErrorText}>{carouselError}</Text>
+                </View>
+              ) : carouselItems.length === 0 ? (
+                <View style={styles.carouselEmptyContainer}>
+                  <Text style={styles.carouselEmptyText}>No featured content available</Text>
+                </View>
+              ) : (
+                <>
+                  <FlatList
+                    ref={carouselRef}
+                    data={carouselItems}
+                    keyExtractor={(item) => item.id}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    getItemLayout={getCarouselItemLayout}
+                    onMomentumScrollEnd={onCarouselScrollEnd}
+                    decelerationRate="fast"
+                    contentContainerStyle={styles.carouselContentContainer}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.carouselBanner}
+                        activeOpacity={0.9}
+                        onPress={() => handleCarouselPress(item)}
+                      >
+                        <Image
+                          source={{ uri: item.imageUrl }}
+                          style={styles.carouselBannerImage}
+                          resizeMode="cover"
+                        />
+                        <View style={styles.carouselBannerOverlay} />
+                        <View style={styles.carouselBannerContent}>
+                          <Text style={styles.carouselBannerTitle} numberOfLines={2}>
+                            {item.title}
+                          </Text>
                         </View>
-                        <Text style={styles.heroTitle}>{item.title}</Text>
-                        <Text style={styles.heroSubtitle}>{item.subtitle}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
 
-                        <View style={styles.heroButtonsRow}>
-                          <TouchableOpacity style={styles.heroPrimaryButton}>
-                            <Ionicons name="play" size={18} color="#000" />
-                            <Text style={styles.heroPrimaryText}>Play</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity style={styles.heroSecondaryButton}>
-                            <Ionicons name="add" size={18} color="#fff" />
-                            <Text style={styles.heroSecondaryText}>Watchlist</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </ImageBackground>
-                  </View>
-                )}
-              />
-
-              {/* Dots */}
-              <View style={styles.heroDotsRow}>
-                {HERO_DATA.map((item, index) => {
-                  const isActive = index === heroIndex;
-                  return (
-                    <View
-                      key={item.id}
-                      style={[styles.heroDot, isActive && styles.heroDotActive]}
-                    />
-                  );
-                })}
-              </View>
+                  {/* Dots Indicator */}
+                  {carouselItems.length > 1 && (
+                    <View style={styles.carouselDotsRow}>
+                      {carouselItems.map((_, index) => {
+                        const isActive = index === carouselIndex;
+                        return (
+                          <View
+                            key={index}
+                            style={[styles.carouselDot, isActive && styles.carouselDotActive]}
+                          />
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
             </View>
 
             {/* Continue Watching */}
@@ -534,107 +731,57 @@ const styles = StyleSheet.create({
     color: '#000',
   },
 
-  // HERO
-  heroWrapper: {
+  // CAROUSEL BANNER
+  carouselWrapper: {
     marginTop: 8,
     marginBottom: 16,
   },
-  heroSlide: {
-    width: SCREEN_WIDTH,      // keep paging at full screen width
-    paddingHorizontal: 16,   // inset the slide content so the image lines up with rest of UI
-  },
-  heroImage: {
-    width: SCREEN_WIDTH - 32, // image width matches the inset (16 left + 16 right)
-    height: 220,
-    borderRadius: 18,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-    alignSelf: 'center',     // center inside the page
-  },
-  heroImageRadius: {
-    borderRadius: 18,
-  },
-  heroGradient: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  heroContent: {
+  carouselContentContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
   },
-  heroTagRow: {
-    marginBottom: 6,
+  carouselBanner: {
+    width: SCREEN_WIDTH - 32,
+    height: 180,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: '#15151C',
   },
-  heroTag: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    color: '#FFD54A',
-    fontSize: 11,
-    fontWeight: '600',
+  carouselBannerImage: {
+    width: '100%',
+    height: '100%',
   },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  heroSubtitle: {
-    color: '#E0E0E3',
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  heroButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  heroPrimaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#FFD54A',
-    marginRight: 10,
-  },
-  heroPrimaryText: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
-  },
-  heroSecondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
+  carouselBannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  heroSecondaryText: {
-    marginLeft: 6,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  carouselBannerContent: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    padding: 16,
   },
-  heroDotsRow: {
+  carouselBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  carouselDotsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 12,
     marginBottom: 6,
   },
-  heroDot: {
+  carouselDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#555',
     marginHorizontal: 4,
   },
-  heroDotActive: {
+  carouselDotActive: {
     width: 14,
     borderRadius: 4,
     backgroundColor: '#FFD54A',
@@ -718,6 +865,41 @@ const styles = StyleSheet.create({
   },
 
   bottomPadding: {
-    height: 140, // ensures content rises above bottom nav / home bar on modern devices
+    height: 100, // ensures content rises above fixed bottom nav bar
+  },
+
+  // CAROUSEL LOADING/ERROR STATES
+  carouselLoadingContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  carouselLoadingText: {
+    marginTop: 12,
+    color: '#A5A5AB',
+    fontSize: 14,
+  },
+  carouselErrorContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  carouselErrorText: {
+    marginTop: 8,
+    color: '#FF6B6B',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  carouselEmptyContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  carouselEmptyText: {
+    color: '#A5A5AB',
+    fontSize: 14,
   },
 });

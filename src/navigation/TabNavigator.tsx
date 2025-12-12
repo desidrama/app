@@ -17,11 +17,14 @@ import CustomTabBar from '../components/CustomTabBar';
 // ---- Types ----
 export type TabParamList = {
   Home: undefined;
+
   Reels: {
     targetVideoId?: string;
     resumeTime?: number;
     progress?: number;
   } | undefined;
+
+ 
   Rewards: undefined;
   Profile: undefined;
 };

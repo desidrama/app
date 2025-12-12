@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Dimensions,
   Modal,
   TextInput,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
@@ -21,6 +22,8 @@ import { logout } from '../../redux/slices/authSlice';
 import { setUser } from '../../redux/slices/userSlice';
 import { getToken } from '../../utils/storage';
 import { COLORS, TAB_COLORS } from '../../utils/constants';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 
 const { width } = Dimensions.get('window');
 
@@ -126,61 +129,68 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   // Fetch user profile data from database
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      // Check if user is authenticated and token exists before making API call
-      const token = await getToken();
-      
-      if (!isAuthenticated || !token) {
-        console.log('User not authenticated or token not available, using Redux store data');
-        setPhoneNumber(user?.phone || '');
-        setUsername(user?.username || generateRandomUsername());
-        setSelectedAvatar(user?.profilePicture || '🔵');
-        return;
-      }
+  const fetchUserProfileData = useCallback(async () => {
+    // Check if user is authenticated and token exists before making API call
+    const token = await getToken();
+    
+    if (!isAuthenticated || !token) {
+      setPhoneNumber(user?.phone || '');
+      setUsername(user?.username || generateRandomUsername());
+      setSelectedAvatar(user?.profilePicture || '🔵');
+      return;
+    }
 
-      try {
-        setLoading(true);
-        const response = await getUserProfile();
-        if (response.success && response.data) {
-          const userData = response.data;
-          setPhoneNumber(userData.phone || '');
-          // Set username from database or generate one if not exists
-          if (userData.username) {
-            setUsername(userData.username);
-          } else {
-            // Generate and save a username if it doesn't exist
-            const generatedUsername = generateRandomUsername();
-            setUsername(generatedUsername);
-            try {
-              await updateProfile({ username: generatedUsername });
-            } catch (error) {
-              console.error('Error saving generated username:', error);
-            }
+    try {
+      setLoading(true);
+      const response = await getUserProfile();
+      if (response.success && response.data) {
+        const userData = response.data;
+        setPhoneNumber(userData.phone || '');
+        // Set username from database or generate one if not exists
+        if (userData.username) {
+          setUsername(userData.username);
+        } else {
+          // Generate and save a username if it doesn't exist
+          const generatedUsername = generateRandomUsername();
+          setUsername(generatedUsername);
+          try {
+            await updateProfile({ username: generatedUsername });
+          } catch (error) {
+            console.error('Error saving generated username:', error);
           }
-          // Set avatar from database or use default
-          setSelectedAvatar(userData.profilePicture || '🔵');
-          // Update Redux store with latest user data
-          dispatch(setUser(userData));
         }
-      } catch (error: any) {
-        console.error('Error fetching user profile:', error);
-        // Fallback to Redux store data if API fails
-        setPhoneNumber(user?.phone || '');
-        setUsername(user?.username || generateRandomUsername());
-        setSelectedAvatar(user?.profilePicture || '🔵');
-        
-        // If it's a 401 error, the user might need to login again
-        if (error.response?.status === 401) {
-          console.warn('Authentication failed, user may need to login again');
-        }
-      } finally {
-        setLoading(false);
+        // Set avatar from database or use default
+        setSelectedAvatar(userData.profilePicture || '🔵');
+        // Update Redux store with latest user data
+        dispatch(setUser(userData));
       }
-    };
+    } catch (error: any) {
+      console.error('Error fetching user profile:', error);
+      // Fallback to Redux store data if API fails
+      setPhoneNumber(user?.phone || '');
+      setUsername(user?.username || generateRandomUsername());
+      setSelectedAvatar(user?.profilePicture || '🔵');
+      
+      // If it's a 401 error, the user might need to login again
+      if (error.response?.status === 401) {
+        console.warn('Authentication failed, user may need to login again');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch, isAuthenticated, user?.phone, user?.profilePicture, user?.username]);
 
-    fetchUserProfile();
-  }, [isAuthenticated, user?.phone]);
+  useEffect(() => {
+    fetchUserProfileData();
+  }, [fetchUserProfileData]);
+
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll: handlePullScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(fetchUserProfileData, { completionDelayMs: 750 });
 
   const profileData = {
     name: username || user?.username || '',
@@ -226,10 +236,31 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Pull-to-Refresh Indicator */}
+      {(pullDistance > 0 || refreshing) && (
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          threshold={threshold}
+          refreshing={refreshing}
+          topOffset={90}
+        />
+      )}
+
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        onScroll={handlePullScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#050509"
+            colors={['#050509']}
+            progressViewOffset={-1000}
+          />
+        }
       >
         {/* Avatar Section */}
         <View style={styles.avatarSection}>

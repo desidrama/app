@@ -3,7 +3,7 @@
 // Updated to fetch webseries from backend and display in reels feed
 // ============================================
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
@@ -31,11 +32,19 @@ import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
 import { getUserProfile } from '../../services/api';
 import { setUser } from '../../redux/slices/userSlice';
+import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type ReelPlayerProps = {
   navigation?: any;
+  route?: {
+    params?: {
+      initialVideoId?: string;
+      initialSeasonId?: string;
+    };
+  };
 };
 
 type Reel = {
@@ -481,16 +490,24 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
     }
   };
 
-  const loadPrevious = async () => {
-    if (loadingPrevious || !hasPrevious || page <= 1) return;
-
-    const previousPage = page - 1;
+  // Load episodes from a specific season and prepend to reels
+  const loadEpisodesFromSeason = async (seasonId: string, targetVideoId: string) => {
     try {
-      setLoadingPrevious(true);
-      const response = await videoService.getWebseriesFeed(previousPage);
+      const episodesResponse = await videoService.getEpisodes(seasonId);
       
-      if (response.success && response.data) {
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
+      if (episodesResponse.success && episodesResponse.data && episodesResponse.data.length > 0) {
+        // Transform episodes to Reel format
+        const formatDuration = (seconds: number) => {
+          if (!seconds) return '0m';
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+          }
+          return `${minutes}m`;
+        };
+
+        const episodeReels: Reel[] = episodesResponse.data.map((video: VideoType) => {
           let videoUrl = video.masterPlaylistUrl || '';
           if (!videoUrl && video.variants && video.variants.length > 0) {
             const preferredOrder = ['720p', '1080p', '480p', '360p'];
@@ -505,16 +522,6 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
               videoUrl = video.variants[0].url;
             }
           }
-
-          const formatDuration = (seconds: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) {
-              return `${hours}h ${minutes}m`;
-            }
-            return `${minutes}m`;
-          };
 
           return {
             id: video._id,
@@ -531,6 +538,49 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
             thumbnailUrl: video.thumbnailUrl || video.thumbnail,
           };
         });
+
+        // Sort by episode number
+        episodeReels.sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0));
+
+        // Prepend to existing reels
+        setReels(prev => {
+          const combined = [...episodeReels, ...prev];
+          // Find the target video index
+          const targetIndex = combined.findIndex(reel => reel.id === targetVideoId);
+          if (targetIndex >= 0) {
+            setTimeout(() => {
+              try {
+                flatListRef.current?.scrollToIndex({
+                  index: targetIndex,
+                  animated: false,
+                });
+                setCurrentIndex(targetIndex);
+              } catch (error) {
+                // Fallback to scrollToOffset if scrollToIndex fails
+                const offset = targetIndex * SCREEN_HEIGHT;
+                flatListRef.current?.scrollToOffset({ offset, animated: false });
+                setCurrentIndex(targetIndex);
+              }
+            }, 500);
+          }
+          return combined;
+        });
+      }
+    } catch (error) {
+      console.error('Error loading episodes from season:', error);
+    }
+  };
+
+  const loadPrevious = async () => {
+    if (loadingPrevious || refreshing || !hasPrevious || page <= 1) return;
+
+    const previousPage = page - 1;
+    try {
+      setLoadingPrevious(true);
+      const response = await videoService.getWebseriesFeed(previousPage);
+      
+      if (response.success && response.data) {
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
 
         // Store current scroll position
         previousReelsCountRef.current = reels.length;
@@ -567,7 +617,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   const loadMore = async () => {
     // Prevent multiple simultaneous loads
-    if (loading || loadingPrevious || !hasMore) {
+    if (loading || loadingPrevious || refreshing || !hasMore) {
       return;
     }
 
@@ -577,46 +627,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       const response = await videoService.getWebseriesFeed(nextPage);
       
       if (response.success && response.data) {
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
-          let videoUrl = video.masterPlaylistUrl || '';
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
-              const variant = video.variants.find(v => v.resolution === res);
-              if (variant) {
-                videoUrl = variant.url;
-                break;
-              }
-            }
-            if (!videoUrl) {
-              videoUrl = video.variants[0].url;
-            }
-          }
-
-          const formatDuration = (seconds: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) {
-              return `${hours}h ${minutes}m`;
-            }
-            return `${minutes}m`;
-          };
-
-          return {
-            id: video._id,
-            title: video.title || 'Untitled',
-            year: new Date(video.createdAt).getFullYear().toString(),
-            rating: video.ageRating || 'UA 16+',
-            duration: formatDuration(video.duration || 0),
-            videoUrl,
-            initialLikes: video.likes || 0,
-            description: video.description,
-            seasonId: video.seasonId,
-            episodeNumber: video.episodeNumber,
-            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
-          };
-        });
+        const transformedReels: Reel[] = response.data.map(transformVideoToReel);
 
         if (transformedReels.length > 0) {
           setReels(prev => [...prev, ...transformedReels]);
@@ -678,6 +689,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   // Handle scroll to detect when user is near the top
   const handleScroll = (event: any) => {
+    handlePullScroll(event);
     const offsetY = event.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
     
@@ -864,6 +876,16 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Pull-to-Refresh Indicator */}
+      {(pullDistance > 0 || refreshing) && (
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          threshold={threshold}
+          refreshing={refreshing}
+          topOffset={60}
+        />
+      )}
+
       <FlatList
         ref={flatListRef}
         data={reels}
@@ -902,6 +924,23 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
             />
           );
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#000000"
+            colors={['#000000']}
+            progressViewOffset={-1000}
+          />
+        }
+        renderItem={({ item, index }) => (
+          <ReelItem 
+            reel={item} 
+            navigation={navigation} 
+            isActive={index === currentIndex}
+            key={item.id}
+          />
+        )}
         removeClippedSubviews={true}
         maxToRenderPerBatch={3}
         windowSize={5}
@@ -912,6 +951,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onEndReached={loadMore}
+        onScrollToIndexFailed={onScrollToIndexFailed}
         onEndReachedThreshold={0.3}
         ListHeaderComponent={
           loadingPrevious ? (
