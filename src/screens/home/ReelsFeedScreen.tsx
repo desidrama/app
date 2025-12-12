@@ -1,27 +1,22 @@
+<<<<<<< Updated upstream
 // ============================================ 
 // FILE: src/screens/home/ReelPlayerScreen.tsx
 // Updated to fetch webseries from backend and display in reels feed
 // ============================================
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+=======
+// src/screens/home/ReelsFeedScreen.tsx
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+>>>>>>> Stashed changes
 import {
   View,
   Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  Animated,
-  Easing,
-  Share,
+  SafeAreaView,
   FlatList,
-  Image,
-  ScrollView,
-  Pressable,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   RefreshControl,
+<<<<<<< Updated upstream
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
@@ -46,6 +41,16 @@ type ReelPlayerProps = {
     };
   };
 };
+=======
+  Dimensions,
+} from 'react-native';
+import { videoService } from '../../services/video.service';
+import ReelItem from '../../components/ReelItem';
+import styles from './styles/ReelPlayerStyles';
+import type { Video as VideoType } from '../../types';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+>>>>>>> Stashed changes
 
 type Reel = {
   id: string;
@@ -62,14 +67,9 @@ type Reel = {
   thumbnailUrl?: string;
 };
 
-// ---- MOCK DATA FOR INFO SHEET ----
-const MOCK_CAST = [
-  { id: '1', name: 'Laura Dern', image: 'https://picsum.photos/80/80?random=11' },
-  { id: '2', name: 'Jeff Goldblum', image: 'https://picsum.photos/80/80?random=12' },
-  { id: '3', name: 'Sam Neill', image: 'https://picsum.photos/80/80?random=13' },
-  { id: '4', name: 'Richard A.', image: 'https://picsum.photos/80/80?random=14' },
-];
+const ITEMS_PER_PAGE = 15;
 
+<<<<<<< Updated upstream
 const MOCK_EPISODES = [
   {
     id: 'e1',
@@ -136,11 +136,63 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
   const previousReelsCountRef = useRef(0);
   const pendingTargetRef = useRef<{ id: string; resumeTime?: number } | null>(null);
   const isJumpingRef = useRef(false);
+=======
+const ReelsFeedScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [page, setPage] = useState<number>(1);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [loadingPrevious, setLoadingPrevious] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [hasPrevious, setHasPrevious] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
+>>>>>>> Stashed changes
 
-  useEffect(() => {
-    loadWebseries();
+  const flatListRef = useRef<FlatList>(null);
+  const scrollOffsetRef = useRef<number>(0);
+
+  // Helper to pick best video URL from backend VideoType
+  const transformVideoToReel = useCallback((video: VideoType): Reel => {
+    let videoUrl = video.masterPlaylistUrl || '';
+
+    if (!videoUrl && video.variants && video.variants.length > 0) {
+      const preferredOrder = ['720p', '1080p', '480p', '360p'];
+      for (const res of preferredOrder) {
+        const v = video.variants.find((x) => x.resolution === res);
+        if (v && v.url) {
+          videoUrl = v.url;
+          break;
+        }
+      }
+      if (!videoUrl && video.variants.length > 0) {
+        videoUrl = video.variants[0].url;
+      }
+    }
+
+    const formatDuration = (seconds?: number) => {
+      if (!seconds) return '0m';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (hours > 0) return `${hours}h ${minutes}m`;
+      return `${minutes}m`;
+    };
+
+    return {
+      id: (video as any)._id || String(Date.now()),
+      title: video.title || 'Untitled',
+      year: video.createdAt ? new Date(video.createdAt).getFullYear().toString() : '',
+      rating: (video as any).ageRating || 'UA 16+',
+      duration: formatDuration(video.duration),
+      videoUrl,
+      initialLikes: (video as any).likes || 0,
+      description: video.description,
+      seasonId: (video as any).seasonId,
+      episodeNumber: (video as any).episodeNumber,
+      thumbnailUrl: (video as any).thumbnailUrl || (video as any).thumbnail,
+    };
   }, []);
 
+<<<<<<< Updated upstream
   // Capture navigation params to jump to a specific reel (from Continue Watching)
   useEffect(() => {
     const targetVideoId = (route.params as any)?.targetVideoId;
@@ -411,30 +463,33 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
   const loadWebseries = async () => {
     try {
+=======
+  // Initial load (page 1)
+  useEffect(() => {
+    loadPage(1, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load a page (forward or initial)
+  const loadPage = useCallback(
+    async (pageToLoad: number, opts?: { replace?: boolean }) => {
+      if (loading) return;
+>>>>>>> Stashed changes
       setLoading(true);
-      const response = await videoService.getWebseriesFeed(page);
-      
-      if (response.success && response.data) {
-        // Transform backend video data to Reel format
-        const transformedReels: Reel[] = response.data.map((video: VideoType) => {
-          // Get video URL - prefer masterPlaylistUrl, fallback to best variant
-          let videoUrl = video.masterPlaylistUrl || '';
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            // Prefer 720p, then 1080p, then 480p, then 360p
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
-              const variant = video.variants.find(v => v.resolution === res);
-              if (variant) {
-                videoUrl = variant.url;
-                break;
-              }
-            }
-            // If no preferred resolution found, use first available
-            if (!videoUrl) {
-              videoUrl = video.variants[0].url;
-            }
+      try {
+        const res = await videoService.getWebseriesFeed(pageToLoad);
+        if (res && res.success && Array.isArray(res.data)) {
+          const transformed = res.data.map(transformVideoToReel);
+          if (opts?.replace) {
+            setReels(transformed);
+            // reset position
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+            setCurrentIndex(0);
+          } else {
+            setReels((prev) => [...prev, ...transformed]);
           }
 
+<<<<<<< Updated upstream
           // Format duration
           const formatDuration = (seconds: number) => {
             if (!seconds) return '0m';
@@ -469,9 +524,16 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
           if (!pendingTargetRef.current) {
             setCurrentIndex(0);
           }
+=======
+          setPage(pageToLoad);
+          setHasMore(Boolean(res.pagination?.hasMore));
+          setHasPrevious(Boolean(res.pagination?.hasPrevious) || pageToLoad > 1);
+>>>>>>> Stashed changes
         } else {
-          setReels(prev => [...prev, ...transformedReels]);
+          // No data -> disable further loads
+          setHasMore(false);
         }
+<<<<<<< Updated upstream
 
         setHasMore(response.pagination?.hasMore || false);
         // Update hasPrevious based on response or current page
@@ -482,14 +544,18 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
           : currentPage > 1);
 
         // Note: The useEffect that watches 'reels' will handle jumping to pending target
+=======
+      } catch (e) {
+        console.error('Error loading reels page', e);
+      } finally {
+        setLoading(false);
+>>>>>>> Stashed changes
       }
-    } catch (error) {
-      console.error('Error loading webseries:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [loading, transformVideoToReel]
+  );
 
+<<<<<<< Updated upstream
   // Load episodes from a specific season and prepend to reels
   const loadEpisodesFromSeason = async (seasonId: string, targetVideoId: string) => {
     try {
@@ -598,21 +664,42 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
 
         // Adjust scroll position to maintain user's view
         // Wait for next frame to ensure list has updated
+=======
+  // Load previous page and prepend (when user scrolls near top)
+  const loadPrevious = useCallback(async () => {
+    if (loadingPrevious || page <= 1) return;
+    const prevPage = page - 1;
+    setLoadingPrevious(true);
+    try {
+      const res = await videoService.getWebseriesFeed(prevPage);
+      if (res && res.success && Array.isArray(res.data) && res.data.length) {
+        const transformed = res.data.map(transformVideoToReel);
+        // Prepend and keep scroll position
+        setReels((prev) => [...transformed, ...prev]);
+
+        // After prepend, adjust offset so visible item stays the same
+        // estimate height per item is SCREEN_HEIGHT (paging). We move offset by transformed.length * SCREEN_HEIGHT
+        const offsetDelta = transformed.length * SCREEN_HEIGHT;
+        // slight delay to ensure list updates
+>>>>>>> Stashed changes
         requestAnimationFrame(() => {
-          if (flatListRef.current) {
-            const newItemsHeight = transformedReels.length * SCREEN_HEIGHT;
-            flatListRef.current.scrollToOffset({
-              offset: scrollOffsetRef.current + newItemsHeight,
-              animated: false,
-            });
-          }
+          flatListRef.current?.scrollToOffset({
+            offset: scrollOffsetRef.current + offsetDelta,
+            animated: false,
+          });
         });
+
+        setPage(prevPage);
+        setHasPrevious(prevPage > 1);
+      } else {
+        setHasPrevious(false);
       }
-    } catch (error) {
-      console.error('Error loading previous webseries:', error);
+    } catch (err) {
+      console.error('Error loading previous page', err);
     } finally {
       setLoadingPrevious(false);
     }
+<<<<<<< Updated upstream
   };
 
   const loadMore = async () => {
@@ -620,9 +707,17 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
     if (loading || loadingPrevious || refreshing || !hasMore) {
       return;
     }
+=======
+  }, [loadingPrevious, page, transformVideoToReel]);
+>>>>>>> Stashed changes
 
+  // Load more (next page)
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) return;
     const nextPage = page + 1;
+    setLoading(true);
     try {
+<<<<<<< Updated upstream
       setLoading(true);
       const response = await videoService.getWebseriesFeed(nextPage);
       
@@ -652,19 +747,38 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
           // No more content
           setHasMore(false);
         }
+=======
+      const res = await videoService.getWebseriesFeed(nextPage);
+      if (res && res.success && Array.isArray(res.data) && res.data.length) {
+        const transformed = res.data.map(transformVideoToReel);
+        setReels((prev) => [...prev, ...transformed]);
+        setPage(nextPage);
+        setHasMore(Boolean(res.pagination?.hasMore));
+        setHasPrevious(true);
+>>>>>>> Stashed changes
       } else {
         setHasMore(false);
       }
-    } catch (error) {
-      console.error('Error loading more webseries:', error);
-      // Don't set hasMore to false on error, allow retry
+    } catch (err) {
+      console.error('Error loading more reels', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [loading, hasMore, page, transformVideoToReel]);
 
-  // Handle viewability change to track which video should play
+  // Pull to refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadPage(1, { replace: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadPage]);
+
+  // Viewability: determine active reel (to play)
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+<<<<<<< Updated upstream
     // Don't update currentIndex if we have a pending target jump
     if (pendingTargetRef.current || isJumpingRef.current) {
       console.log(`⏸️ Skipping viewable items update - jump in progress`);
@@ -679,26 +793,48 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
           setCurrentIndex(newIndex);
         }, 50);
       }
+=======
+    if (!viewableItems || viewableItems.length === 0) return;
+    const first = viewableItems[0];
+    if (typeof first.index === 'number') {
+      setCurrentIndex(first.index);
+>>>>>>> Stashed changes
     }
   }).current;
 
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 70, // Increased threshold for more stable detection
-    minimumViewTime: 100, // Minimum time item must be visible
+    itemVisiblePercentThreshold: 70,
+    minimumViewTime: 100,
   }).current;
 
+<<<<<<< Updated upstream
   // Handle scroll to detect when user is near the top
   const handleScroll = (event: any) => {
     handlePullScroll(event);
     const offsetY = event.nativeEvent.contentOffset.y;
+=======
+  // Handle scroll: detect near-top to load previous pages
+  const handleScroll = useCallback((evt: any) => {
+    const offsetY = evt.nativeEvent.contentOffset.y;
+>>>>>>> Stashed changes
     scrollOffsetRef.current = offsetY;
-    
-    // Load previous content when user scrolls near the top (within 1.5 screen heights)
-    // This ensures we load before user reaches the very top
-    if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && !loading && page > 1) {
+    // If we are within 1.5 screen heights of top and there are previous pages, load them
+    if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
       loadPrevious();
     }
-  };
+  }, [hasPrevious, loadingPrevious, loadPrevious, page]);
+
+  // --- Renderers ---
+  const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
+    return (
+      <ReelItem
+        key={item.id}
+        reel={item}
+        navigation={navigation}
+        isActive={index === currentIndex}
+      />
+    );
+  }, [currentIndex, navigation]);
 
   const jumpToTargetIfNeeded = async (targetId?: string) => {
     if (!targetId) return;
@@ -869,7 +1005,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
     return (
       <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
         <ActivityIndicator size="large" color="#FFD54A" />
-        <Text style={styles.loadingText}>Loading webseries...</Text>
+        <Text style={styles.loadingText}>Loading reels…</Text>
       </SafeAreaView>
     );
   }
@@ -889,11 +1025,13 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       <FlatList
         ref={flatListRef}
         data={reels}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(it) => it.id}
+        renderItem={renderItem}
         pagingEnabled
         showsVerticalScrollIndicator={false}
         snapToInterval={SCREEN_HEIGHT}
         decelerationRate="fast"
+<<<<<<< Updated upstream
         getItemLayout={(data, index) => ({
           length: SCREEN_HEIGHT,
           offset: SCREEN_HEIGHT * index,
@@ -946,32 +1084,38 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
         windowSize={5}
         initialNumToRender={2}
         updateCellsBatchingPeriod={50}
+=======
+>>>>>>> Stashed changes
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        removeClippedSubviews
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={2}
         onEndReached={loadMore}
         onScrollToIndexFailed={onScrollToIndexFailed}
         onEndReachedThreshold={0.3}
-        ListHeaderComponent={
-          loadingPrevious ? (
-            <View style={styles.headerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
-            </View>
-          ) : null
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FFD54A']} />
         }
-        ListFooterComponent={
-          loading ? (
-            <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
-            </View>
-          ) : null
-        }
+        ListHeaderComponent={loadingPrevious ? (
+          <View style={styles.headerLoader}>
+            <ActivityIndicator size="small" color="#FFD54A" />
+          </View>
+        ) : null}
+        ListFooterComponent={loading ? (
+          <View style={styles.footerLoader}>
+            <ActivityIndicator size="small" color="#FFD54A" />
+          </View>
+        ) : null}
       />
     </SafeAreaView>
   );
 };
 
+<<<<<<< Updated upstream
 export default ReelPlayerScreen;
 
 /**
@@ -2826,3 +2970,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+=======
+export default ReelsFeedScreen;
+>>>>>>> Stashed changes

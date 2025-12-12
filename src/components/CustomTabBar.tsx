@@ -23,7 +23,21 @@ type TabAnim = {
 };
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+<<<<<<< Updated upstream
   const insets = useSafeAreaInsets();
+=======
+  // 🔴 IMPORTANT: hide tab bar completely on Reels
+  const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key]?.options;
+
+  if (
+    focusedRoute.name === 'Reels' ||
+    focusedOptions?.tabBarStyle?.display === 'none'
+  ) {
+    return null;
+  }
+
+>>>>>>> Stashed changes
   const anims = useMemo<TabAnim[]>(
     () =>
       state.routes.map(() => ({
@@ -74,38 +88,86 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       });
 
       Animated.sequence([
-        Animated.timing(anims[index].scale, { toValue: 0.9, duration: 80, useNativeDriver: true }),
-        Animated.timing(anims[index].scale, { toValue: 1, duration: 140, useNativeDriver: true }),
+        Animated.timing(anims[index].scale, {
+          toValue: 0.9,
+          duration: 80,
+          useNativeDriver: true,
+        }),
+        Animated.timing(anims[index].scale, {
+          toValue: 1,
+          duration: 140,
+          useNativeDriver: true,
+        }),
       ]).start();
 
       switch (route.name) {
         case 'Reels':
           Animated.sequence([
-            Animated.timing(anims[index].rotate, { toValue: 1, duration: 480, useNativeDriver: true }),
-            Animated.timing(anims[index].rotate, { toValue: 0, duration: 0, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 1,
+              duration: 480,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: true,
+            }),
           ]).start();
           break;
 
         case 'Profile':
           Animated.sequence([
-            Animated.timing(anims[index].translateY, { toValue: -12, duration: 150, useNativeDriver: true }),
-            Animated.timing(anims[index].translateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+            Animated.timing(anims[index].translateY, {
+              toValue: -12,
+              duration: 150,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].translateY, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
           ]).start();
           break;
 
         case 'Rewards':
           Animated.sequence([
-            Animated.timing(anims[index].rotate, { toValue: -0.15, duration: 100, useNativeDriver: true }),
-            Animated.timing(anims[index].rotate, { toValue: 0.15, duration: 200, useNativeDriver: true }),
-            Animated.timing(anims[index].rotate, { toValue: 0, duration: 100, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, {
+              toValue: -0.15,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 0.15,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 0,
+              duration: 100,
+              useNativeDriver: true,
+            }),
           ]).start();
           break;
 
         case 'Home':
           Animated.sequence([
-            Animated.timing(anims[index].rotate, { toValue: -0.08, duration: 80, useNativeDriver: true }),
-            Animated.timing(anims[index].rotate, { toValue: 0.08, duration: 130, useNativeDriver: true }),
-            Animated.timing(anims[index].rotate, { toValue: 0, duration: 120, useNativeDriver: true }),
+            Animated.timing(anims[index].rotate, {
+              toValue: -0.08,
+              duration: 80,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 0.08,
+              duration: 130,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anims[index].rotate, {
+              toValue: 0,
+              duration: 120,
+              useNativeDriver: true,
+            }),
           ]).start();
           break;
       }
@@ -167,9 +229,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
             outputRange: ['-25deg', '-8deg', '0deg', '8deg', '360deg'],
           });
 
-          const scale = anim.scale;
-          const translateY = anim.translateY;
-
           return (
             <TouchableOpacity
               key={route.key}
@@ -178,12 +237,17 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
               onPress={handlePress(index)}
               style={styles.tabItem}
               activeOpacity={0.8}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Animated.View
                 style={[
                   styles.iconWrapper,
-                  { transform: [{ translateY }, { scale }, { rotate }] },
+                  {
+                    transform: [
+                      { translateY: anim.translateY },
+                      { scale: anim.scale },
+                      { rotate },
+                    ],
+                  },
                 ]}
               >
                 <Ionicons
