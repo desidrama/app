@@ -125,12 +125,11 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef(0);
   const previousReelsCountRef = useRef(0);
-<<<<<<< HEAD
   const initialVideoIdRef = useRef<string | null>(null);
 
   const initialVideoId = route?.params?.initialVideoId;
   const initialSeasonId = route?.params?.initialSeasonId;
-=======
+
   const transformVideoToReel = useCallback((video: VideoType): Reel => {
     let videoUrl = video.masterPlaylistUrl || '';
     if (!videoUrl && video.variants && video.variants.length > 0) {
@@ -197,7 +196,6 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
     pullDistance,
     threshold,
   } = usePullToRefresh(refreshFeed, { completionDelayMs: 750 });
->>>>>>> 1d2e1810af467c593cf75b86004ebe8c45eb1ed3
 
   useEffect(() => {
     loadWebseries();
