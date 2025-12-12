@@ -1,6 +1,7 @@
 // FILE: src/services/api.ts
 // ============================================
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { Platform } from 'react-native';
 import { API_BASE_URL } from '../utils/api';
 import {
   getToken,
@@ -203,13 +204,27 @@ export const sendOTP = async (phone: string) => {
 };
 
 // Verify OTP function
-export const verifyOTP = async (phone: string, otp: string, fcmToken?: string) => {
+export const verifyOTP = async (
+  phone: string,
+  otp: string,
+  fcmToken?: string,
+  metadata?: Record<string, any>
+) => {
   try {
+    // Build default client metadata if not explicitly provided
+    const defaultMetadata = {
+      platform: Platform.OS,
+      platformVersion: String(Platform.Version ?? ''),
+      app: 'mobile',
+      locale: Intl.DateTimeFormat().resolvedOptions().locale,
+    };
+
     // Send FCM token when available so backend can store it for push notifications
     const response = await api.post('/api/auth/verify-otp', {
       phone,
       otp,
       ...(fcmToken ? { fcmToken } : {}),
+      metadata: metadata ?? defaultMetadata,
     });
     return response.data;
   } catch (error) {
