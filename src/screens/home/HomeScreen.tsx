@@ -625,6 +625,6 @@ const styles = StyleSheet.create({
   },
 
   bottomPadding: {
-    height: 140, // ensures content rises above bottom nav / home bar on modern devices
+    height: 100, // ensures content rises above fixed bottom nav bar
   },
 });
