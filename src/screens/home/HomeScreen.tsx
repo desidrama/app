@@ -1,5 +1,5 @@
 // FILE: src/screens/home/HomeScreen.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,9 +15,20 @@ import {
   Dimensions,
   SafeAreaView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { useDispatch, useSelector } from 'react-redux';
+import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
+import { videoService } from '../../services/video.service';
+import {
+  setContinueWatching,
+  setContinueWatchingLoading,
+} from '../../redux/slices/videoSlice';
+import { RootState } from '../../redux/store';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -53,10 +64,18 @@ const HERO_DATA: HeroItem[] = [
   },
 ];
 
-export default function HomeScreen({ navigation }: any) {
+type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
+
+export default function HomeScreen() {
+  const navigation = useNavigation<HomeScreenNavigationProp>();
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('New & Hot');
   const [heroIndex, setHeroIndex] = useState(0);
+
+  const dispatch = useDispatch();
+  const { continueWatching, continueWatchingLoading } = useSelector(
+    (state: RootState) => state.video
+  );
 
   const heroRef = useRef<FlatList<HeroItem>>(null);
 
@@ -67,17 +86,40 @@ export default function HomeScreen({ navigation }: any) {
     return [last, ...HERO_DATA, first];
   }, []);
 
-  const continueWatchingData = [
-    { title: 'Jurassic Park', imageUrl: 'https://picsum.photos/110/160?random=1' },
-    { title: 'Oldboy', imageUrl: 'https://picsum.photos/110/160?random=2' },
-    { title: 'John Wick', imageUrl: 'https://picsum.photos/110/160?random=3' },
-  ];
-
   const latestTrendingData = [
     { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
     { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
     { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
   ];
+
+  // Fetch continue watching videos whenever the Home tab gains focus
+  const fetchContinueWatching = useCallback(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        dispatch(setContinueWatchingLoading(true));
+        const response = await videoService.getContinueWatching(10);
+        if (isMounted && response.success && response.data) {
+          dispatch(setContinueWatching(response.data));
+        }
+      } catch (error) {
+        console.error('Error fetching continue watching:', error);
+      } finally {
+        if (isMounted) {
+          dispatch(setContinueWatchingLoading(false));
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch]);
+
+  useFocusEffect(fetchContinueWatching);
 
   useEffect(() => {
     const n = HERO_DATA.length;
@@ -113,11 +155,46 @@ export default function HomeScreen({ navigation }: any) {
     }
   };
 
-  const getHeroItemLayout = (_: HeroItem[] | null | undefined, index: number) => ({
+  const getHeroItemLayout = (_data: ArrayLike<HeroItem> | null | undefined, index: number) => ({
     length: SCREEN_WIDTH,
     offset: SCREEN_WIDTH * index,
     index,
   });
+
+  const handleContinueWatchingPress = (videoData: any) => {
+    console.log(`🖱️🖱️🖱️ BUTTON PRESSED - handleContinueWatchingPress called`);
+    console.log(`📦 Raw videoData:`, JSON.stringify(videoData, null, 2));
+    
+    // Get the exact video ID from the continue watching data
+    const rawVideoId = videoData.videoId?._id || videoData.videoId;
+    const targetVideoId = rawVideoId ? String(rawVideoId).trim() : null;
+    const resumeTime = videoData.currentTime || 0;
+    
+    console.log(`🎯🎯🎯 CLICKED CONTINUE WATCHING:`);
+    console.log(`   Raw Video ID: ${rawVideoId}`);
+    console.log(`   Processed Video ID: ${targetVideoId}`);
+    console.log(`   Title: ${videoData.videoId?.title}`);
+    console.log(`   Resume Time: ${resumeTime}s`);
+    
+    if (!targetVideoId) {
+      console.error(`❌ No targetVideoId found in videoData:`, videoData);
+      return;
+    }
+    
+    // Send user to Reels tab with target video + resume info
+    const params = {
+      targetVideoId: targetVideoId,
+      resumeTime: resumeTime,
+      progress: videoData.progress,
+    };
+    
+    console.log(`🚀 Navigating to Reels with params:`, JSON.stringify(params, null, 2));
+    
+    // Navigate to Reels tab
+    navigation.navigate('Reels', params);
+    
+    console.log(`✅ Navigation called to Reels tab with targetVideoId: ${targetVideoId}`);
+  };
 
   return (
     <View style={styles.safeArea}>
@@ -245,30 +322,77 @@ export default function HomeScreen({ navigation }: any) {
             </View>
 
             {/* Continue Watching */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Continue Watching</Text>
-              <Text style={styles.sectionSubtitle}>
-                Pick up exactly where you left off
-              </Text>
+            {continueWatching.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Continue Watching</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Pick up exactly where you left off
+                </Text>
 
-              <View style={{ height: 12 }} />
+                <View style={{ height: 12 }} />
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScrollContainer}
-              >
-                {continueWatchingData.map((item, i) => (
-                  <View key={i} style={styles.videoCardWrapper}>
-                    <VideoCard
-                      title={item.title}
-                      imageUrl={item.imageUrl}
-                      onPress={() => {}}
-                    />
+                {continueWatchingLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color="#FFD54A" />
                   </View>
-                ))}
-              </ScrollView>
-            </View>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={true}
+                    contentContainerStyle={styles.horizontalScrollContainer}
+                    style={styles.horizontalScrollView}
+                    nestedScrollEnabled={true}
+                    bounces={true}
+                    decelerationRate="fast"
+                    snapToInterval={120}
+                    snapToAlignment="start"
+                  >
+                    {continueWatching.map((item, index) => {
+                      // Use a combination of _id and videoId._id to ensure uniqueness
+                      const uniqueKey = item._id 
+                        ? `continue-${item._id}` 
+                        : `continue-${item.videoId._id}-${index}`;
+                      return (
+                        <TouchableOpacity
+                          key={uniqueKey}
+                          onPress={() => {
+                            console.log(`🖱️ TOUCHABLE OPACITY PRESSED for video: ${item.videoId?.title || 'Unknown'}`);
+                            handleContinueWatchingPress(item);
+                          }}
+                          style={styles.videoCardWrapper}
+                          activeOpacity={0.8}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <View style={styles.progressCardContainer} pointerEvents="box-none">
+                            <View pointerEvents="none">
+                              <VideoCard
+                                title={item.videoId.title}
+                                imageUrl={item.videoId.thumbnailUrl}
+                              />
+                            </View>
+                            {/* Progress Bar */}
+                            <View style={styles.progressBar}>
+                              <View
+                                style={[
+                                  styles.progressFill,
+                                  { width: `${Math.min(item.progress, 100)}%` },
+                                ]}
+                              />
+                            </View>
+                            {/* Time Badge */}
+                            <View style={styles.timeBadge}>
+                              <Text style={styles.timeBadgeText}>
+                                {Math.floor(item.currentTime)}s
+                              </Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+            )}
 
             {/* Latest & Trending */}
             <View style={styles.section}>
@@ -541,11 +665,56 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#A5A5AB',
   },
+  horizontalScrollView: {
+    flexGrow: 0,
+  },
   horizontalScrollContainer: {
     paddingRight: 16,
+    paddingLeft: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   videoCardWrapper: {
     marginRight: 10,
+    flexShrink: 0,
+  },
+  progressCardContainer: {
+    position: 'relative',
+  },
+  progressBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#FFD54A',
+    borderRadius: 2,
+  },
+  timeBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  timeBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFD54A',
+  },
+  loadingContainer: {
+    height: 160,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   bottomPadding: {

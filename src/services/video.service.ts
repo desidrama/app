@@ -38,4 +38,29 @@ export const videoService = {
     const response = await api.post(`/api/content/videos/${videoId}/like`);
     return response.data;
   },
+
+  // ========== Watch Progress Methods ==========
+  async saveWatchProgress(videoId: string, currentTime: number, duration: number) {
+    const response = await api.post('/api/content/watch-progress', {
+      videoId,
+      currentTime,
+      duration,
+    });
+    return response.data;
+  },
+
+  async getContinueWatching(limit: number = 10) {
+    const response = await api.get(`/api/content/continue-watching?limit=${limit}`);
+    return response.data;
+  },
+
+  async getWatchProgress(videoId: string) {
+    const response = await api.get(`/api/content/watch-progress/${videoId}`);
+    return response.data;
+  },
+
+  async deleteWatchProgress(videoId: string) {
+    const response = await api.delete(`/api/content/watch-progress/${videoId}`);
+    return response.data;
+  },
 };
