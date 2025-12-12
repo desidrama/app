@@ -35,6 +35,12 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type ReelPlayerProps = {
   navigation?: any;
+  route?: {
+    params?: {
+      initialVideoId?: string;
+      initialSeasonId?: string;
+    };
+  };
 };
 
 type Reel = {
@@ -105,7 +111,7 @@ type Comment = {
   text: string;
 };
 
-const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
+const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation, route }) => {
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
@@ -116,10 +122,55 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef(0);
   const previousReelsCountRef = useRef(0);
+  const initialVideoIdRef = useRef<string | null>(null);
+
+  const initialVideoId = route?.params?.initialVideoId;
+  const initialSeasonId = route?.params?.initialSeasonId;
 
   useEffect(() => {
     loadWebseries();
   }, []);
+
+  // Handle scroll to index failed
+  const onScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
+    // Wait a bit and try again, or scroll to offset
+    setTimeout(() => {
+      if (flatListRef.current) {
+        const offset = info.index * info.averageItemLength;
+        flatListRef.current.scrollToOffset({ offset, animated: false });
+        setCurrentIndex(info.index);
+      }
+    }, 100);
+  };
+
+  // Handle initial video when reels are loaded
+  useEffect(() => {
+    if (reels.length > 0 && initialVideoId && !initialVideoIdRef.current) {
+      initialVideoIdRef.current = initialVideoId;
+      // Find the index of the initial video
+      const videoIndex = reels.findIndex(reel => reel.id === initialVideoId);
+      if (videoIndex >= 0) {
+        // Scroll to that video after a short delay to ensure FlatList is ready
+        setTimeout(() => {
+          try {
+            flatListRef.current?.scrollToIndex({
+              index: videoIndex,
+              animated: false,
+            });
+            setCurrentIndex(videoIndex);
+          } catch (error) {
+            // Fallback to scrollToOffset if scrollToIndex fails
+            const offset = videoIndex * SCREEN_HEIGHT;
+            flatListRef.current?.scrollToOffset({ offset, animated: false });
+            setCurrentIndex(videoIndex);
+          }
+        }, 500);
+      } else if (initialSeasonId) {
+        // If video not found but we have seasonId, try loading episodes from that season
+        loadEpisodesFromSeason(initialSeasonId, initialVideoId);
+      }
+    }
+  }, [reels, initialVideoId, initialSeasonId]);
 
   const loadWebseries = async () => {
     try {
@@ -192,6 +243,86 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
       console.error('Error loading webseries:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load episodes from a specific season and prepend to reels
+  const loadEpisodesFromSeason = async (seasonId: string, targetVideoId: string) => {
+    try {
+      const episodesResponse = await videoService.getEpisodes(seasonId);
+      
+      if (episodesResponse.success && episodesResponse.data && episodesResponse.data.length > 0) {
+        // Transform episodes to Reel format
+        const formatDuration = (seconds: number) => {
+          if (!seconds) return '0m';
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+          }
+          return `${minutes}m`;
+        };
+
+        const episodeReels: Reel[] = episodesResponse.data.map((video: VideoType) => {
+          let videoUrl = video.masterPlaylistUrl || '';
+          if (!videoUrl && video.variants && video.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = video.variants.find(v => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = video.variants[0].url;
+            }
+          }
+
+          return {
+            id: video._id,
+            title: video.title || 'Untitled',
+            year: new Date(video.createdAt).getFullYear().toString(),
+            rating: video.ageRating || 'UA 16+',
+            duration: formatDuration(video.duration || 0),
+            videoUrl,
+            initialLikes: video.likes || 0,
+            description: video.description,
+            seasonId: video.seasonId,
+            episodeNumber: video.episodeNumber,
+            thumbnailUrl: video.thumbnailUrl || video.thumbnail,
+          };
+        });
+
+        // Sort by episode number
+        episodeReels.sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0));
+
+        // Prepend to existing reels
+        setReels(prev => {
+          const combined = [...episodeReels, ...prev];
+          // Find the target video index
+          const targetIndex = combined.findIndex(reel => reel.id === targetVideoId);
+          if (targetIndex >= 0) {
+            setTimeout(() => {
+              try {
+                flatListRef.current?.scrollToIndex({
+                  index: targetIndex,
+                  animated: false,
+                });
+                setCurrentIndex(targetIndex);
+              } catch (error) {
+                // Fallback to scrollToOffset if scrollToIndex fails
+                const offset = targetIndex * SCREEN_HEIGHT;
+                flatListRef.current?.scrollToOffset({ offset, animated: false });
+                setCurrentIndex(targetIndex);
+              }
+            }, 500);
+          }
+          return combined;
+        });
+      }
+    } catch (error) {
+      console.error('Error loading episodes from season:', error);
     }
   };
 
@@ -432,6 +563,7 @@ const ReelPlayerScreen: React.FC<ReelPlayerProps> = ({ navigation }) => {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onEndReached={loadMore}
+        onScrollToIndexFailed={onScrollToIndexFailed}
         onEndReachedThreshold={0.3}
         ListHeaderComponent={
           loadingPrevious ? (

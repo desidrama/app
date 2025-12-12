@@ -17,7 +17,7 @@ import CustomTabBar from '../components/CustomTabBar';
 // ---- Types ----
 export type TabParamList = {
   Home: undefined;
-  Reels: undefined;
+  Reels: { initialVideoId?: string; initialSeasonId?: string } | undefined;
   Rewards: undefined;
   Profile: undefined;
 };
