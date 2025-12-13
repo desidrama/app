@@ -25,6 +25,7 @@ type TabAnim = {
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const insets = useSafeAreaInsets();
+
   // 🔴 IMPORTANT: hide tab bar completely on Reels
   const focusedRoute = state.routes[state.index];
   const focusedOptions = descriptors[focusedRoute.key]?.options;
