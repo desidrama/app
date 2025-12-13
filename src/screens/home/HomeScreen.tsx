@@ -27,6 +27,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
@@ -60,6 +61,7 @@ type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const parentNavigation = (navigation as any).getParent();
 
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('New & Hot');
@@ -354,7 +356,13 @@ export default function HomeScreen() {
               <Text style={styles.brandKalakar}> कलाकार</Text>
             </View>
 
-            <View style={styles.searchContainer}>
+            <TouchableOpacity
+              style={styles.searchContainer}
+              onPress={() => {
+                parentNavigation?.navigate('Search');
+              }}
+              activeOpacity={0.8}
+            >
               <Ionicons
                 name="search-outline"
                 size={18}
@@ -368,11 +376,15 @@ export default function HomeScreen() {
                 value={searchText}
                 onChangeText={setSearchText}
                 returnKeyType="search"
+                editable={false}
+                onFocus={() => {
+                  parentNavigation?.navigate('Search');
+                }}
               />
               <TouchableOpacity style={styles.micButton}>
                 <Ionicons name="mic-outline" size={18} color="#F5F5F5" />
               </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Pull-to-Refresh Indicator */}

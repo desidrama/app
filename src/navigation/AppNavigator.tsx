@@ -14,6 +14,7 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import OTPScreen from '../screens/auth/OTPScreen';
 import TabNavigator from './TabNavigator';
 import SplashScreen from '../screens/Splash/splashscreen';
+import SearchScreen from '../screens/home/SearchScreen';
 import * as storage from '../utils/storage';
 
 export type RootStackParamList = {
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   Login: undefined;
   OTPScreen: { phoneNumber: string } | undefined;
   Main: undefined;
+  Search: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -133,6 +135,7 @@ export default function AppNavigator() {
 
         {/* Main tab navigator (Home / Reels / Coins / Profile) */}
         <Stack.Screen name="Main" component={TabNavigator} />
+        <Stack.Screen name="Search" component={SearchScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -69,4 +69,9 @@ export const videoService = {
     const response = await api.delete(`/api/content/watch-progress/${videoId}`);
     return response.data;
   },
+
+  async searchVideos(query: string, page: number = 1) {
+    const response = await api.get(`/api/content/search?q=${encodeURIComponent(query)}&page=${page}`);
+    return response.data;
+  },
 };
