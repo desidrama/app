@@ -37,14 +37,29 @@
         "@react-native-google-signin/google-signin"
       ],
       "@react-native-firebase/app",
-      "@react-native-firebase/messaging"
+      "@react-native-firebase/messaging",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "Configured via app.config.js and .env file",
       "eas": {
-        "projectId": "5f1d9380-986e-4ec4-9c9b-fa0a38eed832"
+        "projectId": "b71faa6b-a136-470c-916d-d0d39081cabf"
       }
     },
-    "owner": "shubham_raj666"
+    "owner": "shivamtiwari28"
   }
 }
