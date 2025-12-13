@@ -26,11 +26,19 @@ export const carouselService = {
       // The API returns { success: true, data: CarouselItem[] }
       return response.data?.data || [];
     } catch (error: any) {
-      console.error('Get Active Carousel Items Error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
+      const isNetworkError = error?.message === 'Network Error' || error?.code === 'ERR_NETWORK' || !error?.response;
+      if (isNetworkError) {
+        console.error('Get Active Carousel Items Error: Network connection failed', {
+          message: error.message,
+          code: error.code,
+        });
+      } else {
+        console.error('Get Active Carousel Items Error:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+        });
+      }
       throw error;
     }
   },

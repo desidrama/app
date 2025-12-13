@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { videoService } from '../services/video.service';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,12 +28,22 @@ type ReelItemProps = {
     videoUrl: string;
   };
   isActive: boolean;
+  initialTime?: number; // Initial playback position in seconds
 };
 
 const EMOJIS = ['😍', '👍', '😆', '😮', '😢', '😡'];
 
-export default function ReelItem({ reel, isActive }: ReelItemProps) {
+const PROGRESS_UPDATE_INTERVAL = 5000; // Save progress every 5 seconds
+const MIN_PROGRESS_TO_SAVE = 3; // Only save if at least 3 seconds watched
+
+export default function ReelItem({ reel, isActive, initialTime = 0 }: ReelItemProps) {
+  const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
+  const hasSeekedRef = useRef(false);
+  const progressSaveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedTimeRef = useRef(0);
+  const isCompletedRef = useRef(false);
+  const videoDurationRef = useRef(0);
 
   const [showReactions, setShowReactions] = useState(false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(null);
@@ -46,22 +58,145 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
 
   const sheetY = useRef(new Animated.Value(height)).current;
 
+  // Seek to initial time when video becomes active and hasn't been seeked yet
+  useEffect(() => {
+    if (isActive && initialTime > 0 && !hasSeekedRef.current && videoRef.current) {
+      videoRef.current.setPositionAsync(initialTime * 1000).then(() => {
+        hasSeekedRef.current = true;
+        console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
+      }).catch((error) => {
+        console.error('Error seeking to initial time:', error);
+      });
+    }
+  }, [isActive, initialTime, reel.title]);
+
   useEffect(() => {
     if (isActive) {
       videoRef.current?.playAsync();
     } else {
+      // When video becomes inactive, immediately clear the progress saving interval
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
       videoRef.current?.pauseAsync();
       setPlaybackSpeed(1.0);
       videoRef.current?.setRateAsync(1.0, true);
     }
   }, [isActive]);
 
-  const handlePlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded && status.durationMillis) {
-      const progressPercent = (status.positionMillis / status.durationMillis) * 100;
-      setProgress(progressPercent);
+  // Save progress function
+  const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
+    try {
+      const progressPercent = durationSeconds > 0 ? (currentTimeSeconds / durationSeconds) * 100 : 0;
+      
+      // Only save if progress is between 5% and 85% and not completed
+      const shouldSave = 
+        progressPercent >= 5 && 
+        progressPercent < 85 && 
+        !isCompletedRef.current &&
+        (forceSave || currentTimeSeconds - lastSavedTimeRef.current >= MIN_PROGRESS_TO_SAVE);
+      
+      if (shouldSave) {
+        console.log(`💾 ReelItem: Saving progress for ${reel.title}: ${currentTimeSeconds.toFixed(1)}s / ${durationSeconds.toFixed(1)}s (${progressPercent.toFixed(1)}%)`);
+        await videoService.saveWatchProgress(reel.id, currentTimeSeconds, durationSeconds);
+        lastSavedTimeRef.current = currentTimeSeconds;
+      } else if (progressPercent >= 85) {
+        isCompletedRef.current = true;
+        // Delete watch progress when completed
+        videoService.deleteWatchProgress(reel.id).catch(console.error);
+      }
+    } catch (error) {
+      console.error('Error saving watch progress in ReelItem:', error);
     }
   };
+
+  const handlePlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded && status.durationMillis) {
+      const positionSeconds = status.positionMillis / 1000;
+      const durationSeconds = status.durationMillis / 1000;
+      videoDurationRef.current = durationSeconds;
+      
+      const progressPercent = (status.positionMillis / status.durationMillis) * 100;
+      setProgress(progressPercent);
+      
+      // Only save progress if video is active AND playing
+      // Don't save from status updates - let the interval handle it to avoid duplicate saves
+      // This prevents saving when video is paused or closed
+    }
+  };
+
+  // Setup interval for periodic progress saving
+  useEffect(() => {
+    // Clear any existing interval first
+    if (progressSaveIntervalRef.current) {
+      clearInterval(progressSaveIntervalRef.current);
+      progressSaveIntervalRef.current = null;
+    }
+
+    // Only set up interval if video is active
+    if (isActive) {
+      progressSaveIntervalRef.current = setInterval(() => {
+        // Double-check that video is still active before saving
+        if (!isActive) {
+          if (progressSaveIntervalRef.current) {
+            clearInterval(progressSaveIntervalRef.current);
+            progressSaveIntervalRef.current = null;
+          }
+          return;
+        }
+
+        if (videoRef.current && videoDurationRef.current > 0) {
+          videoRef.current.getStatusAsync().then((status: any) => {
+            // Only save if video is still active and playing
+            if (status.isLoaded && status.positionMillis && status.isPlaying && isActive) {
+              const currentTimeSeconds = status.positionMillis / 1000;
+              saveProgress(currentTimeSeconds, videoDurationRef.current);
+            }
+          }).catch((error) => {
+            console.error('Error getting video status:', error);
+          });
+        }
+      }, PROGRESS_UPDATE_INTERVAL);
+    }
+
+    return () => {
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
+    };
+  }, [isActive]);
+
+  // Save progress on unmount (only if video was active)
+  useEffect(() => {
+    return () => {
+      // Clear interval immediately on unmount
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
+
+      // Only save on unmount if video was active
+      if (isActive && videoRef.current && videoDurationRef.current > 0) {
+        videoRef.current.getStatusAsync().then((status: any) => {
+          if (status.isLoaded && status.positionMillis) {
+            const currentTimeSeconds = status.positionMillis / 1000;
+            const progressPercent = (status.positionMillis / status.durationMillis) * 100;
+            
+            // Save on unmount if progress is between 5% and 85%
+            if (currentTimeSeconds >= MIN_PROGRESS_TO_SAVE && 
+                progressPercent >= 5 && 
+                progressPercent < 85 && 
+                !isCompletedRef.current) {
+              console.log(`💾 ReelItem: Saving progress on unmount for ${reel.title}`);
+              saveProgress(currentTimeSeconds, videoDurationRef.current, true);
+            }
+          }
+        }).catch(console.error);
+      }
+    };
+  }, [reel.id, reel.title, isActive]);
 
   const handleScreenPress = () => {
     // Tap toggles between 1x and 2x
@@ -120,12 +255,12 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
         style={StyleSheet.absoluteFill}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        activeOpacity={1}
       >
         <Video
           ref={videoRef}
           source={{ uri: reel.videoUrl }}
           style={StyleSheet.absoluteFill}
+          // @ts-ignore - expo-av accepts "cover" as valid resizeMode
           resizeMode="cover"
           shouldPlay={isActive}
           isLooping
@@ -326,9 +461,9 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
           <KeyboardAvoidingView 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.commentKeyboardView}
-            keyboardVerticalOffset={0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
-            <View style={styles.commentBox}>
+            <View style={[styles.commentBox, { paddingBottom: Math.max(insets.bottom, 8) }]}>
               <View style={styles.commentHeader}>
                 <Text style={styles.commentTitle}>Comments</Text>
                 <TouchableOpacity onPress={() => setShowComments(false)}>
@@ -352,9 +487,10 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
                 )}
                 style={styles.commentList}
                 contentContainerStyle={styles.commentListContent}
+                keyboardShouldPersistTaps="handled"
               />
 
-              <View style={styles.inputRow}>
+              <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, 6) }]}>
                 <TextInput
                   value={comment}
                   onChangeText={setComment}
@@ -362,6 +498,13 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
                   placeholderTextColor="#888"
                   style={styles.input}
                   multiline={false}
+                  returnKeyType="send"
+                  onSubmitEditing={() => {
+                    if (comment.trim()) {
+                      setComments([...comments, comment]);
+                      setComment('');
+                    }
+                  }}
                 />
                 <TouchableOpacity
                   onPress={() => {
@@ -616,6 +759,7 @@ const styles = StyleSheet.create({
   },
   commentKeyboardView: {
     justifyContent: 'flex-end',
+    flex: 1,
   },
   commentBox: {
     backgroundColor: '#1a1a1a',

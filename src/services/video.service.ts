@@ -24,6 +24,12 @@ export const videoService = {
     return response.data;
   },
 
+  async getLatestVideos(limit: number = 10, type?: string) {
+    const typeParam = type ? `&type=${type}` : '';
+    const response = await api.get(`/api/content/latest?limit=${limit}${typeParam}`);
+    return response.data;
+  },
+
   async getVideoById(videoId: string) {
     const response = await api.get(`/api/content/videos/${videoId}`);
     return response.data;

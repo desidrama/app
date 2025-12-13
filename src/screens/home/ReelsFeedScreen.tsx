@@ -8,11 +8,17 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  TouchableOpacity,
+  StyleSheet,
 } from 'react-native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { videoService } from '../../services/video.service';
 import ReelItem from '../../components/ReelItem';
 import styles from './styles/ReelPlayerStyles';
 import type { Video as VideoType } from '../../types';
+import type { TabParamList } from '../../navigation/TabNavigator';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -33,7 +39,14 @@ type Reel = {
 
 const ITEMS_PER_PAGE = 15;
 
-const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+type ReelsScreenRouteProp = RouteProp<TabParamList, 'Reels'>;
+type ReelsScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Reels'>;
+
+const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
+  const navigation = useNavigation<ReelsScreenNavigationProp>();
+  const route = useRoute<ReelsScreenRouteProp>();
+  const routeParams = route.params;
+  
   const [reels, setReels] = useState<Reel[]>([]);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
@@ -42,6 +55,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const [hasPrevious, setHasPrevious] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
+  const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
+  const [targetVideoFound, setTargetVideoFound] = useState<boolean>(false);
 
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef<number>(0);
@@ -87,6 +103,67 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       thumbnailUrl: (video as any).thumbnailUrl || (video as any).thumbnail,
     };
   }, []);
+
+  // Function to find and scroll to target video
+  const findAndScrollToVideo = useCallback((videoId: string) => {
+    if (!videoId || !flatListRef.current) return;
+    
+    console.log('🔍 Looking for video with ID:', videoId);
+    
+    // First, check if video is already in loaded reels
+    const index = reels.findIndex((reel) => reel.id === videoId);
+    if (index !== -1) {
+      console.log('✅ Found video at index:', index);
+      setCurrentIndex(index);
+      setTargetVideoFound(true);
+      // Wait for layout, then scroll
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index, animated: false });
+      }, 100);
+      return;
+    }
+    
+    // If not found, try to fetch the specific video
+    const fetchTargetVideo = async () => {
+      try {
+        console.log('📥 Video not in feed, fetching specific video...');
+        const response = await videoService.getVideoById(videoId);
+        if (response.success && response.data) {
+          const targetReel = transformVideoToReel(response.data);
+          // Prepend to the beginning of the list
+          setReels((prev) => [targetReel, ...prev]);
+          setCurrentIndex(0);
+          setTargetVideoFound(true);
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Error fetching target video:', error);
+      }
+    };
+    
+    fetchTargetVideo();
+  }, [reels, transformVideoToReel]);
+
+  // Handle route params change (when navigating with targetVideoId)
+  useEffect(() => {
+    if (routeParams?.targetVideoId) {
+      const videoId = routeParams.targetVideoId;
+      const resume = routeParams.resumeTime || 0;
+      console.log('🎯 Navigation params received:', { videoId, resume });
+      setTargetVideoId(videoId);
+      setResumeTime(resume);
+      setTargetVideoFound(false);
+    }
+  }, [routeParams]);
+
+  // Try to find target video when reels are loaded
+  useEffect(() => {
+    if (targetVideoId && reels.length > 0 && !targetVideoFound) {
+      findAndScrollToVideo(targetVideoId);
+    }
+  }, [targetVideoId, reels, targetVideoFound, findAndScrollToVideo]);
 
   // Initial load (page 1)
   useEffect(() => {
@@ -222,15 +299,19 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
   // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
+    // Check if this is the target video and pass resumeTime
+    const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
+    const initialTime = isTargetVideo ? resumeTime : 0;
+    
     return (
       <ReelItem
         key={item.id}
         reel={item}
-        navigation={navigation}
         isActive={index === currentIndex}
+        initialTime={initialTime}
       />
     );
-  }, [currentIndex, navigation]);
+  }, [currentIndex, targetVideoId, resumeTime]);
 
   if (loading && reels.length === 0) {
     return (
@@ -241,8 +322,21 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
     );
   }
 
+  const handleBackPress = () => {
+    navigation.navigate('Home');
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Back Button */}
+      <TouchableOpacity
+        style={backButtonStyles.backButton}
+        onPress={handleBackPress}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="chevron-back" size={28} color="#fff" />
+      </TouchableOpacity>
+
       <FlatList
         ref={flatListRef}
         data={reels}
@@ -280,5 +374,20 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
+const backButtonStyles = StyleSheet.create({
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    zIndex: 1000,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 export default ReelPlayerScreen;

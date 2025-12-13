@@ -51,9 +51,23 @@ export default function VideoPlayer({
   }, []);
 
   // Save progress to backend at regular intervals
-  const saveProgress = async (currentTime: number) => {
+  const saveProgress = async (currentTime: number, forceSave: boolean = false) => {
     try {
-      if (currentTime - lastSavedTimeRef.current >= MIN_PROGRESS_TO_SAVE) {
+      // Calculate progress percentage
+      const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+      
+      // Only save if:
+      // 1. Progress is between 5% and 85% (backend requirement)
+      // 2. At least MIN_PROGRESS_TO_SAVE seconds have elapsed since last save (unless forced)
+      // 3. Video is not completed
+      const shouldSave = 
+        progressPercent >= 5 && 
+        progressPercent < 85 && 
+        !isCompletedRef.current &&
+        (forceSave || currentTime - lastSavedTimeRef.current >= MIN_PROGRESS_TO_SAVE);
+      
+      if (shouldSave) {
+        console.log(`💾 Saving progress: ${currentTime.toFixed(1)}s / ${duration.toFixed(1)}s (${progressPercent.toFixed(1)}%)`);
         await videoService.saveWatchProgress(videoId, currentTime, duration);
         lastSavedTimeRef.current = currentTime;
 
@@ -61,6 +75,11 @@ export default function VideoPlayer({
         if (onProgressChange) {
           onProgressChange(currentTime, duration);
         }
+      } else if (progressPercent < 5) {
+        console.log(`⏭️ Progress too low (${progressPercent.toFixed(1)}%), not saving`);
+      } else if (progressPercent >= 85) {
+        console.log(`✅ Progress high enough (${progressPercent.toFixed(1)}%), marking as completed`);
+        isCompletedRef.current = true;
       }
     } catch (error) {
       console.error('Error saving watch progress:', error);
@@ -115,8 +134,21 @@ export default function VideoPlayer({
   useEffect(() => {
     return () => {
       const currentTime = player.currentTime || 0;
-      if (currentTime > MIN_PROGRESS_TO_SAVE && !isCompletedRef.current) {
-        saveProgress(currentTime);
+      const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+      
+      // Save on unmount if:
+      // 1. Progress is between 5% and 85%
+      // 2. At least 3 seconds have been watched
+      // 3. Video is not completed
+      if (currentTime >= MIN_PROGRESS_TO_SAVE && 
+          progressPercent >= 5 && 
+          progressPercent < 85 && 
+          !isCompletedRef.current) {
+        console.log(`💾 Saving progress on unmount: ${currentTime.toFixed(1)}s (${progressPercent.toFixed(1)}%)`);
+        // Force save on unmount
+        saveProgress(currentTime, true).catch((error) => {
+          console.error('Error saving progress on unmount:', error);
+        });
       }
     };
   }, [player, videoId, duration]);

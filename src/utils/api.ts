@@ -11,29 +11,50 @@ import Constants from 'expo-constants';
 // 4. Fallback to development URL
 
 
+// Helper to check if a string is a valid URL (not a placeholder)
+const isValidUrl = (url: string | undefined): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  // Ignore placeholder strings
+  if (url.includes('Configured via') || url.includes('yourproductiondomain') || !url.startsWith('http')) {
+    return false;
+  }
+  return url.startsWith('http://') || url.startsWith('https://');
+};
+
 const getApiBaseUrl = (): string => {
   // Try EXPO_PUBLIC_ prefixed env variable first (Expo's recommended way)
-  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (isValidUrl(process.env.EXPO_PUBLIC_API_BASE_URL)) {
+    return process.env.EXPO_PUBLIC_API_BASE_URL!;
   }
 
   // Try non-prefixed env variable
-  if (process.env.API_BASE_URL) {
-    return process.env.API_BASE_URL;
+  if (isValidUrl(process.env.API_BASE_URL)) {
+    return process.env.API_BASE_URL!;
   }
 
   // Try getting from Expo Constants (from app.config.js extra field)
+  // But skip if it's a placeholder string
   const envApiUrl = Constants.expoConfig?.extra?.apiBaseUrl;
-  if (envApiUrl) {
-    return envApiUrl;
+  if (isValidUrl(envApiUrl)) {
+    return envApiUrl as string;
   }
 
   // Fallback URLs for development/production
-  const DEV_API_URL = 'http://10.78.2.110:5000';
+  // For Android emulator: use 10.0.2.2 to access host machine's localhost
+  // For iOS simulator: use localhost
+  // For physical device: use your computer's local IP (e.g., 192.168.x.x)
+  const DEV_API_URL = 'http://192.168.29.105:5000'; // Android emulator default
   const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
   // Use development URL in dev mode, production URL otherwise
-  return __DEV__ ? DEV_API_URL : PROD_API_URL;
+  const fallbackUrl = __DEV__ ? DEV_API_URL : PROD_API_URL;
+  
+  if (!isValidUrl(process.env.EXPO_PUBLIC_API_BASE_URL) && !isValidUrl(envApiUrl)) {
+    console.warn('⚠️ No valid API_BASE_URL found. Using fallback:', fallbackUrl);
+    console.warn('💡 To set a custom URL, create a .env file with: EXPO_PUBLIC_API_BASE_URL=http://YOUR_IP:5000');
+  }
+  
+  return fallbackUrl;
 };
 
 export const API_BASE_URL = getApiBaseUrl();

@@ -56,31 +56,6 @@ type CarouselBannerItem = {
   contentId?: string;
 };
 
-
-const HERO_DATA: HeroItem[] = [
-  {
-    id: '1',
-    title: 'Midnight Echoes',
-    subtitle: 'New micro-thriller · 2 min',
-    tag: 'New & Hot',
-    imageUrl: 'https://picsum.photos/800/1200?random=21',
-  },
-  {
-    id: '2',
-    title: 'City Lights',
-    subtitle: 'Romantic short · 3 min',
-    tag: 'Trending',
-    imageUrl: 'https://picsum.photos/800/1200?random=22',
-  },
-  {
-    id: '3',
-    title: 'Last Call',
-    subtitle: 'Crime · 1 min',
-    tag: 'Original',
-    imageUrl: 'https://picsum.photos/800/1200?random=23',
-  },
-];
-
 type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
 
 export default function HomeScreen() {
@@ -94,7 +69,6 @@ export default function HomeScreen() {
     (state: RootState) => state.video
   );
 
-  const heroRef = useRef<FlatList<HeroItem>>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselItems, setCarouselItems] = useState<CarouselBannerItem[]>([]);
   const [carouselLoading, setCarouselLoading] = useState(true);
@@ -120,9 +94,19 @@ export default function HomeScreen() {
           setLatestTrendingData(transformedLatest);
         }
       }
-    } catch (error) {
-      console.error('Error refreshing home content:', error);
-      // Keep existing data on error
+    } catch (error: any) {
+      const isNetworkError = error?.message === 'Network Error' || error?.code === 'ERR_NETWORK' || !error?.response;
+      if (isNetworkError) {
+        console.warn('⚠️ Network error while refreshing home content. Please check your connection and ensure the backend server is running.');
+        console.warn('API Base URL:', API_BASE_URL);
+      } else {
+        console.error('Error refreshing home content:', {
+          message: error?.message,
+          status: error?.response?.status,
+          data: error?.response?.data,
+        });
+      }
+      // Keep existing data on error - don't clear what we have
     }
   }, []);
 
@@ -185,8 +169,19 @@ export default function HomeScreen() {
 
         setCarouselItems(transformedItems);
       } catch (error: any) {
-        console.error('Failed to fetch carousel:', error);
-        setCarouselError(error.message || 'Failed to load carousel');
+        const isNetworkError = error?.message === 'Network Error' || error?.code === 'ERR_NETWORK' || !error?.response;
+        if (isNetworkError) {
+          console.warn('⚠️ Network error while fetching carousel. Please check your connection and ensure the backend server is running.');
+          console.warn('API Base URL:', API_BASE_URL);
+          setCarouselError('Unable to connect to server. Please check your internet connection.');
+        } else {
+          console.error('Failed to fetch carousel:', {
+            message: error?.message,
+            status: error?.response?.status,
+            data: error?.response?.data,
+          });
+          setCarouselError(error?.response?.data?.message || error?.message || 'Failed to load carousel');
+        }
         // Fallback to empty array or keep previous data
         setCarouselItems([]);
       } finally {
@@ -196,12 +191,6 @@ export default function HomeScreen() {
 
     fetchCarousel();
   }, []);
-
-  const latestTrendingData = [
-    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
-    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
-    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
-  ];
 
   // Fetch continue watching videos whenever the Home tab gains focus
   const fetchContinueWatching = useCallback(() => {
@@ -214,8 +203,18 @@ export default function HomeScreen() {
         if (isMounted && response.success && response.data) {
           dispatch(setContinueWatching(response.data));
         }
-      } catch (error) {
-        console.error('Error fetching continue watching:', error);
+      } catch (error: any) {
+        const isNetworkError = error?.message === 'Network Error' || error?.code === 'ERR_NETWORK' || !error?.response;
+        if (isNetworkError) {
+          console.warn('⚠️ Network error while fetching continue watching. Please check your connection and ensure the backend server is running.');
+        } else {
+          console.error('Error fetching continue watching:', {
+            message: error?.message,
+            status: error?.response?.status,
+            data: error?.response?.data,
+          });
+        }
+        // Keep existing continue watching data on error
       } finally {
         if (isMounted) {
           dispatch(setContinueWatchingLoading(false));
@@ -279,12 +278,8 @@ export default function HomeScreen() {
           // Navigate to Reels tab and pass the episode ID
           // The ReelsFeedScreen will need to handle this initial video
           if (navigation) {
-            navigation.navigate('Main', {
-              screen: 'Reels',
-              params: {
-                initialVideoId: firstEpisode._id,
-                initialSeasonId: item.contentId,
-              },
+            navigation.navigate('Reels', {
+              targetVideoId: firstEpisode._id,
             });
           }
         } else {
@@ -293,37 +288,24 @@ export default function HomeScreen() {
       } else if (item.contentType === 'reels' && item.contentId) {
         // For reels, navigate directly to that video
         if (navigation) {
-          navigation.navigate('Main', {
-            screen: 'Reels',
-            params: {
-              initialVideoId: item.contentId,
-            },
+          navigation.navigate('Reels', {
+            targetVideoId: item.contentId,
           });
         }
       } else {
         // For other types (trending, custom), just navigate to Reels tab
         if (navigation) {
-          navigation.navigate('Main', {
-            screen: 'Reels',
-          });
+          navigation.navigate('Reels');
         }
       }
     } catch (error) {
       console.error('Error handling carousel press:', error);
       // Fallback: just navigate to Reels tab
       if (navigation) {
-        navigation.navigate('Main', {
-          screen: 'Reels',
-        });
+        navigation.navigate('Reels');
       }
     }
   };
-
-  const getHeroItemLayout = (_data: ArrayLike<HeroItem> | null | undefined, index: number) => ({
-    length: SCREEN_WIDTH,
-    offset: SCREEN_WIDTH * index,
-    index,
-  });
 
   const handleContinueWatchingPress = (videoData: any) => {
     console.log(`🖱️🖱️🖱️ BUTTON PRESSED - handleContinueWatchingPress called`);
