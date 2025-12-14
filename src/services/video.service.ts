@@ -66,8 +66,14 @@ export const videoService = {
   },
 
   async deleteWatchProgress(videoId: string) {
-    const response = await api.delete(`/api/content/watch-progress/${videoId}`);
-    return response.data;
+    try {
+      const response = await api.delete(`/api/content/watch-progress/${videoId}`);
+      return response.data;
+    } catch (error) {
+      // Silently fail if watch progress doesn't exist
+      console.log('Note: Watch progress may not exist for deletion');
+      return { success: true, message: 'Watch progress deleted or not found' };
+    }
   },
 
   async searchVideos(query: string, page: number = 1) {

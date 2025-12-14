@@ -3,16 +3,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  SafeAreaView,
   FlatList,
   ActivityIndicator,
   RefreshControl,
   Dimensions,
   TouchableOpacity,
   StyleSheet,
+  Platform,
 } from 'react-native';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { videoService } from '../../services/video.service';
 import ReelItem from '../../components/ReelItem';
 import styles from './styles/ReelPlayerStyles';
@@ -46,6 +47,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const navigation = useNavigation<ReelsScreenNavigationProp>();
   const route = useRoute<ReelsScreenRouteProp>();
   const routeParams = route.params;
+  const insets = useSafeAreaInsets();
   
   const [reels, setReels] = useState<Reel[]>([]);
   const [page, setPage] = useState<number>(1);
@@ -61,6 +63,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef<number>(0);
+  const [isScreenFocused, setIsScreenFocused] = useState(true);
 
   // Transform backend video to Reel format
   const transformVideoToReel = useCallback((video: VideoType): Reel => {
@@ -362,27 +365,87 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
   // Handle scroll to index failed
   const onScrollToIndexFailed = useCallback((info: any) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:364',message:'scrollToIndex failed',data:{index:info.index,reelsLength:reels.length,averageItemLength:info.averageItemLength},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     const wait = new Promise(resolve => setTimeout(resolve, 500));
     wait.then(() => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:367',message:'Retrying scrollToIndex',data:{index:info.index},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
     });
-  }, []);
+  }, [reels.length]);
 
   // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:372',message:'renderItem called',data:{itemId:item.id,index,currentIndex,targetVideoId,resumeTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     // Check if this is the target video and pass resumeTime
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
-    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     return (
       <ReelItem
         key={item.id}
         reel={item}
         isActive={index === currentIndex}
         initialTime={initialTime}
+        screenFocused={isScreenFocused}
+        onEpisodeSelect={(episodeId) => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
+          // #endregion
+          // Find the episode in the reels list
+          const episodeIndex = reels.findIndex(r => r.id === episodeId);
+          if (episodeIndex !== -1) {
+            setCurrentIndex(episodeIndex);
+            setTargetVideoId(episodeId);
+            setResumeTime(0);
+            // Scroll to the episode
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: true });
+            }, 100);
+          } else {
+            // Episode not in current feed, fetch it
+            setTargetVideoId(episodeId);
+            setResumeTime(0);
+            // The existing logic will handle fetching and scrolling
+          }
+        }}
       />
     );
-  }, [currentIndex, targetVideoId, resumeTime]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
+
+  // #region agent log
+  // Log safe area insets for debugging
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:411',message:'Safe area insets',data:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'safe-area'})}).catch(()=>{});
+  }, [insets.top, insets.bottom, insets.left, insets.right]);
+  // #endregion
+
+  // Handle screen focus/blur to pause all videos when navigating away
+  useFocusEffect(
+    useCallback(() => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:useFocusEffect',message:'Screen focused',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
+      // #endregion
+      setIsScreenFocused(true);
+      return () => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:useFocusEffect-cleanup',message:'Screen blurred - pausing all videos',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
+        // #endregion
+        setIsScreenFocused(false);
+      };
+    }, [])
+  );
+
+  const handleBackPress = () => {
+    navigation.navigate('Home');
+  };
 
   if (loading && reels.length === 0) {
     return (
@@ -393,15 +456,25 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     );
   }
 
-  const handleBackPress = () => {
-    navigation.navigate('Home');
-  };
-
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       {/* Back Button */}
+      {(() => {
+        const backButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
+        const backButtonLeft = insets.left + 16;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:backButton',message:'Back button alignment values',data:{platform:Platform.OS,insets:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right},backButtonTop,backButtonLeft},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'alignment'})}).catch(()=>{});
+        // #endregion
+        return null;
+      })()}
       <TouchableOpacity
-        style={backButtonStyles.backButton}
+        style={[
+          backButtonStyles.backButton,
+          {
+            top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
+            left: insets.left + 16,
+          },
+        ]}
         onPress={handleBackPress}
         activeOpacity={0.7}
       >
@@ -449,8 +522,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 const backButtonStyles = StyleSheet.create({
   backButton: {
     position: 'absolute',
-    top: 50,
-    left: 16,
     zIndex: 1000,
     width: 44,
     height: 44,

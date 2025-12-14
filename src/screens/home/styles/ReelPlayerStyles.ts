@@ -399,23 +399,24 @@ export default StyleSheet.create({
   // INFO SHEET (if used)
   infoSheetContainer: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
+    zIndex: 1000,
+    elevation: 1000,
   },
   infoBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
   },
   infoSheet: {
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
-    maxHeight: SCREEN_HEIGHT * 0.9,
     backgroundColor: '#050509',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
     paddingHorizontal: 18,
     paddingTop: 10,
+    zIndex: 1001,
+    elevation: 1001,
   },
   infoTopBar: {
     flexDirection: 'row',
@@ -431,11 +432,17 @@ export default StyleSheet.create({
     alignSelf: 'center',
   },
 
+  infoPosterRow: {
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 8,
+  },
   posterWrapper: {
     width: SCREEN_WIDTH * 0.62,
     aspectRatio: 2 / 3,
     borderRadius: 18,
     overflow: 'hidden',
+    position: 'relative',
   },
   posterImage: {
     width: '100%',
