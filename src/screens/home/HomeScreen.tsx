@@ -31,6 +31,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
+import { Video, ResizeMode } from 'expo-av';
 
 
 import {
@@ -76,6 +77,7 @@ export default function HomeScreen() {
   const [carouselLoading, setCarouselLoading] = useState(true);
   const [carouselError, setCarouselError] = useState<string | null>(null);
   const [carouselRawData, setCarouselRawData] = useState<CarouselItem[]>([]); // Store full carousel data
+  const [playingVideos, setPlayingVideos] = useState<Record<string, { videoUrl: string; isPlaying: boolean }>>({});
 
   const [latestTrendingData, setLatestTrendingData] = useState([
     { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
@@ -241,7 +243,7 @@ export default function HomeScreen() {
       const next = (carouselIndex + 1) % n;
       carouselRef.current?.scrollToIndex({ index: next, animated: true });
       setCarouselIndex(next);
-    }, 4000);
+    }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
   }, [carouselIndex, carouselItems.length]);
@@ -252,6 +254,73 @@ export default function HomeScreen() {
     const viewIndex = Math.round(x / bannerWidth);
     setCarouselIndex(viewIndex);
   };
+
+  // Track view time for auto-play after 10 seconds
+  useEffect(() => {
+    if (carouselItems.length === 0) return;
+
+    const currentItem = carouselItems[carouselIndex];
+    if (!currentItem) return;
+
+    // Stop all other videos when switching carousel items
+    setPlayingVideos(prev => {
+      const updated: Record<string, { videoUrl: string; isPlaying: boolean }> = {};
+      Object.keys(prev).forEach(key => {
+        if (key === currentItem.id) {
+          updated[key] = prev[key];
+        }
+      });
+      return updated;
+    });
+
+    // If already playing, don't set timer again
+    if (playingVideos[currentItem.id]?.isPlaying) return;
+
+    // Only auto-play for webseries
+    if (currentItem.contentType !== 'webseries' || !currentItem.contentId) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        // Fetch episodes for this season
+        const episodesResponse = await videoService.getEpisodes(currentItem.contentId!);
+        
+        if (episodesResponse.success && episodesResponse.data && episodesResponse.data.length > 0) {
+          // Get first episode
+          const sortedEpisodes = [...episodesResponse.data].sort(
+            (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
+          );
+          const firstEpisode = sortedEpisodes[0];
+
+          // Get video URL
+          let videoUrl = firstEpisode.masterPlaylistUrl || '';
+          if (!videoUrl && firstEpisode.variants && firstEpisode.variants.length > 0) {
+            const preferredOrder = ['720p', '1080p', '480p', '360p'];
+            for (const res of preferredOrder) {
+              const variant = firstEpisode.variants.find((v: any) => v.resolution === res);
+              if (variant) {
+                videoUrl = variant.url;
+                break;
+              }
+            }
+            if (!videoUrl) {
+              videoUrl = firstEpisode.variants[0].url;
+            }
+          }
+
+          if (videoUrl) {
+            setPlayingVideos(prev => ({
+              ...prev,
+              [currentItem.id]: { videoUrl, isPlaying: true },
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching episode for auto-play:', error);
+      }
+    }, 10000); // 10 seconds
+
+    return () => clearTimeout(timer);
+  }, [carouselIndex, carouselItems]);
 
   const getCarouselItemLayout = (data: ArrayLike<CarouselBannerItem> | null | undefined, index: number) => {
     const bannerWidth = SCREEN_WIDTH - 32;
@@ -439,6 +508,7 @@ export default function HomeScreen() {
                     >
                       {cat}
                     </Text>
+                    {isActive && <View style={styles.categoryUnderline} />}
                   </TouchableOpacity>
                 );
               })}
@@ -473,25 +543,46 @@ export default function HomeScreen() {
                     onMomentumScrollEnd={onCarouselScrollEnd}
                     decelerationRate="fast"
                     contentContainerStyle={styles.carouselContentContainer}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={styles.carouselBanner}
-                        activeOpacity={0.9}
-                        onPress={() => handleCarouselPress(item)}
-                      >
-                        <Image
-                          source={{ uri: item.imageUrl }}
-                          style={styles.carouselBannerImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.carouselBannerOverlay} />
-                        <View style={styles.carouselBannerContent}>
-                          <Text style={styles.carouselBannerTitle} numberOfLines={2}>
-                            {item.title}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
+                    renderItem={({ item, index }) => {
+                      const isActive = index === carouselIndex;
+                      const videoData = playingVideos[item.id];
+                      const shouldPlayVideo = isActive && videoData?.isPlaying && videoData.videoUrl;
+
+                      return (
+                        <TouchableOpacity
+                          style={styles.carouselBanner}
+                          activeOpacity={0.9}
+                          onPress={() => handleCarouselPress(item)}
+                        >
+                          {/* Thumbnail Image - always visible as background */}
+                          <Image
+                            source={{ uri: item.imageUrl }}
+                            style={styles.carouselBannerImage}
+                            resizeMode="cover"
+                          />
+                          
+                          {/* Video Player - overlays thumbnail when playing */}
+                          {shouldPlayVideo && (
+                            <Video
+                              source={{ uri: videoData.videoUrl }}
+                              style={styles.carouselBannerVideo}
+                              resizeMode={ResizeMode.COVER}
+                              shouldPlay={true}
+                              isLooping={true}
+                              isMuted={true}
+                              volume={0}
+                            />
+                          )}
+                          
+                          <View style={styles.carouselBannerOverlay} />
+                          <View style={styles.carouselBannerContent}>
+                            <Text style={styles.carouselBannerTitle} numberOfLines={2}>
+                              {item.title}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
                   />
 
                   {/* Dots Indicator */}
@@ -712,9 +803,10 @@ const styles = StyleSheet.create({
     marginRight: 10,
     borderRadius: 999,
     backgroundColor: '#15151C',
+    position: 'relative',
   },
   categoryTabActive: {
-    backgroundColor: '#FFD54A',
+    // No background color change - just underline
   },
   categoryText: {
     fontSize: 13,
@@ -722,7 +814,17 @@ const styles = StyleSheet.create({
     color: '#A0A0A7',
   },
   categoryTextActive: {
-    color: '#000',
+    color: '#FFFFFF',
+  },
+  categoryUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#FFD54A',
+    borderBottomLeftRadius: 999,
+    borderBottomRightRadius: 999,
   },
 
   // CAROUSEL BANNER
@@ -742,6 +844,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#15151C',
   },
   carouselBannerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  carouselBannerVideo: {
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
   },
