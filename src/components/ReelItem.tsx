@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { videoService } from '../services/video.service';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,6 +29,7 @@ type ReelItemProps = {
     duration?: string;
   };
   isActive: boolean;
+  initialTime?: number;
 };
 
 const RANGES = [
@@ -39,19 +41,28 @@ const RANGES = [
 
 const EMOJIS = ['😍', '👍', '😆', '😮', '😢', '😡'];
 
-export default function ReelItem({ reel, isActive }: ReelItemProps) {
+const PROGRESS_UPDATE_INTERVAL = 5000; // Save progress every 5 seconds
+const MIN_PROGRESS_TO_SAVE = 3; // Only save if at least 3 seconds watched
+
+export default function ReelItem({ reel, isActive, initialTime = 0 }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
 
+  const hasSeekedRef = useRef(false);
+  const progressSaveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedTimeRef = useRef(0);
+  const isCompletedRef = useRef(false);
+  const videoDurationRef = useRef(0);
+  const isActiveRef = useRef(isActive); // Track isActive in a ref to avoid stale closures
+
   const episodeSheetY = useRef(new Animated.Value(height)).current;
-  const moreSheetY = useRef(new Animated.Value(height)).current;
-  const descSheetY = useRef(new Animated.Value(height)).current;
+const moreSheetY = useRef(new Animated.Value(height)).current;
+const descSheetY = useRef(new Animated.Value(height)).current;
 
-
-  const [showEpisodes, setShowEpisodes] = useState(false);
-  const [showComments, setShowComments] = useState(false);
-  const [showDescSheet, setShowDescSheet] = useState(false);
-  const [showMore, setShowMore] = useState(false);
+const [showEpisodes, setShowEpisodes] = useState(false);
+const [showComments, setShowComments] = useState(false);
+const [showDescSheet, setShowDescSheet] = useState(false);
+const [showMore, setShowMore] = useState(false);
 
   const [showReactions, setShowReactions] = useState(false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(null);
@@ -63,6 +74,18 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState<string[]>([]);
 
+  // Seek to initial time when video becomes active and hasn't been seeked yet
+  useEffect(() => {
+    if (isActive && initialTime > 0 && !hasSeekedRef.current && videoRef.current) {
+      videoRef.current.setPositionAsync(initialTime * 1000).then(() => {
+        hasSeekedRef.current = true;
+        console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
+      }).catch((error) => {
+        console.error('Error seeking to initial time:', error);
+      });
+    }
+  }, [isActive, initialTime, reel.title]);
+
   const openEpisodes = () => {
     setShowEpisodes(true);
     Animated.timing(episodeSheetY, {
@@ -72,6 +95,229 @@ export default function ReelItem({ reel, isActive }: ReelItemProps) {
       useNativeDriver: true,
     }).start();
   };
+
+  useEffect(() => {
+    if (isActive) {
+      videoRef.current?.playAsync();
+    } else {
+      // IMMEDIATELY clear the progress saving interval when video becomes inactive
+      // This prevents any further progress saves from happening
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+        console.log(`🛑 ReelItem: Cleared progress interval for ${reel.title} (video inactive)`);
+      }
+      
+      // Pause video immediately
+      videoRef.current?.pauseAsync();
+      setPlaybackSpeed(1.0);
+      videoRef.current?.setRateAsync(1.0, true);
+      
+      // Then save final progress (if valid) after a short delay to ensure video is paused
+        setTimeout(() => {
+        if (videoRef.current && videoDurationRef.current > 0) {
+          videoRef.current.getStatusAsync().then((status: any) => {
+            if (status.isLoaded && status.positionMillis && status.durationMillis) {
+              const currentTimeSeconds = status.positionMillis / 1000;
+              const durationMillis = status.durationMillis;
+              const progressPercent = (status.positionMillis / durationMillis) * 100;
+              
+              // Save if progress is valid (between 5% and 85%)
+              if (currentTimeSeconds >= MIN_PROGRESS_TO_SAVE && 
+                  progressPercent >= 5 && 
+                  progressPercent < 85 && 
+                  !isCompletedRef.current) {
+                console.log(`💾 ReelItem: Saving final progress when video becomes inactive for ${reel.title}`);
+                saveProgress(currentTimeSeconds, videoDurationRef.current, true);
+              }
+            }
+          }).catch(console.error);
+        }
+      }, 100);
+    }
+  }, [isActive]);
+
+  // Save progress function
+  const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
+    try {
+      const progressPercent = durationSeconds > 0 ? (currentTimeSeconds / durationSeconds) * 100 : 0;
+      
+      // Only save if progress is between 5% and 85% and not completed
+      const shouldSave = 
+        progressPercent >= 5 && 
+        progressPercent < 85 && 
+        !isCompletedRef.current &&
+        (forceSave || currentTimeSeconds - lastSavedTimeRef.current >= MIN_PROGRESS_TO_SAVE);
+      
+      if (shouldSave) {
+        console.log(`💾 ReelItem: Saving progress for ${reel.title}: ${currentTimeSeconds.toFixed(1)}s / ${durationSeconds.toFixed(1)}s (${progressPercent.toFixed(1)}%)`);
+        const response = await videoService.saveWatchProgress(reel.id, currentTimeSeconds, durationSeconds);
+        if (response?.success) {
+          lastSavedTimeRef.current = currentTimeSeconds;
+          console.log(`✅ Progress saved successfully for ${reel.title}`);
+        } else {
+          console.warn(`⚠️ Progress save returned unsuccessful for ${reel.title}`);
+        }
+      } else if (progressPercent >= 85) {
+        isCompletedRef.current = true;
+        // Delete watch progress when completed
+        videoService.deleteWatchProgress(reel.id).catch(console.error);
+      } else if (progressPercent < 5) {
+        console.log(`⏭️ Progress too low (${progressPercent.toFixed(1)}%) for ${reel.title}, not saving`);
+      }
+    } catch (error) {
+      console.error(`❌ Error saving watch progress in ReelItem for ${reel.title}:`, error);
+    }
+  };
+
+  const handlePlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded && status.durationMillis) {
+      const positionSeconds = status.positionMillis / 1000;
+      const durationSeconds = status.durationMillis / 1000;
+      videoDurationRef.current = durationSeconds;
+      
+      const progressPercent = (status.positionMillis / status.durationMillis) * 100;
+      setProgress(progressPercent);
+      
+      // Only save progress if video is active AND playing
+      // Don't save from status updates - let the interval handle it to avoid duplicate saves
+      // This prevents saving when video is paused or closed
+    }
+  };
+
+  // Update isActive ref whenever it changes
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  // Setup interval for periodic progress saving
+  useEffect(() => {
+    // Clear any existing interval first
+    if (progressSaveIntervalRef.current) {
+      clearInterval(progressSaveIntervalRef.current);
+      progressSaveIntervalRef.current = null;
+    }
+
+    // Only set up interval if video is active
+    if (isActive) {
+      progressSaveIntervalRef.current = setInterval(() => {
+        // Use ref to check current isActive state (avoids stale closure)
+        // If not active, clear interval immediately and return
+        if (!isActiveRef.current) {
+          if (progressSaveIntervalRef.current) {
+            clearInterval(progressSaveIntervalRef.current);
+            progressSaveIntervalRef.current = null;
+            console.log(`🛑 ReelItem: Interval cleared in callback for ${reel.title} (not active)`);
+          }
+          return;
+        }
+
+        if (videoRef.current && videoDurationRef.current > 0) {
+          videoRef.current.getStatusAsync().then((status: any) => {
+            // Only save if video is still active, playing, AND not paused
+            // Double-check isActiveRef to prevent saves after navigation
+            if (status.isLoaded && 
+                status.positionMillis && 
+                status.isPlaying && 
+                !status.isPaused &&
+                isActiveRef.current) {
+              const currentTimeSeconds = status.positionMillis / 1000;
+              saveProgress(currentTimeSeconds, videoDurationRef.current);
+            } else if (!isActiveRef.current) {
+              // If we got here but isActive is false, clear interval
+              if (progressSaveIntervalRef.current) {
+                clearInterval(progressSaveIntervalRef.current);
+                progressSaveIntervalRef.current = null;
+                console.log(`🛑 ReelItem: Interval cleared in status check for ${reel.title}`);
+              }
+            }
+          }).catch((error) => {
+            console.error('Error getting video status:', error);
+          });
+        }
+      }, PROGRESS_UPDATE_INTERVAL);
+    }
+
+    return () => {
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
+    };
+  }, [isActive]);
+
+  // Save progress on unmount (always save if progress is valid, regardless of isActive)
+  useEffect(() => {
+    return () => {
+      // Clear interval immediately on unmount
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
+
+      // Always try to save on unmount if progress is valid
+      // This ensures progress is saved even when user swipes away quickly
+      // Use a small timeout to ensure video ref is still available
+      const saveOnUnmount = async () => {
+        try {
+          if (videoRef.current && videoDurationRef.current > 0) {
+            const status = await videoRef.current.getStatusAsync();
+            if (status.isLoaded && status.positionMillis && status.durationMillis) {
+              const currentTimeSeconds = status.positionMillis / 1000;
+              const durationMillis = status.durationMillis;
+              const progressPercent = (status.positionMillis / durationMillis) * 100;
+              
+              // Save on unmount if progress is between 5% and 85%
+              // Don't check isActive here - we want to save even if video became inactive
+              if (currentTimeSeconds >= MIN_PROGRESS_TO_SAVE && 
+                  progressPercent >= 5 && 
+                  progressPercent < 85 && 
+                  !isCompletedRef.current) {
+                console.log(`💾 ReelItem: Saving progress on unmount for ${reel.title} (${progressPercent.toFixed(1)}%)`);
+                // Force save - don't wait for response as component is unmounting
+                saveProgress(currentTimeSeconds, videoDurationRef.current, true).catch((err) => {
+                  console.error('Error saving on unmount:', err);
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error getting status on unmount:', error);
+        }
+      };
+      
+      // Execute immediately (don't await as we're in cleanup)
+      saveOnUnmount();
+    };
+  }, [reel.id, reel.title]);
+
+  const handleScreenPress = () => {
+    // Tap toggles between 1x and 2x
+    if (playbackSpeed === 1.0) {
+      setPlaybackSpeed(2.0);
+      videoRef.current?.setRateAsync(2.0, true);
+    } else {
+      setPlaybackSpeed(1.0);
+      videoRef.current?.setRateAsync(1.0, true);
+    }
+  };
+
+  const handlePressIn = () => {
+    // Hold to play at 2x
+    if (isActive) {
+      setPlaybackSpeed(2.0);
+      videoRef.current?.setRateAsync(2.0, true);
+    }
+  };
+
+  const handlePressOut = () => {
+    // Release to return to 1x
+    if (isActive) {
+      setPlaybackSpeed(1.0);
+      videoRef.current?.setRateAsync(1.0, true);
+    }
+  };
+
 
   const closeEpisodes = () => {
     Animated.timing(episodeSheetY, {
@@ -119,24 +365,6 @@ const closeDesc = () => {
     useNativeDriver: true,
   }).start(() => setShowDescSheet(false));
 };
-
-  const handlePlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded && status.durationMillis) {
-      setProgress((status.positionMillis / status.durationMillis) * 100);
-    }
-  };
-
-    const handlePressIn = () => {
-    if (!isActive) return;
-    setPlaybackSpeed(2.0);
-    videoRef.current?.setRateAsync(2.0, true);
-  };
-
-  const handlePressOut = () => {
-    if (!isActive) return;
-    setPlaybackSpeed(1.0);
-    videoRef.current?.setRateAsync(1.0, true);
-  };
 
   const episodes = Array.from({ length: 18 }).map(
     (_, i) => activeRange.start + i

@@ -31,6 +31,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
+import ContinueWatching from '../../components/ContinueWatching';
 import { Video, ResizeMode } from 'expo-av';
 
 
@@ -79,10 +80,14 @@ export default function HomeScreen() {
   const [carouselRawData, setCarouselRawData] = useState<CarouselItem[]>([]); // Store full carousel data
   const [playingVideos, setPlayingVideos] = useState<Record<string, { videoUrl: string; isPlaying: boolean }>>({});
 
-  const [latestTrendingData, setLatestTrendingData] = useState([
-    { title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
-    { title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
-    { title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
+  const [latestTrendingData, setLatestTrendingData] = useState<Array<{
+    _id: string;
+    title: string;
+    imageUrl: string;
+  }>>([
+    { _id: '', title: 'Series 1', imageUrl: 'https://picsum.photos/110/160?random=4' },
+    { _id: '', title: 'Series 2', imageUrl: 'https://picsum.photos/110/160?random=5' },
+    { _id: '', title: 'Series 3', imageUrl: 'https://picsum.photos/110/160?random=6' },
   ]);
 
   const refreshHomeContent = useCallback(async () => {
@@ -91,6 +96,7 @@ export default function HomeScreen() {
       const latestResponse = await videoService.getLatestVideos(10, 'episode');
       if (latestResponse.success && latestResponse.data) {
         const transformedLatest = latestResponse.data.map((video: VideoType) => ({
+          _id: (video as any)._id || String(Date.now()),
           title: video.title || 'Untitled',
           imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/110/160?random=4',
         }));
@@ -413,6 +419,30 @@ export default function HomeScreen() {
     console.log(`✅ Navigation called to Reels tab with targetVideoId: ${targetVideoId}`);
   };
 
+  const handleLatestTrendingPress = (videoItem: { _id: string; title: string; imageUrl: string }) => {
+    console.log(`🖱️ Latest & Trending video pressed:`, videoItem.title);
+    
+    const targetVideoId = videoItem._id ? String(videoItem._id).trim() : null;
+    
+    if (!targetVideoId) {
+      console.error(`❌ No video ID found for:`, videoItem);
+      return;
+    }
+    
+    // Navigate to Reels tab with target video (no resume time since it's a new watch)
+    const params = {
+      targetVideoId: targetVideoId,
+      resumeTime: 0,
+    };
+    
+    console.log(`🚀 Navigating to Reels with params:`, JSON.stringify(params, null, 2));
+    
+    // Navigate to Reels tab
+    navigation.navigate('Reels', params);
+    
+    console.log(`✅ Navigation called to Reels tab with targetVideoId: ${targetVideoId}`);
+  };
+
   return (
     <View style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#050509" />
@@ -603,78 +633,12 @@ export default function HomeScreen() {
               )}
             </View>
 
-            {/* Continue Watching */}
-            {continueWatching.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Continue Watching</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Pick up exactly where you left off
-                </Text>
-
-                <View style={{ height: 12 }} />
-
-                {continueWatchingLoading ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#FFD54A" />
-                  </View>
-                ) : (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={true}
-                    contentContainerStyle={styles.horizontalScrollContainer}
-                    style={styles.horizontalScrollView}
-                    nestedScrollEnabled={true}
-                    bounces={true}
-                    decelerationRate="fast"
-                    snapToInterval={120}
-                    snapToAlignment="start"
-                  >
-                    {continueWatching.map((item, index) => {
-                      // Use a combination of _id and videoId._id to ensure uniqueness
-                      const uniqueKey = item._id 
-                        ? `continue-${item._id}` 
-                        : `continue-${item.videoId._id}-${index}`;
-                      return (
-                        <TouchableOpacity
-                          key={uniqueKey}
-                          onPress={() => {
-                            console.log(`🖱️ TOUCHABLE OPACITY PRESSED for video: ${item.videoId?.title || 'Unknown'}`);
-                            handleContinueWatchingPress(item);
-                          }}
-                          style={styles.videoCardWrapper}
-                          activeOpacity={0.8}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                          <View style={styles.progressCardContainer} pointerEvents="box-none">
-                            <View pointerEvents="none">
-                              <VideoCard
-                                title={item.videoId.title}
-                                imageUrl={item.videoId.thumbnailUrl}
-                              />
-                            </View>
-                            {/* Progress Bar */}
-                            <View style={styles.progressBar}>
-                              <View
-                                style={[
-                                  styles.progressFill,
-                                  { width: `${Math.min(item.progress, 100)}%` },
-                                ]}
-                              />
-                            </View>
-                            {/* Time Badge */}
-                            <View style={styles.timeBadge}>
-                              <Text style={styles.timeBadgeText}>
-                                {Math.floor(item.currentTime)}s
-                              </Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-            )}
+            {/* Continue Watching Component */}
+            <ContinueWatching
+              items={continueWatching}
+              loading={continueWatchingLoading}
+              onItemPress={handleContinueWatchingPress}
+            />
 
             {/* Latest & Trending */}
             <View style={styles.section}>
@@ -698,11 +662,11 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.horizontalScrollContainer}
               >
                 {latestTrendingData.map((item, i) => (
-                  <View key={i} style={styles.videoCardWrapper}>
+                  <View key={item._id || i} style={styles.videoCardWrapper}>
                     <VideoCard
                       title={item.title}
                       imageUrl={item.imageUrl}
-                      onPress={() => {}}
+                      onPress={() => handleLatestTrendingPress(item)}
                     />
                   </View>
                 ))}

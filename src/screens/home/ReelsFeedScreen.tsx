@@ -104,22 +104,22 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     };
   }, []);
 
-  // Function to find and scroll to target video
+  // Function to find and scroll to target video (used as fallback)
   const findAndScrollToVideo = useCallback((videoId: string) => {
-    if (!videoId || !flatListRef.current) return;
+    if (!videoId || !flatListRef.current || targetVideoFound) return;
     
     console.log('🔍 Looking for video with ID:', videoId);
     
-    // First, check if video is already in loaded reels
-    const index = reels.findIndex((reel) => reel.id === videoId);
+    // Check if video is already in loaded reels
+    const index = reels.findIndex((reel: Reel) => reel.id === videoId);
     if (index !== -1) {
       console.log('✅ Found video at index:', index);
       setCurrentIndex(index);
       setTargetVideoFound(true);
-      // Wait for layout, then scroll
-      setTimeout(() => {
+      // Scroll immediately
+      requestAnimationFrame(() => {
         flatListRef.current?.scrollToIndex({ index, animated: false });
-      }, 100);
+      });
       return;
     }
     
@@ -137,14 +137,14 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           setTimeout(() => {
             flatListRef.current?.scrollToIndex({ index: 0, animated: false });
           }, 100);
-      }
-    } catch (error) {
+        }
+      } catch (error) {
         console.error('Error fetching target video:', error);
       }
     };
     
     fetchTargetVideo();
-  }, [reels, transformVideoToReel]);
+  }, [reels, targetVideoFound, transformVideoToReel]);
 
   // Handle route params change (when navigating with targetVideoId)
   useEffect(() => {
@@ -158,17 +158,58 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }
   }, [routeParams]);
 
-  // Try to find target video when reels are loaded
+  // Try to find target video when reels are loaded (fallback if not found in initial load)
   useEffect(() => {
-    if (targetVideoId && reels.length > 0 && !targetVideoFound) {
-      findAndScrollToVideo(targetVideoId);
+    if (targetVideoId && reels.length > 0 && !targetVideoFound && !loading) {
+      // Small delay to ensure reels are rendered
+      const timer = setTimeout(() => {
+        findAndScrollToVideo(targetVideoId);
+      }, 200);
+      return () => clearTimeout(timer);
     }
-  }, [targetVideoId, reels, targetVideoFound, findAndScrollToVideo]);
+  }, [targetVideoId, reels, targetVideoFound, findAndScrollToVideo, loading]);
 
-  // Initial load (page 1)
+  // Load target video first if navigating with targetVideoId
   useEffect(() => {
-    loadPage(1, { replace: true });
-  }, []);
+    if (targetVideoId && !targetVideoFound && reels.length === 0) {
+      const loadTargetVideoFirst = async () => {
+        try {
+          console.log('🎯 Loading target video first:', targetVideoId);
+          const response = await videoService.getVideoById(targetVideoId);
+          if (response.success && response.data) {
+            const targetReel = transformVideoToReel(response.data);
+            // Set as the only reel initially, then load feed
+            setReels([targetReel]);
+            setCurrentIndex(0);
+            setTargetVideoFound(true);
+            
+            // Scroll to index 0 immediately
+            requestAnimationFrame(() => {
+              flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+            });
+            
+            // Then load the feed in the background (after a short delay to ensure scroll happens)
+            setTimeout(() => {
+              loadPage(1, { replace: false });
+            }, 300);
+          } else {
+            // If target video not found, just load normal feed
+            loadPage(1, { replace: true });
+          }
+        } catch (error) {
+          console.error('Error loading target video:', error);
+          // Fallback to normal feed load
+          loadPage(1, { replace: true });
+        }
+      };
+      
+      loadTargetVideoFirst();
+    } else if (!targetVideoId && reels.length === 0) {
+      // Normal load if no target video and no reels loaded
+      loadPage(1, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetVideoId]); // Only run when targetVideoId changes or on mount
 
   // Load a page (forward or initial)
   const loadPage = useCallback(
@@ -179,12 +220,42 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         const res = await videoService.getWebseriesFeed(pageToLoad);
         if (res && res.success && Array.isArray(res.data)) {
           const transformed = res.data.map(transformVideoToReel);
-          if (opts?.replace) {
-            setReels(transformed);
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-            setCurrentIndex(0);
+          
+          // If we have a target video, check if it's in the feed
+          if (targetVideoId && !targetVideoFound) {
+            const targetIndex = transformed.findIndex((reel: Reel) => reel.id === targetVideoId);
+            if (targetIndex !== -1) {
+              console.log('✅ Target video found in feed at index:', targetIndex);
+              // Move target video to the beginning
+              const targetReel = transformed[targetIndex];
+              const otherReels = transformed.filter((_: Reel, idx: number) => idx !== targetIndex);
+              const finalReels = opts?.replace ? [targetReel, ...otherReels] : [...reels, targetReel, ...otherReels];
+              setReels(finalReels);
+              setCurrentIndex(0);
+              setTargetVideoFound(true);
+              
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+              }, 50);
+            } else {
+              // Target not in feed, append normally
+              if (opts?.replace) {
+                setReels(transformed);
+                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+                setCurrentIndex(0);
+              } else {
+                setReels((prev) => [...prev, ...transformed]);
+              }
+            }
           } else {
-            setReels((prev) => [...prev, ...transformed]);
+            // No target video, normal append
+            if (opts?.replace) {
+              setReels(transformed);
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              setCurrentIndex(0);
+            } else {
+              setReels((prev) => [...prev, ...transformed]);
+            }
           }
 
           setPage(pageToLoad);
@@ -199,7 +270,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         setLoading(false);
       }
     },
-    [loading, transformVideoToReel]
+    [loading, transformVideoToReel, targetVideoId, targetVideoFound, reels]
   );
 
   // Load previous page and prepend
