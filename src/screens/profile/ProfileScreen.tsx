@@ -229,20 +229,13 @@ export default function ProfileScreen({ navigation }: any) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={PROFILE_COLORS.background} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ width: 40 }} />
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
       {/* Pull-to-Refresh Indicator */}
       {(pullDistance > 0 || refreshing) && (
         <PullToRefreshIndicator
           pullDistance={pullDistance}
           threshold={threshold}
           refreshing={refreshing}
-          topOffset={90}
+          topOffset={60}
         />
       )}
 
@@ -363,7 +356,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* Avatar Selection Modal */}
@@ -470,30 +463,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: PROFILE_COLORS.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 50,
-    paddingBottom: 20,
-    backgroundColor: PROFILE_COLORS.background,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: PROFILE_COLORS.textPrimary,
-    letterSpacing: 0.5,
-  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingTop: 60,
+    paddingBottom: 32,
+    alignItems: 'center',
   },
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 30,
+    paddingTop: 20,
+    paddingBottom: 40,
+    marginBottom: 12,
+    width: '100%',
   },
   avatarContainer: {
     width: 130,
@@ -504,7 +487,7 @@ const styles = StyleSheet.create({
     borderColor: PROFILE_COLORS.accentGold,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
     position: 'relative',
   },
   avatarEmoji: {
@@ -528,12 +511,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    paddingHorizontal: 20,
   },
   usernameText: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: PROFILE_COLORS.textPrimary,
-    marginRight: 8,
+    marginRight: 10,
+    letterSpacing: 0.3,
   },
   editIcon: {
     marginLeft: 4,
@@ -632,20 +617,28 @@ const styles = StyleSheet.create({
   },
   settingsCard: {
     backgroundColor: PROFILE_COLORS.cardBg,
-    marginHorizontal: 16,
+    width: width - 40,
+    maxWidth: 400,
+    alignSelf: 'center',
     borderRadius: 16,
-    paddingVertical: 8,
-    marginBottom: 24,
+    paddingVertical: 4,
+    marginBottom: 20,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: PROFILE_COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    minHeight: 56,
   },
   settingLeft: {
     flexDirection: 'row',
@@ -653,42 +646,48 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingIcon: {
-    marginRight: 12,
+    marginRight: 14,
   },
   settingLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: PROFILE_COLORS.textPrimary,
     flex: 1,
+    letterSpacing: 0.2,
   },
   settingValue: {
     fontSize: 15,
     color: PROFILE_COLORS.textSecondary,
     fontWeight: '500',
+    marginLeft: 8,
   },
   divider: {
     height: 1,
     backgroundColor: PROFILE_COLORS.border,
-    marginHorizontal: 16,
+    marginHorizontal: 20,
+    width: '100%',
   },
   toggle: {
     transform: [{ scaleX: 1.0 }, { scaleY: 1.0 }],
   },
   menuSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
+    width: width - 40,
+    maxWidth: 400,
+    alignSelf: 'center',
+    marginBottom: 20,
     gap: 12,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
     backgroundColor: PROFILE_COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: PROFILE_COLORS.border,
+    minHeight: 56,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -697,31 +696,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuItemText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '500',
     color: PROFILE_COLORS.textPrimary,
+    letterSpacing: 0.2,
   },
   logoutSection: {
-    paddingHorizontal: 16,
+    width: width - 40,
+    maxWidth: 400,
+    alignSelf: 'center',
+    marginTop: 4,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
     backgroundColor: PROFILE_COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: PROFILE_COLORS.accentRed + '40',
+    minHeight: 56,
   },
   logoutText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: PROFILE_COLORS.accentRed,
+    letterSpacing: 0.3,
   },
   saveButtonDisabled: {
     opacity: 0.6,
+  },
+  bottomSpacer: {
+    height: 32,
   },
 });
