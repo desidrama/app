@@ -256,8 +256,10 @@ export default function HomeScreen() {
 
   const onCarouselScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const bannerWidth = SCREEN_WIDTH - 32; // Account for padding
-    const viewIndex = Math.round(x / bannerWidth);
+    const cardWidth = SCREEN_WIDTH * 0.85;
+    const spacing = SCREEN_WIDTH * 0.075;
+    const itemWidth = cardWidth + spacing * 2;
+    const viewIndex = Math.round(x / itemWidth);
     setCarouselIndex(viewIndex);
   };
 
@@ -329,10 +331,12 @@ export default function HomeScreen() {
   }, [carouselIndex, carouselItems]);
 
   const getCarouselItemLayout = (data: ArrayLike<CarouselBannerItem> | null | undefined, index: number) => {
-    const bannerWidth = SCREEN_WIDTH - 32;
+    const cardWidth = SCREEN_WIDTH * 0.85;
+    const spacing = SCREEN_WIDTH * 0.075;
+    const itemWidth = cardWidth + spacing * 2; // Total width including margins
     return {
-      length: bannerWidth,
-      offset: bannerWidth * index,
+      length: itemWidth,
+      offset: itemWidth * index,
       index,
     };
   };
@@ -567,11 +571,13 @@ export default function HomeScreen() {
                     data={carouselItems}
                     keyExtractor={(item) => item.id}
                     horizontal
-                    pagingEnabled
+                    pagingEnabled={false}
                     showsHorizontalScrollIndicator={false}
                     getItemLayout={getCarouselItemLayout}
                     onMomentumScrollEnd={onCarouselScrollEnd}
                     decelerationRate="fast"
+                    snapToInterval={SCREEN_WIDTH * 0.925} // Card width + spacing
+                    snapToAlignment="center"
                     contentContainerStyle={styles.carouselContentContainer}
                     renderItem={({ item, index }) => {
                       const isActive = index === carouselIndex;
@@ -580,7 +586,10 @@ export default function HomeScreen() {
 
                       return (
                         <TouchableOpacity
-                          style={styles.carouselBanner}
+                          style={[
+                            styles.carouselBanner,
+                            isActive && styles.carouselBannerActive,
+                          ]}
                           activeOpacity={0.9}
                           onPress={() => handleCarouselPress(item)}
                         >
@@ -602,6 +611,24 @@ export default function HomeScreen() {
                               isMuted={true}
                               volume={0}
                             />
+                          )}
+                          
+                          {/* Bookmark Icon - top right */}
+                          <TouchableOpacity
+                            style={styles.bookmarkIconContainer}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              // Handle bookmark action
+                            }}
+                          >
+                            <Ionicons name="bookmark-outline" size={22} color="#FFFFFF" />
+                          </TouchableOpacity>
+                          
+                          {/* Mute Icon - bottom right (only when video is playing) */}
+                          {shouldPlayVideo && (
+                            <View style={styles.muteIconContainer}>
+                              <Ionicons name="volume-mute" size={20} color="#FFFFFF" />
+                            </View>
                           )}
                           
                           <View style={styles.carouselBannerOverlay} />
@@ -797,15 +824,21 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   carouselContentContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   carouselBanner: {
-    width: SCREEN_WIDTH - 32,
-    height: 180,
+    width: SCREEN_WIDTH * 0.85, // 85% width - consistent size
+    height: 340, // Taller portrait orientation
     borderRadius: 12,
     overflow: 'hidden',
-    marginRight: 12,
+    marginHorizontal: SCREEN_WIDTH * 0.075, // 7.5% margin on each side for preview
     backgroundColor: '#15151C',
+    opacity: 0.7, // Dimmed for non-active cards
+  },
+  carouselBannerActive: {
+    opacity: 1, // Full opacity for active card
+    transform: [{ scale: 1.02 }], // Slightly larger when active
   },
   carouselBannerImage: {
     width: '100%',
@@ -823,15 +856,37 @@ const styles = StyleSheet.create({
   carouselBannerContent: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
-    padding: 16,
+    alignItems: 'center', // Center align title
+    padding: 20,
+    paddingBottom: 24,
   },
   carouselBannerTitle: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    textAlign: 'center',
+    maxWidth: '90%',
+  },
+  bookmarkIconContainer: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
+    zIndex: 10,
+  },
+  muteIconContainer: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    padding: 8,
+    zIndex: 10,
   },
   carouselDotsRow: {
     flexDirection: 'row',
