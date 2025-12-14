@@ -40,15 +40,17 @@ export default function ContinueWatching({
     <View style={styles.wrapper}>
       {/* FULL WIDTH – NO SIDE GAPS */}
       <LinearGradient
-        colors={[
-          'rgba(234, 181, 9, 0.77)', // dark golden top
-          'rgba(255, 213, 74, 0)',
-          'rgba(0, 0, 0, 0.37)', // transparent bottom
-        ]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.gradientContainer}
-      >
+  colors={[
+    'rgba(234, 182, 9, 0.66)', // strong golden top
+    'rgba(234, 181, 9, 0.45)', // mid fade
+    'rgba(0, 0, 0, 0.65)',     // 👈 dark fade at bottom (IMPORTANT)
+  ]}
+  locations={[0, 0.55, 1]}   // 👈 controls fade length
+  start={{ x: 0.5, y: 0 }}
+  end={{ x: 0.5, y: 1 }}
+  style={styles.gradientContainer}
+>
+
         <View style={styles.content}>
           <Text style={styles.sectionTitle}>Continue Watching</Text>
 
@@ -136,6 +138,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 12,
+    minHeight: 240,            // 👈 ensures fade reaches bottom
+
+    
+    
   },
 
   content: {
