@@ -377,6 +377,34 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     });
   }, [reels.length]);
 
+  // Navigate to next webseries
+  const goToNext = useCallback(() => {
+    if (currentIndex < reels.length - 1) {
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+      }, 100);
+    } else if (hasMore) {
+      // Load more if available
+      loadMore();
+    }
+  }, [currentIndex, reels.length, hasMore, loadMore]);
+
+  // Navigate to previous webseries
+  const goToPrevious = useCallback(() => {
+    if (currentIndex > 0) {
+      const prevIndex = currentIndex - 1;
+      setCurrentIndex(prevIndex);
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: prevIndex, animated: true });
+      }, 100);
+    } else if (hasPrevious && page > 1) {
+      // Load previous page if available
+      loadPrevious();
+    }
+  }, [currentIndex, hasPrevious, page, loadPrevious]);
+
   // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
     // #region agent log
@@ -416,9 +444,13 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
             // The existing logic will handle fetching and scrolling
           }
         }}
+        onSwipeLeft={goToNext}
+        onSwipeRight={goToPrevious}
+        canGoNext={currentIndex < reels.length - 1 || hasMore}
+        canGoPrevious={currentIndex > 0 || (hasPrevious && page > 1)}
       />
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, goToNext, goToPrevious, hasMore, hasPrevious, page]);
 
   // #region agent log
   // Log safe area insets for debugging
@@ -478,7 +510,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         onPress={handleBackPress}
         activeOpacity={0.7}
       >
-        <Ionicons name="chevron-back" size={28} color="#fff" />
+        <Ionicons name="chevron-back" size={31} color="#fff" />
       </TouchableOpacity>
 
       <FlatList
@@ -523,10 +555,10 @@ const backButtonStyles = StyleSheet.create({
   backButton: {
     position: 'absolute',
     zIndex: 1000,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 47,
+    height: 47,
+    borderRadius: 23.5,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },

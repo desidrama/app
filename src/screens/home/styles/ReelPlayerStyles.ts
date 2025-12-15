@@ -52,12 +52,9 @@ export default StyleSheet.create({
     alignItems: 'center',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 4,
   },
   nextEpisodeButton: {
     flexDirection: 'row',

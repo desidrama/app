@@ -15,6 +15,8 @@ import {
   Image,
   Share,
   Alert,
+  PanResponder,
+  ScrollView,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,11 +39,17 @@ type ReelItemProps = {
     seasonId?: any;
     episodeNumber?: number;
     thumbnailUrl?: string;
+    initialLikes?: number;
+    comments?: number;
   };
   isActive: boolean;
   initialTime?: number;
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
+  onSwipeLeft?: () => void; // Callback for left swipe (next webseries)
+  onSwipeRight?: () => void; // Callback for right swipe (previous webseries)
+  canGoNext?: boolean; // Whether next webseries is available
+  canGoPrevious?: boolean; // Whether previous webseries is available
 };
 
 const RANGES = [
@@ -56,8 +64,53 @@ const EMOJIS = ['😍', '👍', '😆', '😮', '😢', '😡'];
 const PROGRESS_UPDATE_INTERVAL = 5000; // Save progress every 5 seconds
 const MIN_PROGRESS_TO_SAVE = 3; // Only save if at least 3 seconds watched
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect }: ReelItemProps) {
+// Format count for display (e.g., 159000 -> "159K", 71600 -> "71.6K")
+const formatCount = (count: number): string => {
+  if (count >= 1000000) {
+    return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (count >= 1000) {
+    const formatted = (count / 1000).toFixed(1);
+    return formatted.replace(/\.0$/, '') + 'K';
+  }
+  return count.toString();
+};
+
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, onSwipeLeft, onSwipeRight, canGoNext = false, canGoPrevious = false }: ReelItemProps) {
   const insets = useSafeAreaInsets();
+  
+  // Swipe gesture handling
+  const swipeThreshold = 50; // Minimum distance for swipe
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to horizontal swipes (not vertical)
+        // Require minimum horizontal movement and ensure it's more horizontal than vertical
+        const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 15;
+        return isHorizontal && hasMinHorizontalMovement;
+      },
+      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+        // Capture horizontal swipes early to prevent child components from handling them
+        const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 15;
+        return isHorizontal && hasMinHorizontalMovement;
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (Math.abs(gestureState.dx) > swipeThreshold) {
+          if (gestureState.dx > 0 && onSwipeLeft && canGoNext) {
+            // Swipe right = next webseries
+            onSwipeLeft();
+          } else if (gestureState.dx < 0 && onSwipeRight && canGoPrevious) {
+            // Swipe left = previous webseries
+            onSwipeRight();
+          }
+        }
+      },
+    })
+  ).current;
   // #region agent log
   useEffect(() => {
     const shareButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
@@ -78,6 +131,7 @@ export default function ReelItem({ reel, isActive, initialTime = 0, screenFocuse
 const moreSheetY = useRef(new Animated.Value(height)).current;
 const descSheetY = useRef(new Animated.Value(height)).current;
 const commentSheetY = useRef(new Animated.Value(height)).current;
+const playPauseButtonOpacity = useRef(new Animated.Value(0)).current;
 
   const [showEpisodes, setShowEpisodes] = useState(false);
 const [showComments, setShowComments] = useState(false);
@@ -114,6 +168,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const [activeEpisode, setActiveEpisode] = useState(1);
   const [progress, setProgress] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [showPlayPauseButton, setShowPlayPauseButton] = useState(false);
+  const playPauseButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [videoQuality, setVideoQuality] = useState('Auto');
+  const [audioTrack, setAudioTrack] = useState('Original');
+  const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState<Array<{
     id: string;
@@ -203,6 +263,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:isActive',message:'Video becoming active - attempting play',data:{reelId:reel.id,hasVideoRef:!!videoRef.current,screenFocused},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'video-play'})}).catch(()=>{});
       // #endregion
       videoRef.current?.playAsync();
+      setIsPlaying(true);
+      // Hide play button when video starts playing automatically
+      setShowPlayPauseButton(false);
+      playPauseButtonOpacity.setValue(0);
     } else {
       // IMMEDIATELY clear the progress saving interval when video becomes inactive
       // This prevents any further progress saves from happening
@@ -214,6 +278,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       
       // Pause video immediately
       videoRef.current?.pauseAsync();
+      setIsPlaying(false);
       setPlaybackSpeed(1.0);
       videoRef.current?.setRateAsync(1.0, true);
       
@@ -295,6 +360,11 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       const progressPercent = (status.positionMillis / status.durationMillis) * 100;
       setProgress(progressPercent);
       
+      // Update isPlaying state based on video status
+      if (status.isPlaying !== undefined) {
+        setIsPlaying(status.isPlaying);
+      }
+      
       // Only save progress if video is active AND playing
       // Don't save from status updates - let the interval handle it to avoid duplicate saves
       // This prevents saving when video is paused or closed
@@ -362,6 +432,15 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     };
   }, [isActive]);
 
+  // Cleanup play/pause button timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (playPauseButtonTimeoutRef.current) {
+        clearTimeout(playPauseButtonTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Save progress on unmount (always save if progress is valid, regardless of isActive)
   useEffect(() => {
     return () => {
@@ -407,14 +486,56 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     };
   }, [reel.id, reel.title]);
 
-  const handleScreenPress = () => {
-    // Tap toggles between 1x and 2x
-    if (playbackSpeed === 1.0) {
-      setPlaybackSpeed(2.0);
-      videoRef.current?.setRateAsync(2.0, true);
-    } else {
-      setPlaybackSpeed(1.0);
-      videoRef.current?.setRateAsync(1.0, true);
+  // Show play/pause button and hide it instantly
+  const showPlayPauseButtonTemporarily = () => {
+    setShowPlayPauseButton(true);
+    
+    // Animate button in
+    Animated.timing(playPauseButtonOpacity, {
+      toValue: 1,
+      duration: 150,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+    
+    // Clear existing timeout
+    if (playPauseButtonTimeoutRef.current) {
+      clearTimeout(playPauseButtonTimeoutRef.current);
+    }
+    
+    // Hide button instantly (300ms)
+    playPauseButtonTimeoutRef.current = setTimeout(() => {
+      Animated.timing(playPauseButtonOpacity, {
+        toValue: 0,
+        duration: 150,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }).start(() => {
+        setShowPlayPauseButton(false);
+      });
+    }, 300);
+  };
+
+  const handleScreenPress = async () => {
+    if (!isActive || !videoRef.current) return;
+    
+    try {
+      const status = await videoRef.current.getStatusAsync();
+      if (status.isLoaded) {
+        if (status.isPlaying) {
+          // Pause video
+          await videoRef.current.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          // Play video
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
+        }
+        // Show play/pause button
+        showPlayPauseButtonTemporarily();
+      }
+    } catch (error) {
+      console.error('Error toggling play/pause:', error);
     }
   };
 
@@ -446,7 +567,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const openMore = () => {
   setShowMore(true);
   Animated.timing(moreSheetY, {
-    toValue: height * 0.55,
+    toValue: 0,
     duration: 240,
     easing: Easing.out(Easing.quad),
     useNativeDriver: true,
@@ -526,10 +647,11 @@ const closeMore = () => {
   // Episodes array is now loaded from API in openEpisodes
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       {/* VIDEO */}
       <Pressable
   style={StyleSheet.absoluteFill}
+  onPress={handleScreenPress}
   onPressIn={handlePressIn}
   onPressOut={handlePressOut}
 >
@@ -543,6 +665,53 @@ const closeMore = () => {
     onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
   />
 </Pressable>
+
+      {/* PLAY/PAUSE BUTTON */}
+      {showPlayPauseButton && (
+        <Animated.View 
+          style={[
+            styles.playPauseButtonContainer,
+            { opacity: playPauseButtonOpacity }
+          ]}
+          pointerEvents="none"
+        >
+          <View style={styles.playPauseButton}>
+            <Ionicons 
+              name={isPlaying ? "pause" : "play"} 
+              size={48} 
+              color="#fff" 
+            />
+          </View>
+        </Animated.View>
+      )}
+      
+      {/* LEFT NAVIGATION BUTTON (Previous) - Hidden but still functional */}
+      {canGoPrevious && (
+        <TouchableOpacity
+          style={[styles.navButton, styles.navButtonLeft, styles.navButtonHidden]}
+          onPress={onSwipeRight}
+          activeOpacity={0.7}
+        >
+          <View style={styles.navButtonContent}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+            <Text style={styles.navButtonText}>Previous</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      
+      {/* RIGHT NAVIGATION BUTTON (Next) - Hidden but still functional */}
+      {canGoNext && (
+        <TouchableOpacity
+          style={[styles.navButton, styles.navButtonRight, styles.navButtonHidden]}
+          onPress={onSwipeLeft}
+          activeOpacity={0.7}
+        >
+          <View style={styles.navButtonContent}>
+            <Text style={styles.navButtonText}>Next</Text>
+            <Ionicons name="chevron-forward" size={24} color="#fff" />
+          </View>
+        </TouchableOpacity>
+      )}
       {/* TOP RIGHT SHARE */}
       <View style={[styles.topRightActions, {
         top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
@@ -550,6 +719,7 @@ const closeMore = () => {
       }]}>
         <TouchableOpacity 
           style={styles.topActionBtn}
+          activeOpacity={0.8}
           onPress={async () => {
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:share',message:'Share button pressed',data:{reelId:reel.id,reelTitle:reel.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'share'})}).catch(()=>{});
@@ -572,17 +742,20 @@ const closeMore = () => {
             }
           }}
         >
-          <Ionicons name="share-social" size={28} color="#fff" />
+          <Ionicons name="share-outline" size={27} color="#fff" />
         </TouchableOpacity>
       </View>
 
 
       <View style={styles.progressContainer}>
         <View style={[styles.progressBar, { width: `${progress}%` }]} />
+        {playbackSpeed === 2.0 && (
+          <View style={styles.speedButtonContainer} pointerEvents="none">
+            <Text style={styles.speedTextSimple}>2x speed</Text>
+            <Ionicons name="play-forward" size={12} color="#fff" style={{ marginLeft: 6 }} />
+          </View>
+        )}
       </View>
-      {playbackSpeed === 2.0 && (
-  <Text style={styles.speedTextSimple}>2×</Text>
-)}
 
 
       {/* RIGHT ACTIONS */}
@@ -590,7 +763,7 @@ const closeMore = () => {
         {/* LIKE */}
         <View style={styles.likeWrapper}>
           {showReactions && (
-            <View style={styles.emojiRow}>
+            <Animated.View style={styles.emojiRow}>
               {EMOJIS.map(e => (
                 <TouchableOpacity
                   key={e}
@@ -599,25 +772,29 @@ const closeMore = () => {
                     setShowReactions(false);
                   }}
                   style={styles.emojiBtn}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.emoji}>{e}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </Animated.View>
           )}
 
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => setShowReactions(!showReactions)}
+            activeOpacity={0.8}
           >
-            <View style={styles.iconCircle}>
+            <View style={[styles.iconCircle, selectedReaction && styles.iconCircleActive]}>
               {selectedReaction ? (
-                <Text style={{ fontSize: 24 }}>{selectedReaction}</Text>
+                <Text style={styles.reactionEmoji}>{selectedReaction}</Text>
               ) : (
-                <Ionicons name="heart" size={26} color="#fff" />
+                <Ionicons name="heart-outline" size={37} color="#fff" />
               )}
             </View>
-            <Text style={styles.label}>Like</Text>
+            <Text style={styles.countLabel}>
+              {formatCount(reel.initialLikes || 0)}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -625,27 +802,36 @@ const closeMore = () => {
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={() => setShowComments(true)}
+          activeOpacity={0.8}
         >
           <View style={styles.iconCircle}>
-            <Ionicons name="chatbubble" size={24} color="#fff" />
+            <Ionicons name="chatbubble-outline" size={37} color="#fff" />
           </View>
-          <Text style={styles.label}>Comment</Text>
+          <Text style={styles.countLabel}>
+            {formatCount(reel.comments || comments.length || 0)}
+          </Text>
         </TouchableOpacity>
 
         {/* EPISODES */}
-        <TouchableOpacity style={styles.actionBtn} onPress={openEpisodes}>
+        <TouchableOpacity 
+          style={styles.actionBtn} 
+          onPress={openEpisodes}
+          activeOpacity={0.8}
+        >
           <View style={styles.iconCircle}>
-            <Ionicons name="albums" size={24} color="#fff" />
+            <Ionicons name="albums-outline" size={37} color="#fff" />
           </View>
           <Text style={styles.label}>Episodes</Text>
         </TouchableOpacity>
 
-
-
         {/* MORE */}
-        <TouchableOpacity style={styles.actionBtn} onPress={openMore}>
+        <TouchableOpacity 
+          style={styles.actionBtn} 
+          onPress={openMore}
+          activeOpacity={0.8}
+        >
           <View style={styles.iconCircle}>
-            <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+            <Ionicons name="ellipsis-horizontal" size={37} color="#fff" />
           </View>
           <Text style={styles.label}>More</Text>
         </TouchableOpacity>
@@ -653,19 +839,16 @@ const closeMore = () => {
 
       {/* BOTTOM INFO */}
       <View style={styles.bottomInfo}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>{reel.title}</Text>
-          <TouchableOpacity
-            onPress={openDesc}
-            style={styles.infoBtn}
-          >
-            <Ionicons
-              name="information-circle-outline"
-              size={16}
-              color="#ccc"
-            />
-          </TouchableOpacity>
+        {/* Tags */}
+        <View style={styles.tagsRow}>
+          <View style={styles.tagChip}>
+            <Text style={styles.tagText}>Romance</Text>
+          </View>
+          <View style={styles.tagChip}>
+            <Text style={styles.tagText}>Love Triangle</Text>
+          </View>
         </View>
+        
         {/* Description with More button */}
         {(() => {
           // #region agent log
@@ -699,9 +882,27 @@ const closeMore = () => {
             </View>
           );
         })()}
-        <Text style={styles.meta}>
-          Episode {activeEpisode} · {reel.duration || '2m'}
-        </Text>
+        
+        {/* Episode and Duration */}
+        {(() => {
+          const currentEpisode = reel.episodeNumber || activeEpisode || 1;
+          const totalEpisodes = episodesSheetEpisodes.length > 0 
+            ? episodesSheetEpisodes.length 
+            : seasonEpisodes.length > 0 
+            ? seasonEpisodes.length 
+            : currentEpisode > 1 ? currentEpisode : 1;
+          
+          // Ensure we show the correct format: episode/total
+          // If total is less than current, use current as total
+          const displayEpisode = currentEpisode;
+          const displayTotal = totalEpisodes >= currentEpisode ? totalEpisodes : currentEpisode;
+          
+          return (
+            <Text style={styles.meta}>
+              {String(displayEpisode)}/{String(displayTotal)} · {reel.duration || '2m'}
+            </Text>
+          );
+        })()}
       </View>
 
       {/* INFO SHEET */}
@@ -781,7 +982,7 @@ const closeMore = () => {
                         item._id === reel.id && styles.epTextActive,
                       ]}
                     >
-                      {item.episodeNumber || '?'}
+                      {item.episodeNumber ? String(item.episodeNumber) : '?'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -981,24 +1182,180 @@ const closeMore = () => {
           <Animated.View
             style={[
               styles.moreSheet,
-              { transform: [{ translateY: moreSheetY }] },
+              { 
+                transform: [{ translateY: moreSheetY }],
+              },
             ]}
           >
-            <TouchableOpacity style={styles.moreItem}>
-              <Text style={styles.moreText}>Add to Watchlist</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.moreItem}>
-              <Text style={styles.moreText}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.moreItem}>
-              <Text style={styles.moreText}>Report</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.moreClose}
-              onPress={closeMore}
+            {/* Header */}
+            <View style={styles.moreSheetHeader}>
+              <Text style={styles.moreSheetTitle}>More Options</Text>
+              <TouchableOpacity onPress={closeMore} style={styles.moreSheetCloseBtn}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={styles.moreSheetScroll}
+              contentContainerStyle={styles.moreSheetScrollContent}
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.moreCloseText}>Cancel</Text>
-            </TouchableOpacity>
+              {/* Speed Section */}
+              <View style={styles.moreSection}>
+                <Text style={styles.moreSectionTitle}>Playback Speed</Text>
+                <View style={styles.moreOptionsRow}>
+                  {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                    <TouchableOpacity
+                      key={speed}
+                      style={[
+                        styles.moreOptionChip,
+                        playbackSpeed === speed && styles.moreOptionChipActive,
+                      ]}
+                      onPress={() => {
+                        setPlaybackSpeed(speed);
+                        if (isActive && videoRef.current) {
+                          videoRef.current.setRateAsync(speed, true);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.moreOptionChipText,
+                          playbackSpeed === speed && styles.moreOptionChipTextActive,
+                        ]}
+                      >
+                        {speed === 1.0 ? '1×' : `${speed}×`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Video Quality Section */}
+              <View style={styles.moreSection}>
+                <Text style={styles.moreSectionTitle}>Video Quality</Text>
+                <View style={styles.moreOptionsRow}>
+                  {['Auto', '1080p', '720p', '480p', '360p'].map((quality) => (
+                    <TouchableOpacity
+                      key={quality}
+                      style={[
+                        styles.moreOptionChip,
+                        videoQuality === quality && styles.moreOptionChipActive,
+                      ]}
+                      onPress={() => setVideoQuality(quality)}
+                    >
+                      <Text
+                        style={[
+                          styles.moreOptionChipText,
+                          videoQuality === quality && styles.moreOptionChipTextActive,
+                        ]}
+                      >
+                        {quality}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Audio Track Section */}
+              <View style={styles.moreSection}>
+                <Text style={styles.moreSectionTitle}>Audio Track</Text>
+                <View style={styles.moreOptionsRow}>
+                  {['Original', 'Hindi', 'English', 'Dubbed'].map((track) => (
+                    <TouchableOpacity
+                      key={track}
+                      style={[
+                        styles.moreOptionChip,
+                        audioTrack === track && styles.moreOptionChipActive,
+                      ]}
+                      onPress={() => setAudioTrack(track)}
+                    >
+                      <Text
+                        style={[
+                          styles.moreOptionChipText,
+                          audioTrack === track && styles.moreOptionChipTextActive,
+                        ]}
+                      >
+                        {track}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={styles.moreDivider} />
+
+              {/* Action Buttons */}
+              <View style={styles.moreActions}>
+                <TouchableOpacity
+                  style={styles.moreActionItem}
+                  onPress={() => {
+                    setIsInWatchlist(!isInWatchlist);
+                    // Add to watchlist functionality
+                  }}
+                >
+                  <Ionicons
+                    name={isInWatchlist ? "bookmark" : "bookmark-outline"}
+                    size={22}
+                    color="#fff"
+                  />
+                  <Text style={styles.moreActionText}>
+                    {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.moreActionItem}
+                  onPress={async () => {
+                    try {
+                      const shareMessage = `Check out "${reel.title}" on Digital Kalakar! 🎬\n\n${reel.description || 'Watch now!'}`;
+                      await Share.share({
+                        message: shareMessage,
+                        title: reel.title,
+                      });
+                    } catch (error) {
+                      console.error('Error sharing:', error);
+                    }
+                  }}
+                >
+                  <Ionicons name="share-social" size={22} color="#fff" />
+                  <Text style={styles.moreActionText}>Share</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.moreActionItem}
+                  onPress={() => {
+                    Alert.alert(
+                      'Report Content',
+                      'Are you sure you want to report this content?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Report',
+                          style: 'destructive',
+                          onPress: () => {
+                            // Report functionality
+                            Alert.alert('Reported', 'Thank you for your report. We will review it shortly.');
+                            closeMore();
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="flag-outline" size={22} color="#ff4444" />
+                  <Text style={[styles.moreActionText, { color: '#ff4444' }]}>Report</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            {/* Cancel Button */}
+            <View style={[styles.moreCancelContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+              <TouchableOpacity style={styles.moreCancel} onPress={closeMore}>
+                <Text style={styles.moreCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </Animated.View>
         </>
       )}
@@ -1011,9 +1368,10 @@ const styles = StyleSheet.create({
 
   rightActions: {
     position: 'absolute',
-    right: 12,
+    right: 16,
     bottom: 72,
     alignItems: 'center',
+    zIndex: 100,
   },
 
   descMetaRow: {
@@ -1051,38 +1409,73 @@ infoValue: {
   fontWeight: '600',
 },
 
-  actionBtn: { alignItems: 'center', marginBottom: 14 },
+  actionBtn: { 
+    alignItems: 'center', 
+    marginBottom: 20,
+    minWidth: 56,
+  },
   iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    width: 63,
+    height: 63,
+    borderRadius: 31.5,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 0,
   },
-  label: { color: '#fff', fontSize: 11 },
+  iconCircleActive: {
+    backgroundColor: 'transparent',
+  },
+  label: { 
+    color: '#fff', 
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
+    marginTop: -2,
+  },
+  countLabel: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    marginTop: -2,
+  },
+  reactionEmoji: {
+    fontSize: 26,
+  },
 
   likeWrapper: {
     position: 'relative',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 0,
   },
 
   emojiRow: {
-  position: 'absolute',
-  right: 55,              // aligned cleanly left of heart
-  top: 3,                 // vertically centered with heart
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: 'rgba(0,0,0,0.75)',
-  paddingLeft: 10,
-  paddingRight: 22,   // 👈 tray grows to the RIGHT
-
-  paddingVertical: 6,
-  borderRadius: 28,
-  minWidth: 240,
-  zIndex: 30,
-},
+    position: 'absolute',
+    right: 60,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    paddingLeft: 12,
+    paddingRight: 16,
+    paddingVertical: 8,
+    borderRadius: 30,
+    minWidth: 260,
+    zIndex: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
 
 
 
@@ -1090,18 +1483,20 @@ infoValue: {
 
 
   emojiBtn: {
-  paddingHorizontal: 6,
-  paddingVertical: 2,
-},
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginHorizontal: 2,
+  },
 
 
 
 
 
   emoji: {
-  fontSize: 22,
-  lineHeight: 26,
-},
+    fontSize: 24,
+    lineHeight: 28,
+  },
 
 
   bottomInfo: {
@@ -1110,31 +1505,78 @@ infoValue: {
     bottom: 72,
     right: 100,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  infoBtn: { marginLeft: 6 },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 10,
+  },
+  tagChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    marginRight: 6,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tagText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   descriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 4,
+    marginTop: 0,
+    marginBottom: 6,
   },
   descriptionText: {
-    color: '#ddd',
+    color: '#fff',
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   moreButton: {
-    marginLeft: 4,
-    paddingHorizontal: 4,
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 4,
   },
   moreButtonText: {
     color: '#FFD54A',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  meta: { color: '#bbb', fontSize: 12 },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  meta: { 
+    color: '#fff', 
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
 
   progressContainer: {
     position: 'absolute',
@@ -1412,11 +1854,113 @@ infoValue: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: height * 0.45,
+    bottom: 0,
+    height: height * 0.75,
     backgroundColor: '#111',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 16,
+    padding: 20,
+    paddingBottom: 0,
+  },
+  moreSheetScroll: {
+    flex: 1,
+  },
+  moreSheetScrollContent: {
+    paddingBottom: 12,
+  },
+  moreSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  moreSheetTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  moreSheetCloseBtn: {
+    padding: 4,
+  },
+  moreSection: {
+    marginBottom: 24,
+  },
+  moreSectionTitle: {
+    color: '#aaa',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  moreOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  moreOptionChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  moreOptionChipActive: {
+    backgroundColor: '#FFD54A',
+    borderColor: '#FFD54A',
+  },
+  moreOptionChipText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  moreOptionChipTextActive: {
+    color: '#000',
+    fontWeight: '700',
+  },
+  moreDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 8,
+    marginBottom: 16,
+  },
+  moreActions: {
+    marginBottom: 12,
+  },
+  moreActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  moreActionText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 16,
+  },
+  moreCancelContainer: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  moreCancel: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  moreCancelText: {
+    color: '#FFD54A',
+    fontSize: 16,
+    fontWeight: '600',
   },
   moreItem: { paddingVertical: 14 },
   moreText: { color: '#fff', fontSize: 16 },
@@ -1430,22 +1974,86 @@ infoValue: {
   },
 
   topActionBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 47,
+    height: 47,
+    borderRadius: 23.5,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  speedButtonContainer: {
+    position: 'absolute',
+    left: '50%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    top: -12,
+    transform: [{ translateX: -50 }],
+  },
   speedTextSimple: {
-  position: 'absolute',
-  bottom: 56,          // 👈 just above progress bar (48)
-  right: 20,
-  color: '#FFD54A',
-  fontSize: 13,
-  fontWeight: '600',
-  opacity: 0.9,
-},
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  navButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -30,
+    width: 80,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 500,
+    opacity: 0.7,
+  },
+  navButtonHidden: {
+    opacity: 0,
+    pointerEvents: 'auto', // Keep buttons touchable even when invisible
+  },
+  navButtonLeft: {
+    left: 0,
+  },
+  navButtonRight: {
+    right: 0,
+  },
+  navButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  navButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  playPauseButtonContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  playPauseButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
 
 
 });
