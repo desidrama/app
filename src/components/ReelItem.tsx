@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,11 @@ import {
   PanResponder,
   ScrollView,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { videoService } from '../services/video.service';
 import InfoSheet from './InfoSheet';
 import type { Video as VideoType } from '../types';
@@ -118,16 +120,26 @@ export default function ReelItem({ reel, isActive, initialTime = 0, screenFocuse
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:alignment',message:'Share button alignment values',data:{platform:Platform.OS,insets:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right},shareButtonTop,shareButtonRight,containerWidth:width,containerHeight:height,reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'alignment'})}).catch(()=>{});
   }, [insets.top, insets.bottom, insets.left, insets.right, reel.id]);
   // #endregion
+  
+  // Video ref for expo-av
   const videoRef = useRef<Video>(null);
+
+  // Log when videoUrl changes
+  useEffect(() => {
+    console.log(`🎥 ReelItem: Video URL changed for ${reel.title}:`, reel.videoUrl);
+  }, [reel.videoUrl, reel.title]);
 
   const hasSeekedRef = useRef(false);
   const progressSaveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedTimeRef = useRef(0);
   const isCompletedRef = useRef(false);
   const videoDurationRef = useRef(0);
-  const isActiveRef = useRef(isActive); // Track isActive in a ref to avoid stale closures
+  const isActiveRef = useRef(isActive);
+  const isMountedRef = useRef(true);
+  const userPausedRef = useRef(false); // Track if user intentionally paused
 
   const episodeSheetY = useRef(new Animated.Value(height)).current;
+const episodeSheetBackdropOpacity = useRef(new Animated.Value(0)).current;
 const moreSheetY = useRef(new Animated.Value(height)).current;
 const descSheetY = useRef(new Animated.Value(height)).current;
 const commentSheetY = useRef(new Animated.Value(height)).current;
@@ -163,6 +175,49 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   const [showReactions, setShowReactions] = useState(false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(null);
+  const [animatingEmoji, setAnimatingEmoji] = useState<string | null>(null);
+  
+  // Animation values for balloon effect
+  const emojiScale = useRef(new Animated.Value(0)).current;
+  const emojiOpacity = useRef(new Animated.Value(0)).current;
+  const emojiTranslateY = useRef(new Animated.Value(0)).current;
+  
+  // PanResponder for swipe-down to close episode sheet
+  const episodeSheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to vertical swipes downward
+        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Only allow downward swipes
+        if (gestureState.dy > 0) {
+          const episodesButtonBottom = 80 + (20 * 2);
+          const sheetTopPosition = height - episodesButtonBottom - (height * 0.75);
+          const initialPosition = sheetTopPosition > 0 ? sheetTopPosition : height * 0.15;
+          episodeSheetY.setValue(Math.max(initialPosition, initialPosition + gestureState.dy));
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // If swiped down enough, close sheet
+        if (gestureState.dy > 50) {
+          closeEpisodes();
+        } else {
+          // Snap back to original position
+          const episodesButtonBottom = 80 + (20 * 2);
+          const sheetTopPosition = height - episodesButtonBottom - (height * 0.75);
+          const initialPosition = sheetTopPosition > 0 ? sheetTopPosition : height * 0.15;
+          Animated.spring(episodeSheetY, {
+            toValue: initialPosition,
+            useNativeDriver: true,
+            tension: 65,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   const [activeRange, setActiveRange] = useState(RANGES[0]);
   const [activeEpisode, setActiveEpisode] = useState(1);
@@ -171,6 +226,11 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showPlayPauseButton, setShowPlayPauseButton] = useState(false);
   const playPauseButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Premium UI auto-hide state
+  const [uiVisible, setUiVisible] = useState(true);
+  const uiHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const uiOpacity = useRef(new Animated.Value(1)).current;
   const [videoQuality, setVideoQuality] = useState('Auto');
   const [audioTrack, setAudioTrack] = useState('Original');
   const [isInWatchlist, setIsInWatchlist] = useState(false);
@@ -189,29 +249,85 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     { id: '3', username: 'cinema_fan', text: 'Best scene ever!', likes: 8, timeAgo: '1d', isLiked: false },
   ]);
 
-  // Seek to initial time when video becomes active and hasn't been seeked yet
+  // Initialize video and seek to initial time when video becomes active
   useEffect(() => {
-    if (isActive && initialTime > 0 && !hasSeekedRef.current && videoRef.current) {
-      videoRef.current.setPositionAsync(initialTime * 1000).then(() => {
-        hasSeekedRef.current = true;
-        console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
-      }).catch((error) => {
-        console.error('Error seeking to initial time:', error);
-      });
+    if (isActive && videoRef.current && !hasSeekedRef.current) {
+      const initializeVideo = async () => {
+        try {
+          // Wait for video to be ready
+          const status = await videoRef.current!.getStatusAsync();
+          
+          if (status.isLoaded) {
+            // Seek to initial time if provided
+            if (initialTime > 0) {
+              await videoRef.current!.setPositionAsync(initialTime * 1000);
+              console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
+            }
+            
+            // Ensure video is playing
+            if (isActive && screenFocused) {
+              await videoRef.current!.setIsMutedAsync(false);
+              await videoRef.current!.playAsync();
+              setIsPlaying(true);
+            }
+            
+            hasSeekedRef.current = true;
+          }
+        } catch (error) {
+          console.error('Error initializing video:', error);
+        }
+      };
+      
+      // Small delay to ensure video is mounted
+      const timer = setTimeout(initializeVideo, 100);
+      return () => clearTimeout(timer);
     }
-  }, [isActive, initialTime, reel.title]);
+    
+    // Reset seek flag when video URL changes or becomes inactive
+    if (!isActive || !reel.videoUrl) {
+      hasSeekedRef.current = false;
+      userPausedRef.current = false; // Reset user pause flag when video becomes inactive
+    }
+  }, [isActive, initialTime, reel.videoUrl, screenFocused]);
 
   const openEpisodes = async () => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openEpisodes',message:'Opening episodes sheet',data:{reelId:reel.id,hasSeasonId:!!reel.seasonId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
     // #endregion
+    
+    // Pause video when sheet opens
+    if (isActive && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+    }
+    
+    // Calculate position to appear at top of episodes button
+    // Episodes button is at bottom: 80, and there are 2 buttons above it (like + comments)
+    // Each button has marginBottom: 20, so total offset = 80 + (20 * 2) = 120 from bottom
+    // We want sheet to start from that position
+    const episodesButtonBottom = 80 + (20 * 2); // Like button + Comments button spacing
+    const sheetTopPosition = height - episodesButtonBottom - (height * 0.75); // Sheet height is 0.75 of screen
+    
     setShowEpisodes(true);
-    Animated.timing(episodeSheetY, {
-      toValue: height * 0.22,
-      duration: 260,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
+    
+    // Reset animation values
+    episodeSheetY.setValue(height);
+    episodeSheetBackdropOpacity.setValue(0);
+    
+    // Animate sheet slide-up with backdrop fade
+    Animated.parallel([
+      Animated.timing(episodeSheetY, {
+        toValue: sheetTopPosition > 0 ? sheetTopPosition : height * 0.15,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(episodeSheetBackdropOpacity, {
+        toValue: 0.6,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: false,
+      }),
+    ]).start();
     
     // Fetch episodes if seasonId exists
     if (reel.seasonId) {
@@ -241,55 +357,116 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:screenFocus',message:'Screen focus changed',data:{screenFocused,reelId:reel.id,isActive},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
     // #endregion
-    if (!screenFocused && videoRef.current) {
+    if (!screenFocused) {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:screenFocus',message:'Pausing video - screen lost focus',data:{reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
       // #endregion
-      videoRef.current.pauseAsync().catch(() => {});
+      // Mute and pause when screen loses focus to stop audio
+      if (videoRef.current) {
+        videoRef.current.setIsMutedAsync(true).catch(() => {});
+        videoRef.current.pauseAsync().catch(() => {});
+      }
       setPlaybackSpeed(1.0);
-      videoRef.current.setRateAsync(1.0, true).catch(() => {});
+      if (videoRef.current) {
+        videoRef.current.setRateAsync(1.0, true).catch(() => {});
+      }
       // Clear progress interval
       if (progressSaveIntervalRef.current) {
         clearInterval(progressSaveIntervalRef.current);
         progressSaveIntervalRef.current = null;
       }
+      // Reset user pause flag when screen loses focus (system pause, not user pause)
+      userPausedRef.current = false;
     }
   }, [screenFocused, reel.id]);
 
   useEffect(() => {
-    // Only play if both isActive AND screenFocused
-    if (isActive && screenFocused) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:isActive',message:'Video becoming active - attempting play',data:{reelId:reel.id,hasVideoRef:!!videoRef.current,screenFocused},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'video-play'})}).catch(()=>{});
-      // #endregion
-      videoRef.current?.playAsync();
-      setIsPlaying(true);
+    // Only play if both isActive AND screenFocused AND user hasn't intentionally paused
+    if (isActive && screenFocused && videoRef.current && !userPausedRef.current) {
+      const playVideo = async () => {
+        try {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:isActive',message:'Video becoming active - attempting play',data:{reelId:reel.id,hasVideoRef:!!videoRef.current,screenFocused,videoUrl:reel.videoUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'video-play'})}).catch(()=>{});
+          // #endregion
+          
+          // Wait for video to be loaded
+          const status = await videoRef.current!.getStatusAsync();
+          
+          if (status.isLoaded) {
+            // Unmute and play video
+            await videoRef.current!.setIsMutedAsync(false);
+            await videoRef.current!.playAsync();
+            setIsPlaying(true);
+            userPausedRef.current = false; // Clear user pause flag when video auto-plays
+            
       // Hide play button when video starts playing automatically
       setShowPlayPauseButton(false);
       playPauseButtonOpacity.setValue(0);
-    } else {
+      
+      // Auto-hide UI after 2.5 seconds when video starts
+      setTimeout(() => {
+        if (isMountedRef.current && isActive && screenFocused) {
+          hideUI();
+        }
+      }, 2500);
+          } else {
+            // Retry after a short delay if video is not loaded yet
+            setTimeout(async () => {
+              if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
+                try {
+                  const retryStatus = await videoRef.current.getStatusAsync();
+                  if (retryStatus.isLoaded) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    await videoRef.current.playAsync();
+                    setIsPlaying(true);
+                  }
+                } catch (error) {
+                  console.error('Error retrying video play:', error);
+                }
+              }
+            }, 300);
+          }
+        } catch (error) {
+          console.error('Error playing video:', error);
+          // Retry once more after delay
+          setTimeout(async () => {
+            if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
+              try {
+                await videoRef.current.setIsMutedAsync(false);
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+              } catch (retryError) {
+                console.error('Error on retry play:', retryError);
+              }
+            }
+          }, 500);
+        }
+      };
+      
+      playVideo();
+    } else if (videoRef.current) {
       // IMMEDIATELY clear the progress saving interval when video becomes inactive
-      // This prevents any further progress saves from happening
       if (progressSaveIntervalRef.current) {
         clearInterval(progressSaveIntervalRef.current);
         progressSaveIntervalRef.current = null;
         console.log(`🛑 ReelItem: Cleared progress interval for ${reel.title} (video inactive)`);
       }
       
-      // Pause video immediately
-      videoRef.current?.pauseAsync();
+      // Pause and mute video immediately to prevent audio overlap
+      videoRef.current.setIsMutedAsync(true).catch(() => {});
+      videoRef.current.pauseAsync().catch(() => {});
       setIsPlaying(false);
       setPlaybackSpeed(1.0);
-      videoRef.current?.setRateAsync(1.0, true);
+      videoRef.current.setRateAsync(1.0, true).catch(() => {});
       
-      // Then save final progress (if valid) after a short delay to ensure video is paused
-        setTimeout(() => {
-        if (videoRef.current && videoDurationRef.current > 0) {
-          videoRef.current.getStatusAsync().then((status: any) => {
-            if (status.isLoaded && status.positionMillis && status.durationMillis) {
-              const currentTimeSeconds = status.positionMillis / 1000;
-              const durationMillis = status.durationMillis;
-              const progressPercent = (status.positionMillis / durationMillis) * 100;
+      // Then save final progress (if valid) after a short delay
+      setTimeout(() => {
+        if (isMountedRef.current && videoRef.current && videoDurationRef.current > 0) {
+          videoRef.current.getStatusAsync().then((status) => {
+            if (status.isLoaded) {
+              const currentTimeSeconds = (status.positionMillis || 0) / 1000;
+              const durationSeconds = videoDurationRef.current;
+              const progressPercent = durationSeconds > 0 ? (currentTimeSeconds / durationSeconds) * 100 : 0;
               
               // Save if progress is valid (between 5% and 85%)
               if (currentTimeSeconds >= MIN_PROGRESS_TO_SAVE && 
@@ -300,11 +477,11 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 saveProgress(currentTimeSeconds, videoDurationRef.current, true);
               }
             }
-          }).catch(console.error);
+          }).catch(() => {});
         }
       }, 100);
     }
-  }, [isActive]);
+  }, [isActive, screenFocused, reel.title]);
 
   // Save progress function
   const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
@@ -351,23 +528,40 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   };
 
-  const handlePlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded && status.durationMillis) {
-      const positionSeconds = status.positionMillis / 1000;
-      const durationSeconds = status.durationMillis / 1000;
-      videoDurationRef.current = durationSeconds;
-      
-      const progressPercent = (status.positionMillis / status.durationMillis) * 100;
+  // Handle playback status updates
+  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) {
+      // Video is still loading
+      return;
+    }
+    
+    // Update duration
+    if (status.durationMillis && status.durationMillis > 0) {
+      videoDurationRef.current = status.durationMillis / 1000;
+    }
+    
+    // Update progress
+    const currentTime = (status.positionMillis || 0) / 1000;
+    if (videoDurationRef.current > 0) {
+      const progressPercent = (currentTime / videoDurationRef.current) * 100;
       setProgress(progressPercent);
-      
-      // Update isPlaying state based on video status
-      if (status.isPlaying !== undefined) {
-        setIsPlaying(status.isPlaying);
+    }
+    
+    // Update playing state
+    setIsPlaying(status.isPlaying);
+    
+    // If video should be playing but isn't, try to play
+    // BUT only if user didn't intentionally pause it
+    if (isActive && screenFocused && !status.isPlaying && status.didJustFinish === false && !userPausedRef.current) {
+      // Video stopped unexpectedly, try to resume
+      if (videoRef.current) {
+        videoRef.current.playAsync().catch(() => {});
       }
-      
-      // Only save progress if video is active AND playing
-      // Don't save from status updates - let the interval handle it to avoid duplicate saves
-      // This prevents saving when video is paused or closed
+    }
+    
+    // Reset user pause flag when video starts playing
+    if (status.isPlaying && userPausedRef.current) {
+      userPausedRef.current = false;
     }
   };
 
@@ -385,10 +579,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
 
     // Only set up interval if video is active
-    if (isActive) {
+    if (isActive && videoRef.current) {
       progressSaveIntervalRef.current = setInterval(() => {
         // Use ref to check current isActive state (avoids stale closure)
-        // If not active, clear interval immediately and return
         if (!isActiveRef.current) {
           if (progressSaveIntervalRef.current) {
             clearInterval(progressSaveIntervalRef.current);
@@ -399,16 +592,13 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         }
 
         if (videoRef.current && videoDurationRef.current > 0) {
-          videoRef.current.getStatusAsync().then((status: any) => {
-            // Only save if video is still active, playing, AND not paused
-            // Double-check isActiveRef to prevent saves after navigation
-            if (status.isLoaded && 
-                status.positionMillis && 
-                status.isPlaying && 
-                !status.isPaused &&
-                isActiveRef.current) {
-              const currentTimeSeconds = status.positionMillis / 1000;
-              saveProgress(currentTimeSeconds, videoDurationRef.current);
+          videoRef.current.getStatusAsync().then((status) => {
+            if (status.isLoaded && isActiveRef.current) {
+              const isPlaying = status.isPlaying;
+              if (isPlaying) {
+                const currentTimeSeconds = (status.positionMillis || 0) / 1000;
+                saveProgress(currentTimeSeconds, videoDurationRef.current);
+              }
             } else if (!isActiveRef.current) {
               // If we got here but isActive is false, clear interval
               if (progressSaveIntervalRef.current) {
@@ -417,9 +607,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 console.log(`🛑 ReelItem: Interval cleared in status check for ${reel.title}`);
               }
             }
-          }).catch((error) => {
-            console.error('Error getting video status:', error);
-          });
+          }).catch(() => {});
         }
       }, PROGRESS_UPDATE_INTERVAL);
     }
@@ -430,7 +618,30 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         progressSaveIntervalRef.current = null;
       }
     };
-  }, [isActive]);
+  }, [isActive, reel.title]);
+
+  // Track component mount status and cleanup player on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Cleanup UI hide timeout
+      if (uiHideTimeoutRef.current) {
+        clearTimeout(uiHideTimeoutRef.current);
+        uiHideTimeoutRef.current = null;
+      }
+      // Cleanup play/pause button timeout
+      if (playPauseButtonTimeoutRef.current) {
+        clearTimeout(playPauseButtonTimeoutRef.current);
+        playPauseButtonTimeoutRef.current = null;
+      }
+      // Safely cleanup player on unmount
+      if (videoRef.current) {
+        videoRef.current.setIsMutedAsync(true).catch(() => {});
+        videoRef.current.pauseAsync().catch(() => {});
+      }
+    };
+  }, []);
 
   // Cleanup play/pause button timeout on unmount
   useEffect(() => {
@@ -452,15 +663,14 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
       // Always try to save on unmount if progress is valid
       // This ensures progress is saved even when user swipes away quickly
-      // Use a small timeout to ensure video ref is still available
       const saveOnUnmount = async () => {
         try {
           if (videoRef.current && videoDurationRef.current > 0) {
             const status = await videoRef.current.getStatusAsync();
-            if (status.isLoaded && status.positionMillis && status.durationMillis) {
-              const currentTimeSeconds = status.positionMillis / 1000;
-              const durationMillis = status.durationMillis;
-              const progressPercent = (status.positionMillis / durationMillis) * 100;
+            if (status.isLoaded) {
+              const currentTimeSeconds = (status.positionMillis || 0) / 1000;
+              const durationSeconds = videoDurationRef.current;
+              const progressPercent = durationSeconds > 0 ? (currentTimeSeconds / durationSeconds) * 100 : 0;
               
               // Save on unmount if progress is between 5% and 85%
               // Don't check isActive here - we want to save even if video became inactive
@@ -470,14 +680,18 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                   !isCompletedRef.current) {
                 console.log(`💾 ReelItem: Saving progress on unmount for ${reel.title} (${progressPercent.toFixed(1)}%)`);
                 // Force save - don't wait for response as component is unmounting
-                saveProgress(currentTimeSeconds, videoDurationRef.current, true).catch((err) => {
+                saveProgress(currentTimeSeconds, videoDurationRef.current, true).catch((err: any) => {
                   console.error('Error saving on unmount:', err);
                 });
               }
             }
           }
         } catch (error) {
-          console.error('Error getting status on unmount:', error);
+          // Silently ignore errors
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (!errorMessage.includes('NativeSharedObjectNotFoundException')) {
+            console.error('Error getting status on unmount:', error);
+          }
         }
       };
       
@@ -486,14 +700,64 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     };
   }, [reel.id, reel.title]);
 
-  // Show play/pause button and hide it instantly
+  // Premium UI auto-hide functions
+  const showUI = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
+    setUiVisible(true);
+    Animated.timing(uiOpacity, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+    
+    // Clear existing timeout
+    if (uiHideTimeoutRef.current) {
+      clearTimeout(uiHideTimeoutRef.current);
+      uiHideTimeoutRef.current = null;
+    }
+    
+    // Auto-hide after 2.5 seconds
+    uiHideTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current && uiOpacity) {
+        Animated.timing(uiOpacity, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }).start(() => {
+          if (isMountedRef.current) {
+            setUiVisible(false);
+          }
+        });
+      }
+    }, 2500);
+  }, [uiOpacity]);
+  
+  // Hide UI immediately
+  const hideUI = useCallback(() => {
+    if (uiHideTimeoutRef.current) {
+      clearTimeout(uiHideTimeoutRef.current);
+    }
+    Animated.timing(uiOpacity, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => {
+      setUiVisible(false);
+    });
+  }, [uiOpacity]);
+
+  // Show play/pause button temporarily (used by other handlers)
   const showPlayPauseButtonTemporarily = () => {
     setShowPlayPauseButton(true);
     
     // Animate button in
     Animated.timing(playPauseButtonOpacity, {
       toValue: 1,
-      duration: 150,
+      duration: 200,
       easing: Easing.out(Easing.ease),
       useNativeDriver: true,
     }).start();
@@ -503,55 +767,86 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       clearTimeout(playPauseButtonTimeoutRef.current);
     }
     
-    // Hide button instantly (300ms)
+    // Hide button after 1.5 seconds
     playPauseButtonTimeoutRef.current = setTimeout(() => {
       Animated.timing(playPauseButtonOpacity, {
         toValue: 0,
-        duration: 150,
+        duration: 300,
         easing: Easing.in(Easing.ease),
         useNativeDriver: true,
       }).start(() => {
         setShowPlayPauseButton(false);
       });
-    }, 300);
+    }, 1500);
   };
 
   const handleScreenPress = async () => {
     if (!isActive || !videoRef.current) return;
     
+    // Show UI on tap
+    showUI();
+    
     try {
+      // Get current playing state
       const status = await videoRef.current.getStatusAsync();
-      if (status.isLoaded) {
-        if (status.isPlaying) {
-          // Pause video
-          await videoRef.current.pauseAsync();
-          setIsPlaying(false);
-        } else {
-          // Play video
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
-        }
-        // Show play/pause button
-        showPlayPauseButtonTemporarily();
+      if (!status.isLoaded) return;
+      
+      if (status.isPlaying) {
+        // Pause video - mark as user-intended pause
+        userPausedRef.current = true;
+        await videoRef.current.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        // Play video - clear user pause flag
+        userPausedRef.current = false;
+        await videoRef.current.setIsMutedAsync(false);
+        await videoRef.current.playAsync();
+        setIsPlaying(true);
       }
-    } catch (error) {
-      console.error('Error toggling play/pause:', error);
+      
+      // Show play/pause button
+      setShowPlayPauseButton(true);
+      Animated.timing(playPauseButtonOpacity, {
+        toValue: 1,
+        duration: 200,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+      
+      // Clear existing timeout
+      if (playPauseButtonTimeoutRef.current) {
+        clearTimeout(playPauseButtonTimeoutRef.current);
+      }
+      
+      // Hide button after 1.5 seconds
+      playPauseButtonTimeoutRef.current = setTimeout(() => {
+        Animated.timing(playPauseButtonOpacity, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }).start(() => {
+          setShowPlayPauseButton(false);
+        });
+      }, 1500);
+    } catch {
+      // Silently ignore ALL errors - player is disposed
     }
   };
 
   const handlePressIn = () => {
     // Hold to play at 2x
-    if (isActive) {
+    if (isActive && videoRef.current) {
       setPlaybackSpeed(2.0);
-      videoRef.current?.setRateAsync(2.0, true);
+      videoRef.current.setRateAsync(2.0, true).catch(() => {});
     }
   };
 
   const handlePressOut = () => {
     // Release to return to 1x
-    if (isActive) {
+    if (isActive && videoRef.current) {
       setPlaybackSpeed(1.0);
-      videoRef.current?.setRateAsync(1.0, true);
+      videoRef.current.setRateAsync(1.0, true).catch(() => {});
     }
   };
 
@@ -565,14 +860,25 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   };
 
   const openMore = () => {
-  setShowMore(true);
-  Animated.timing(moreSheetY, {
-    toValue: 0,
-    duration: 240,
-    easing: Easing.out(Easing.quad),
-    useNativeDriver: true,
-  }).start();
-};
+    // Hide play/pause button immediately when opening more sheet
+    setShowPlayPauseButton(false);
+    if (playPauseButtonTimeoutRef.current) {
+      clearTimeout(playPauseButtonTimeoutRef.current);
+      playPauseButtonTimeoutRef.current = null;
+    }
+    playPauseButtonOpacity.setValue(0);
+    
+    // Hide UI immediately
+    hideUI();
+    
+    setShowMore(true);
+    Animated.timing(moreSheetY, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
 
 const closeMore = () => {
   Animated.timing(moreSheetY, {
@@ -650,39 +956,98 @@ const closeMore = () => {
     <View style={styles.container} {...panResponder.panHandlers}>
       {/* VIDEO */}
       <Pressable
-  style={StyleSheet.absoluteFill}
-  onPress={handleScreenPress}
-  onPressIn={handlePressIn}
-  onPressOut={handlePressOut}
->
-  <Video
-    ref={videoRef}
-    source={{ uri: reel.videoUrl }}
-    style={StyleSheet.absoluteFill}
-    resizeMode={ResizeMode.COVER}
-    shouldPlay={isActive && screenFocused}
-    isLooping
-    onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-  />
-</Pressable>
+        style={StyleSheet.absoluteFill}
+        onPress={handleScreenPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <Video
+          ref={videoRef}
+          source={{ uri: reel.videoUrl }}
+          style={StyleSheet.absoluteFill}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={false}
+          isLooping
+          isMuted={!isActive}
+          onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+          useNativeControls={false}
+          progressUpdateIntervalMillis={100}
+          onLoadStart={() => {
+            console.log(`🎥 Video loading started: ${reel.title}`);
+          }}
+          onLoad={(status) => {
+            console.log(`✅ Video loaded: ${reel.title}`, status.isLoaded);
+            // Auto-play when loaded if active
+            if (isActive && screenFocused && videoRef.current && status.isLoaded) {
+              videoRef.current.setIsMutedAsync(false).catch(() => {});
+              videoRef.current.playAsync().catch(() => {});
+            }
+          }}
+          onError={(error) => {
+            console.error(`❌ Video error for ${reel.title}:`, error);
+          }}
+        />
+        {/* Premium Gradient overlay + Vignette for better text readability */}
+        <LinearGradient
+          colors={['transparent', 'transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
+          locations={[0, 0.5, 0.7, 1]}
+          style={styles.videoOverlay}
+          pointerEvents="none"
+        />
+        {/* Vignette overlay for cinematic effect */}
+        <View style={styles.vignetteOverlay} pointerEvents="none" />
+      </Pressable>
 
-      {/* PLAY/PAUSE BUTTON */}
-      {showPlayPauseButton && (
+      {/* PLAY/PAUSE BUTTON - Enhanced UI */}
+      {showPlayPauseButton && !showMore && (
         <Animated.View 
           style={[
             styles.playPauseButtonContainer,
-            { opacity: playPauseButtonOpacity }
+            { 
+              opacity: playPauseButtonOpacity,
+            }
           ]}
           pointerEvents="none"
         >
-          <View style={styles.playPauseButton}>
+          <Animated.View 
+            style={[
+              styles.playPauseButton,
+              {
+                transform: [
+                  {
+                    scale: playPauseButtonOpacity.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <Ionicons 
               name={isPlaying ? "pause" : "play"} 
-              size={48} 
+              size={52} 
+              color="#fff" 
+            />
+          </Animated.View>
+        </Animated.View>
+      )}
+      
+      {/* Always show play button when paused (even if not tapped) */}
+      {!isPlaying && isActive && !showPlayPauseButton && !showMore && (
+        <TouchableOpacity
+          style={styles.playPauseButtonContainer}
+          onPress={handleScreenPress}
+          activeOpacity={0.9}
+        >
+          <View style={styles.playPauseButton}>
+            <Ionicons 
+              name="play" 
+              size={52} 
               color="#fff" 
             />
           </View>
-        </Animated.View>
+        </TouchableOpacity>
       )}
       
       {/* LEFT NAVIGATION BUTTON (Previous) - Hidden but still functional */}
@@ -712,15 +1077,23 @@ const closeMore = () => {
           </View>
         </TouchableOpacity>
       )}
-      {/* TOP RIGHT SHARE */}
-      <View style={[styles.topRightActions, {
-        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-        right: insets.right + 16,
-      }]}>
+      {/* TOP RIGHT SHARE - Premium Glass Container */}
+      <Animated.View 
+        style={[
+          styles.topRightActions, 
+          {
+            top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
+            right: insets.right + 16,
+            opacity: uiOpacity,
+          }
+        ]}
+        pointerEvents={uiVisible ? 'auto' : 'none'}
+      >
         <TouchableOpacity 
           style={styles.topActionBtn}
           activeOpacity={0.8}
           onPress={async () => {
+            showUI();
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:share',message:'Share button pressed',data:{reelId:reel.id,reelTitle:reel.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'share'})}).catch(()=>{});
             // #endregion
@@ -744,101 +1117,229 @@ const closeMore = () => {
         >
           <Ionicons name="share-outline" size={27} color="#fff" />
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
 
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { width: `${progress}%` }]} />
+      {/* Enhanced Progress Bar - Premium */}
+      <Animated.View 
+        style={[
+          styles.progressContainer,
+          {
+            opacity: uiOpacity,
+          }
+        ]}
+        pointerEvents="none"
+      >
+        <View style={styles.progressBarBackground}>
+          <Animated.View 
+            style={[
+              styles.progressBar, 
+              { 
+                width: `${progress}%`,
+              }
+            ]} 
+          />
+        </View>
         {playbackSpeed === 2.0 && (
-          <View style={styles.speedButtonContainer} pointerEvents="none">
-            <Text style={styles.speedTextSimple}>2x speed</Text>
-            <Ionicons name="play-forward" size={12} color="#fff" style={{ marginLeft: 6 }} />
-          </View>
-        )}
-      </View>
-
-
-      {/* RIGHT ACTIONS */}
-      <View style={styles.rightActions}>
-        {/* LIKE */}
-        <View style={styles.likeWrapper}>
-          {showReactions && (
-            <Animated.View style={styles.emojiRow}>
-              {EMOJIS.map(e => (
-                <TouchableOpacity
-                  key={e}
-                  onPress={() => {
-                    setSelectedReaction(e);
-                    setShowReactions(false);
-                  }}
-                  style={styles.emojiBtn}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.emoji}>{e}</Text>
-                </TouchableOpacity>
-              ))}
+          <Animated.View 
+            style={[
+              styles.speedButtonContainer, 
+              {
+                opacity: playPauseButtonOpacity.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.7, 1],
+                }),
+              }
+            ]} 
+            pointerEvents="none"
+          >
+            <Ionicons name="play-forward" size={14} color="#FFD54A" style={{ marginRight: 4 }} />
+            <Text style={styles.speedTextSimple}>2x</Text>
             </Animated.View>
           )}
+      </Animated.View>
 
+
+      {/* RIGHT ACTIONS - Premium Glassmorphism Design */}
+      <Animated.View 
+        style={[
+          styles.rightActions,
+          {
+            opacity: uiOpacity,
+          }
+        ]}
+        pointerEvents={uiVisible ? 'auto' : 'none'}
+      >
+        {/* LIKE - Premium Design with Emoji Reactions */}
+        <View style={styles.likeWrapper}>
           <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => setShowReactions(!showReactions)}
-            activeOpacity={0.8}
+            style={styles.premiumActionBtn}
+            onPress={() => {
+              showUI();
+              handleLike();
+              
+              // Set selected reaction (heart emoji for like)
+              if (!selectedReaction) {
+                setSelectedReaction('❤️');
+                
+                // Premium micro-interaction animation
+                const likeScale = new Animated.Value(1);
+                Animated.sequence([
+                  Animated.spring(likeScale, {
+                    toValue: 1.25,
+                    tension: 300,
+                    friction: 8,
+                    useNativeDriver: true,
+                  }),
+                  Animated.spring(likeScale, {
+                    toValue: 1,
+                    tension: 300,
+                    friction: 8,
+                    useNativeDriver: true,
+                  }),
+                ]).start();
+                
+                // Trigger emoji reaction animation
+                const randomEmoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+                setAnimatingEmoji(randomEmoji);
+                
+                // Animate emoji balloon
+                emojiScale.setValue(0);
+                emojiOpacity.setValue(1);
+                emojiTranslateY.setValue(0);
+                
+                Animated.parallel([
+                  Animated.spring(emojiScale, {
+                    toValue: 1,
+                    tension: 100,
+                    friction: 6,
+                    useNativeDriver: true,
+                  }),
+                  Animated.sequence([
+                    Animated.timing(emojiTranslateY, {
+                      toValue: -60,
+                      duration: 500,
+                      easing: Easing.out(Easing.ease),
+                      useNativeDriver: true,
+                    }),
+                    Animated.timing(emojiOpacity, {
+                      toValue: 0,
+                      duration: 200,
+                      useNativeDriver: true,
+                    }),
+                  ]),
+                ]).start(() => {
+                  setAnimatingEmoji(null);
+                  emojiScale.setValue(0);
+                  emojiOpacity.setValue(0);
+                  emojiTranslateY.setValue(0);
+                });
+              } else {
+                setSelectedReaction(null);
+              }
+              
+              // Haptic feedback
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              } catch {}
+            }}
+            activeOpacity={0.9}
           >
-            <View style={[styles.iconCircle, selectedReaction && styles.iconCircleActive]}>
-              {selectedReaction ? (
-                <Text style={styles.reactionEmoji}>{selectedReaction}</Text>
-              ) : (
-                <Ionicons name="heart-outline" size={37} color="#fff" />
-              )}
-            </View>
-            <Text style={styles.countLabel}>
+            <Animated.View style={[styles.premiumIconContainer]}>
+              <Ionicons 
+                name={selectedReaction ? "heart" : "heart-outline"} 
+                size={24} 
+                color={selectedReaction ? "#FF5A5F" : "#FFFFFF"} 
+              />
+            </Animated.View>
+            <Text style={styles.premiumCountLabel}>
               {formatCount(reel.initialLikes || 0)}
             </Text>
           </TouchableOpacity>
+          
+          {/* Emoji Reaction Animation */}
+          {animatingEmoji && (
+            <Animated.View
+              style={[
+                styles.balloonEmojiWrapper,
+                {
+                  transform: [
+                    { translateX: -40 }, // Center horizontally (from style)
+                    { scale: emojiScale },
+                    { translateY: emojiTranslateY },
+                  ],
+                  opacity: emojiOpacity,
+                },
+              ]}
+            >
+              <View style={styles.balloonEmojiContainer}>
+                <Text style={styles.balloonEmoji}>{animatingEmoji}</Text>
+              </View>
+            </Animated.View>
+          )}
         </View>
 
-        {/* COMMENTS */}
+        {/* COMMENTS - Premium Design */}
         <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => setShowComments(true)}
-          activeOpacity={0.8}
+          style={styles.premiumActionBtn}
+          onPress={() => {
+            showUI();
+            setShowComments(true);
+          }}
+          activeOpacity={0.9}
         >
-          <View style={styles.iconCircle}>
-            <Ionicons name="chatbubble-outline" size={37} color="#fff" />
+          <View style={styles.premiumIconContainer}>
+            <Ionicons name="chatbubble-outline" size={24} color="#FFFFFF" />
           </View>
-          <Text style={styles.countLabel}>
+          <Text style={styles.premiumCountLabel}>
             {formatCount(reel.comments || comments.length || 0)}
           </Text>
         </TouchableOpacity>
 
-        {/* EPISODES */}
+        {/* EPISODES - Premium Design */}
         <TouchableOpacity 
-          style={styles.actionBtn} 
-          onPress={openEpisodes}
-          activeOpacity={0.8}
+          style={styles.premiumActionBtn} 
+          onPress={() => {
+            showUI();
+            openEpisodes();
+          }}
+          activeOpacity={0.9}
         >
-          <View style={styles.iconCircle}>
-            <Ionicons name="albums-outline" size={37} color="#fff" />
+          <View style={styles.premiumIconContainer}>
+            <Ionicons name="albums-outline" size={24} color="#FFFFFF" />
           </View>
-          <Text style={styles.label}>Episodes</Text>
+          <Text style={styles.premiumCountLabel} numberOfLines={1} adjustsFontSizeToFit>
+            Eps
+          </Text>
         </TouchableOpacity>
 
-        {/* MORE */}
+        {/* MORE - Premium Design */}
         <TouchableOpacity 
-          style={styles.actionBtn} 
-          onPress={openMore}
-          activeOpacity={0.8}
+          style={styles.premiumActionBtn} 
+          onPress={() => {
+            showUI();
+            openMore();
+          }}
+          activeOpacity={0.9}
         >
-          <View style={styles.iconCircle}>
-            <Ionicons name="ellipsis-horizontal" size={37} color="#fff" />
+          <View style={styles.premiumIconContainer}>
+            <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
           </View>
-          <Text style={styles.label}>More</Text>
+          <Text style={styles.premiumCountLabel}>More</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
-      {/* BOTTOM INFO */}
-      <View style={styles.bottomInfo}>
+      {/* BOTTOM INFO - Premium Layout */}
+      {!showMore && (
+        <Animated.View 
+          style={[
+            styles.bottomInfo,
+            {
+              opacity: uiOpacity,
+            }
+          ]}
+          pointerEvents={uiVisible ? 'auto' : 'none'}
+        >
         {/* Tags */}
         <View style={styles.tagsRow}>
           <View style={styles.tagChip}>
@@ -903,7 +1404,8 @@ const closeMore = () => {
             </Text>
           );
         })()}
-      </View>
+        </Animated.View>
+      )}
 
       {/* INFO SHEET */}
       {(() => {
@@ -931,63 +1433,112 @@ const closeMore = () => {
         onLike={handleLike}
       />
 
-      {/* EPISODES SHEET */}
+      {/* EPISODES SHEET - Premium OTT Style */}
       {showEpisodes && (
         <>
-          <Pressable style={styles.sheetBackdrop} onPress={closeEpisodes} />
+          {/* Animated Backdrop */}
+          <Animated.View
+            style={[
+              styles.sheetBackdrop,
+              { opacity: episodeSheetBackdropOpacity },
+            ]}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeEpisodes} />
+          </Animated.View>
+          
           <Animated.View
             style={[
               styles.sheet,
               { transform: [{ translateY: episodeSheetY }] },
             ]}
+            {...episodeSheetPanResponder.panHandlers}
           >
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{reel.title}</Text>
-              <TouchableOpacity onPress={closeEpisodes}>
-                <Ionicons name="close" size={22} color="#fff" />
+            {/* Premium Header with Divider */}
+            <View style={styles.episodeSheetHeader}>
+              <Text style={styles.episodeSheetTitle} numberOfLines={1}>
+                {reel.title}
+              </Text>
+              <TouchableOpacity
+                onPress={closeEpisodes}
+                style={styles.episodeSheetCloseBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
+            
+            {/* Divider Line */}
+            <View style={styles.episodeSheetDivider} />
 
             {loadingEpisodesSheet ? (
               <View style={styles.episodesLoadingContainer}>
                 <Text style={styles.episodesLoadingText}>Loading episodes...</Text>
               </View>
             ) : episodesSheetEpisodes.length > 0 ? (
-              <FlatList
-                data={episodesSheetEpisodes.sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0))}
-                keyExtractor={(item) => item._id}
-                numColumns={4}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    onPress={() => {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:episodeSelect',message:'Episode selected from sheet',data:{reelId:reel.id,episodeId:item._id,episodeNumber:item.episodeNumber,episodeTitle:item.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-                      // #endregion
-                      closeEpisodes();
-                      if (onEpisodeSelect) {
-                        onEpisodeSelect(item._id);
-                      } else {
-                        // Fallback: just update active episode
-                        setActiveEpisode(item.episodeNumber || 1);
-                      }
-                    }}
-                    style={[
-                      styles.episodePill,
-                      item._id === reel.id && styles.episodePillActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.epText,
-                        item._id === reel.id && styles.epTextActive,
-                      ]}
-                    >
-                      {item.episodeNumber ? String(item.episodeNumber) : '?'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                contentContainerStyle={styles.episodeGrid}
-              />
+              <>
+                {/* Episode Info Card */}
+                {(() => {
+                  const currentEpisode = episodesSheetEpisodes.find(e => e._id === reel.id) || episodesSheetEpisodes[0];
+                  const currentEpNum = currentEpisode?.episodeNumber || reel.episodeNumber || 1;
+                  return (
+                    <View style={styles.episodeInfoCard}>
+                      <Text style={styles.episodeInfoText}>
+                        Episode {currentEpNum} • {reel.duration || '2 min'}
+                      </Text>
+                      <View style={styles.episodeInfoTags}>
+                        <Text style={styles.episodeInfoTag}>Romance</Text>
+                        <Text style={styles.episodeInfoTag}>Love Triangle</Text>
+                      </View>
+                    </View>
+                  );
+                })()}
+                
+                {/* Episode Pills - Netflix Style */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.episodeScrollContainer}
+                  style={styles.episodeScrollView}
+                >
+                  {episodesSheetEpisodes
+                    .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0))
+                    .map((item) => {
+                      const isActive = item._id === reel.id;
+                      return (
+                        <TouchableOpacity
+                          key={item._id}
+                          onPress={() => {
+                            // #region agent log
+                            fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:episodeSelect',message:'Episode selected from sheet',data:{reelId:reel.id,episodeId:item._id,episodeNumber:item.episodeNumber,episodeTitle:item.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
+                            // #endregion
+                            closeEpisodes();
+                            if (onEpisodeSelect) {
+                              onEpisodeSelect(item._id);
+                            } else {
+                              setActiveEpisode(item.episodeNumber || 1);
+                            }
+                          }}
+                          style={[
+                            styles.netflixEpisodePill,
+                            isActive && styles.netflixEpisodePillActive,
+                            isActive && { transform: [{ scale: 1.05 }] },
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.netflixEpisodeText,
+                              isActive && styles.netflixEpisodeTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {item.episodeNumber ? `Ep ${item.episodeNumber}` : 'Ep ?'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </ScrollView>
+              </>
             ) : (
               <View style={styles.episodesLoadingContainer}>
                 <Text style={styles.episodesLoadingText}>No episodes available</Text>
@@ -1214,7 +1765,7 @@ const closeMore = () => {
                       onPress={() => {
                         setPlaybackSpeed(speed);
                         if (isActive && videoRef.current) {
-                          videoRef.current.setRateAsync(speed, true);
+                          videoRef.current.setRateAsync(speed, true).catch(() => {});
                         }
                       }}
                     >
@@ -1364,14 +1915,193 @@ const closeMore = () => {
 }
 
 const styles = StyleSheet.create({
-  container: { width, height, backgroundColor: '#000' },
+  container: { 
+    width, 
+    height, 
+    backgroundColor: '#0E0E0E',
+    overflow: 'hidden',
+  },
+  
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
+  vignetteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    // Radial gradient vignette effect using shadow/opacity
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 100,
+      },
+      android: {
+        // Android doesn't support radial shadows well, use a darkening overlay
+        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+      },
+    }),
+  },
 
   rightActions: {
     position: 'absolute',
     right: 16,
-    bottom: 72,
+    bottom: 80,
     alignItems: 'center',
     zIndex: 100,
+  },
+  
+  // Episode button position for sheet alignment
+  episodesButtonPosition: {
+    bottom: 80 + (20 * 2), // bottom of rightActions + spacing for two buttons (like + comments)
+  },
+  
+  // Premium Glassmorphism Action Buttons
+  premiumActionBtn: {
+    alignItems: 'center',
+    marginBottom: 20,
+    minWidth: 44,
+  },
+  premiumIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
+    // Glassmorphism effect
+    ...Platform.select({
+      ios: {
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+      },
+      android: {
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        elevation: 8,
+      },
+    }),
+  },
+  premiumCountLabel: {
+    color: '#E5E5E5',
+    fontSize: 11,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  
+  // Top right actions
+  topRightActions: {
+    position: 'absolute',
+    zIndex: 100,
+  },
+  topActionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
+    // Glassmorphism effect
+    ...Platform.select({
+      ios: {
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+      },
+      android: {
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        elevation: 8,
+      },
+    }),
+  },
+  
+  // Navigation buttons
+  navButton: {
+    position: 'absolute',
+    top: '50%',
+    zIndex: 50,
+    opacity: 0.3,
+  },
+  navButtonLeft: {
+    left: 16,
+  },
+  navButtonRight: {
+    right: 16,
+  },
+  navButtonHidden: {
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  navButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  navButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 8,
+  },
+  
+  // Play/Pause button
+  playPauseButtonContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -40 }, { translateY: -40 }],
+    zIndex: 200,
+  },
+  playPauseButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  
+  // Progress bar speed indicator - centered on progress bar line
+  speedButtonContainer: {
+    position: 'absolute',
+    left: '50%',
+    bottom: 46, // Perfectly aligned with center of progress bar (bar at bottom: 48, height: 4, so center is at 48 - 2 = 46)
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    transform: [{ translateX: -50 }], // Center horizontally
+    zIndex: 151, // Above progress bar
+    minHeight: 20,
+  },
+  speedTextSimple: {
+    color: '#FFD54A',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   descMetaRow: {
@@ -1411,48 +2141,82 @@ infoValue: {
 
   actionBtn: { 
     alignItems: 'center', 
-    marginBottom: 20,
+    marginBottom: 24,
     minWidth: 56,
   },
   iconCircle: {
-    width: 63,
-    height: 63,
-    borderRadius: 31.5,
-    backgroundColor: 'transparent',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 0,
+    marginBottom: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   iconCircleActive: {
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(255, 213, 74, 0.2)',
+    borderColor: 'rgba(255, 213, 74, 0.4)',
   },
   label: { 
     color: '#fff', 
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-    letterSpacing: 0.2,
-    marginTop: -2,
+    textShadowRadius: 3,
+    letterSpacing: 0.3,
+    marginTop: 2,
   },
   countLabel: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-    marginTop: -2,
+    textShadowRadius: 3,
+    marginTop: 2,
   },
   reactionEmoji: {
-    fontSize: 26,
+    fontSize: 42, // Bigger emoji on button after selection
+    lineHeight: 50,
   },
 
   likeWrapper: {
     position: 'relative',
     alignItems: 'center',
     marginBottom: 0,
+  },
+  
+  balloonEmojiWrapper: {
+    position: 'absolute',
+    left: '50%',
+    top: -40, // Position above the button
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    pointerEvents: 'none',
+  },
+  
+  balloonEmojiContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80,
+    height: 80,
+  },
+  
+  balloonEmoji: {
+    fontSize: 45, // Smaller, smoother size
+    lineHeight: 45,
+    textAlign: 'center',
   },
 
   emojiRow: {
@@ -1502,8 +2266,9 @@ infoValue: {
   bottomInfo: {
     position: 'absolute',
     left: 16,
-    bottom: 72,
+    bottom: 80,
     right: 100,
+    zIndex: 100,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -1513,10 +2278,10 @@ infoValue: {
   tagChip: {
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     marginRight: 6,
     marginBottom: 4,
     shadowColor: '#000',
@@ -1526,12 +2291,13 @@ infoValue: {
     elevation: 2,
   },
   tagText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 1,
+    letterSpacing: 0.1,
   },
   descriptionRow: {
     flexDirection: 'row',
@@ -1540,14 +2306,15 @@ infoValue: {
     marginBottom: 6,
   },
   descriptionText: {
-    color: '#fff',
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 16,
     flex: 1,
-    lineHeight: 18,
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    lineHeight: 22,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
+    letterSpacing: 0.2,
   },
   moreButton: {
     marginLeft: 6,
@@ -1570,23 +2337,45 @@ infoValue: {
     justifyContent: 'space-between',
   },
   meta: { 
-    color: '#fff', 
+    color: '#B0B0B0', 
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
+    marginTop: 6,
   },
 
   progressContainer: {
     position: 'absolute',
     bottom: 48,
-    left: 16,
-    right: 16,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    left: 0,
+    right: 0,
+    height: 4,
+    zIndex: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  progressBar: { height: '100%', backgroundColor: '#FFD54A' },
+  progressBarBackground: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 2,
+  },
+  progressBar: { 
+    height: '100%', 
+    backgroundColor: '#FFD54A',
+    borderRadius: 2,
+    shadowColor: '#FFD54A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 3,
+  },
 
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1614,11 +2403,52 @@ infoValue: {
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: height * 0.15, // Position at top of episodes button (approximately)
     height: height * 0.75,
-    backgroundColor: '#111',
+    backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 16,
+    padding: 20,
+    paddingTop: 16,
+    zIndex: 250,
+    // Premium floating shadow
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 20,
+      },
+    }),
+  },
+  moreSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: height * 0.85,
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    zIndex: 300, // Higher than play/pause button (zIndex: 200)
+    // Premium styling
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.6,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 16,
+      },
+    }),
   },
 
   sheetHeader: {
@@ -1627,6 +2457,63 @@ infoValue: {
     marginBottom: 12,
   },
   sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  
+  // Premium Episode Sheet Header
+  episodeSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    marginBottom: 12,
+  },
+  episodeSheetTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    flex: 1,
+    marginRight: 12,
+  },
+  episodeSheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  episodeSheetDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 20,
+  },
+  
+  // Episode Info Card
+  episodeInfoCard: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  episodeInfoText: {
+    color: '#B0B0B0',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 8,
+    letterSpacing: 0.2,
+  },
+  episodeInfoTags: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  episodeInfoTag: {
+    color: '#B0B0B0',
+    fontSize: 12,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  
+  episodeScrollView: {
+    marginHorizontal: -20, // Extend scroll view to edges
+  },
 
   rangeRow: { flexDirection: 'row', marginBottom: 12 },
   rangePill: {
@@ -1641,6 +2528,44 @@ infoValue: {
   rangeText: { color: '#ccc', fontWeight: '700' },
   rangeTextActive: { color: '#000' },
 
+  // Netflix-style Episode Pills - Premium OTT Design
+  episodeScrollContainer: {
+    paddingLeft: 20,
+    paddingRight: 20, // Extra padding on right to prevent cut-off
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  netflixEpisodePill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999, // Fully rounded
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 70,
+    marginRight: 12, // Spacing between pills
+  },
+  netflixEpisodePillActive: {
+    backgroundColor: '#F5C451',
+    borderColor: '#F5C451',
+  },
+  netflixEpisodeText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '500', // Regular weight for inactive
+    letterSpacing: 0.2,
+  },
+  netflixEpisodeTextActive: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '600', // SemiBold for active
+    letterSpacing: 0.2,
+  },
+  
+  // Legacy episode styles
   episodeGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   episodePill: {
     width: 44,
@@ -1672,44 +2597,55 @@ infoValue: {
     zIndex: 1000,
   },
   commentBox: {
-    backgroundColor: '#000',
+    backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: height * 0.75,
+    height: height * 0.85,
+    maxHeight: height * 0.85,
     width: '100%',
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 8,
-    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingHorizontal: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 16,
+    // Blurred background effect hint
+    ...Platform.select({
+      ios: {
+        backgroundColor: 'rgba(14, 14, 14, 0.95)',
+      },
+      android: {
+        backgroundColor: '#0E0E0E',
+      },
+    }),
   },
   commentHandleBar: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: '#666',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: 12,
-    marginTop: 8,
   },
   commentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 20,
     paddingBottom: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   commentHeaderTitle: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   commentItem: {
     flexDirection: 'row',
@@ -1750,9 +2686,11 @@ infoValue: {
     marginRight: 6,
   },
   commentText: {
-    color: '#fff',
-    fontSize: 14,
-    lineHeight: 20,
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    letterSpacing: 0.1,
   },
   commentActions: {
     flexDirection: 'row',
@@ -1812,16 +2750,18 @@ infoValue: {
     marginBottom: 8,
   },
   commentInputAvatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFD54A',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5C451',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   commentInputAvatarText: {
-    color: '#000',
-    fontSize: 14,
+    color: '#000000',
+    fontSize: 16,
     fontWeight: '700',
   },
   commentInput: {
@@ -1850,18 +2790,6 @@ infoValue: {
     color: '#666',
   },
 
-  moreSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: height * 0.75,
-    backgroundColor: '#111',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 0,
-  },
   moreSheetScroll: {
     flex: 1,
   },
@@ -1872,55 +2800,62 @@ infoValue: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   moreSheetTitle: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   moreSheetCloseBtn: {
     padding: 4,
   },
   moreSection: {
-    marginBottom: 24,
+    marginBottom: 32,
   },
   moreSectionTitle: {
-    color: '#aaa',
-    fontSize: 12,
+    color: '#B0B0B0',
+    fontSize: 13,
     fontWeight: '600',
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 12,
+    textTransform: 'uppercase',
   },
   moreOptionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 10,
   },
   moreOptionChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-    marginRight: 8,
-    marginBottom: 8,
+    marginRight: 10,
+    marginBottom: 10,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   moreOptionChipActive: {
-    backgroundColor: '#FFD54A',
-    borderColor: '#FFD54A',
+    backgroundColor: '#F5C451',
+    borderColor: '#F5C451',
   },
   moreOptionChipText: {
-    color: '#fff',
-    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   moreOptionChipTextActive: {
-    color: '#000',
+    color: '#000000',
+    fontSize: 14,
     fontWeight: '700',
   },
   moreDivider: {
@@ -1966,94 +2901,6 @@ infoValue: {
   moreText: { color: '#fff', fontSize: 16 },
   moreClose: { paddingVertical: 14, alignItems: 'center' },
   moreCloseText: { color: '#FFD54A', fontSize: 16 },
-  topRightActions: {
-    position: 'absolute',
-    // top and right will be set via inline styles with safe area insets
-    zIndex: 1000,
-    elevation: 1000,
-  },
-
-  topActionBtn: {
-    width: 47,
-    height: 47,
-    borderRadius: 23.5,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speedButtonContainer: {
-    position: 'absolute',
-    left: '50%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 18,
-    top: -12,
-    transform: [{ translateX: -50 }],
-  },
-  speedTextSimple: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  navButton: {
-    position: 'absolute',
-    top: '50%',
-    marginTop: -30,
-    width: 80,
-    height: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 500,
-    opacity: 0.7,
-  },
-  navButtonHidden: {
-    opacity: 0,
-    pointerEvents: 'auto', // Keep buttons touchable even when invisible
-  },
-  navButtonLeft: {
-    left: 0,
-  },
-  navButtonRight: {
-    right: 0,
-  },
-  navButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-  },
-  navButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  playPauseButtonContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  playPauseButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
 
 
 });

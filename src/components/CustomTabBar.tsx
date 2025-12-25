@@ -7,7 +7,6 @@ import {
   Platform,
   Animated,
   GestureResponderEvent,
-  Text,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -19,13 +18,12 @@ type TabAnim = {
   rotate: Animated.Value;
   translateY: Animated.Value;
   colorState: Animated.Value;
-  backgroundScale: Animated.Value;
 };
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-
   const insets = useSafeAreaInsets();
-
+  const bottomInset = insets.bottom;
+  
   // 🔴 IMPORTANT: hide tab bar completely on Reels
   const focusedRoute = state.routes[state.index];
   const focusedOptions = descriptors[focusedRoute.key]?.options;
@@ -44,7 +42,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         rotate: new Animated.Value(0),
         translateY: new Animated.Value(0),
         colorState: new Animated.Value(0),
-        backgroundScale: new Animated.Value(0),
       })),
     [state.routes.length]
   );
@@ -71,19 +68,11 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       doHaptic();
 
       anims.forEach((a, i) => {
-        Animated.parallel([
-          Animated.timing(a.colorState, {
-            toValue: i === index ? 1 : 0,
-            duration: 230,
-            useNativeDriver: false,
-          }),
-          Animated.spring(a.backgroundScale, {
-            toValue: i === index ? 1 : 0,
-            tension: 100,
-            friction: 8,
-            useNativeDriver: true,
-          }),
-        ]).start();
+        Animated.timing(a.colorState, {
+          toValue: i === index ? 1 : 0,
+          duration: 230,
+          useNativeDriver: false,
+        }).start();
       });
 
       Animated.sequence([
@@ -183,7 +172,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       case 'Search':
         return isActive ? 'search' : 'search-outline'; // Magnifying glass
       case 'Reels':
-        return isActive ? 'play-circle' : 'play-circle-outline';
+        return 'play-circle';
       case 'Rewards':
         return isActive ? 'wallet' : 'wallet-outline';
       case 'Profile':
@@ -193,23 +182,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     }
   };
 
-  const labelFor = (routeName: string) => {
-    switch (routeName) {
-      case 'Home':
-        return 'Home';
-      case 'Reels':
-        return 'Reels';
-      case 'Rewards':
-        return 'Coins';
-      case 'Profile':
-        return 'Profile';
-      default:
-        return '';
-    }
-  };
-
-  const tabBarHeight = 64; // Consistent height across all platforms
-  const bottomInset = Math.max(insets.bottom, 0); // Ensure non-negative
+  const tabBarHeight = Platform.OS === 'ios' ? 78 : 64;
 
   return (
     <View 
@@ -223,6 +196,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           if (!route) return null;
           const isFocused = state.index === customIndex;
           const anim = anims[customIndex];
+
           const rotate = anim.rotate.interpolate({
             inputRange: [-1, -0.15, 0, 0.15, 1],
             outputRange: ['-25deg', '-8deg', '0deg', '8deg', '360deg'],
@@ -291,43 +265,29 @@ const styles = StyleSheet.create({
     },
   wrapper: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
-    backgroundColor: '#050509',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 20,
+    borderRadius: 18,
     ...Platform.select({
-      android: { 
-        elevation: 10,
-      },
+      android: { elevation: 6 },
       ios: {
         shadowColor: '#000',
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.22,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
       },
     }),
   },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#0A0A0A',
-    paddingHorizontal: 16,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: '100%',
-    ...Platform.select({
-      android: { 
-        elevation: 8,
-      },
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-      },
-    }),
   },
   tabItem: {
     flex: 1,
@@ -335,9 +295,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },

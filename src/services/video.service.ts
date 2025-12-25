@@ -5,29 +5,67 @@ import api from './api';
 
 export const videoService = {
   async getReelsFeed(page: number = 1) {
-    const response = await api.get(`/api/content/reels?page=${page}`);
-    return response.data;
+    try {
+      const response = await api.get(`/api/content/reels?page=${page}`);
+      return response.data;
+    } catch (error: any) {
+      // Handle 401 gracefully - return empty feed
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getWebseriesFeed(page: number = 1) {
-    const response = await api.get(`/api/content/webseries?page=${page}`);
-    return response.data;
+    try {
+      const response = await api.get(`/api/content/webseries?page=${page}`);
+      return response.data;
+    } catch (error: any) {
+      // Handle 401 gracefully - return empty feed
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getSeasons() {
-    const response = await api.get('/api/content/seasons');
-    return response.data;
+    try {
+      const response = await api.get('/api/content/seasons');
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getEpisodes(seasonId: string) {
-    const response = await api.get(`/api/content/episodes/${seasonId}`);
-    return response.data;
+    try {
+      const response = await api.get(`/api/content/episodes/${seasonId}`);
+      return response.data;
+    } catch (error: any) {
+      // Handle 401 gracefully - return empty episodes
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getLatestVideos(limit: number = 10, type?: string) {
-    const typeParam = type ? `&type=${type}` : '';
-    const response = await api.get(`/api/content/latest?limit=${limit}${typeParam}`);
-    return response.data;
+    try {
+      const typeParam = type ? `&type=${type}` : '';
+      const response = await api.get(`/api/content/latest?limit=${limit}${typeParam}`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getVideoById(videoId: string) {
@@ -56,8 +94,16 @@ export const videoService = {
   },
 
   async getContinueWatching(limit: number = 10) {
-    const response = await api.get(`/api/content/continue-watching?limit=${limit}`);
-    return response.data;
+    try {
+      const response = await api.get(`/api/content/continue-watching?limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      // Handle 401 gracefully - return empty continue watching list
+      if (error.response?.status === 401) {
+        return { success: false, data: [], message: 'Authentication required' };
+      }
+      throw error;
+    }
   },
 
   async getWatchProgress(videoId: string) {

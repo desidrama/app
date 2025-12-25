@@ -99,6 +99,36 @@ type CarouselBannerItem = {
 
 type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
 
+// Helper component for carousel video player
+function CarouselVideoPlayer({ videoUrl, style }: { videoUrl: string; style: any }) {
+  const videoRef = useRef<Video>(null);
+
+  // Play video when component mounts
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playAsync().catch(() => {});
+    }
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.pauseAsync().catch(() => {});
+      }
+    };
+  }, [videoUrl]);
+
+  return (
+    <Video
+      ref={videoRef}
+      source={{ uri: videoUrl }}
+      style={style}
+      resizeMode={ResizeMode.COVER}
+      shouldPlay
+      isLooping
+      isMuted
+      useNativeControls={false}
+    />
+  );
+}
+
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const parentNavigation = (navigation as any).getParent();

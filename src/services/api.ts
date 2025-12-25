@@ -54,15 +54,16 @@ api.interceptors.request.use(
     // Add token to Authorization header
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔑 Token added to request:', {
-        url: config.url,
-        hasToken: !!token,
-        tokenLength: token.length,
-        tokenPreview: token.substring(0, 20) + '...',
-      });
-    } else {
-      console.log('⚠️ No token found for request:', config.url);
+      // Only log token addition in debug mode to reduce noise
+      if (__DEV__) {
+        console.log('🔑 Token added to request:', {
+          url: config.url,
+          hasToken: !!token,
+          tokenLength: token.length,
+        });
+      }
     }
+    // Silently handle missing tokens - some routes may work without auth
 
     // Add cookies to Cookie header
     if (cookies) {
@@ -106,8 +107,41 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
 
-    // Handle 401 Unauthorized with token refresh
+    // Handle 401 Unauthorized - check if we have a token first
     if (error.response?.status === 401 && !originalRequest._retry) {
+      const token = await getToken();
+      
+      // If no token exists, this is expected - don't try to refresh
+      // Just return the error silently for public content routes
+      if (!token) {
+        // For public content routes, return empty data instead of error
+        const publicRoutes = [
+          '/api/content/reels',
+          '/api/content/webseries',
+          '/api/content/episodes',
+          '/api/content/latest',
+          '/api/content/seasons',
+          '/api/content/carousel',
+        ];
+        
+        const isPublicRoute = publicRoutes.some(route => 
+          originalRequest.url?.includes(route)
+        );
+        
+        if (isPublicRoute) {
+          // Return empty successful response for public routes without auth
+          return Promise.resolve({
+            data: { success: false, data: [], message: 'Authentication required' },
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: originalRequest,
+          } as any);
+        }
+        
+        // For protected routes without token, return error but don't log
+        return Promise.reject(error);
+      }
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
