@@ -139,7 +139,7 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#050509" />
+      <StatusBar barStyle="light-content" backgroundColor="#080812" />
       <SafeAreaView style={styles.safeAreaInner}>
         <View style={styles.container}>
           {/* Header */}
@@ -148,20 +148,20 @@ export default function SearchScreen() {
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              <Ionicons name="arrow-back" size={24} color="#f1eddfff" />
             </TouchableOpacity>
 
-            <View style={styles.searchContainer}>
+            <View style={styles.searchContainerPremium}>
               <Ionicons
                 name="search"
-                size={18}
-                color="#C8C8C8"
+                size={20}
+                color="#faf9f6ff"
                 style={styles.searchIcon}
               />
               <TextInput
-                style={styles.searchInput}
-                placeholder="Search videos..."
-                placeholderTextColor="#A0A0A0"
+                style={styles.searchInputPremium}
+                placeholder="Search premium videos..."
+                placeholderTextColor="#fbf8ef99"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 onSubmitEditing={handleSearch}
@@ -176,7 +176,7 @@ export default function SearchScreen() {
                     setHasSearched(false);
                   }}
                 >
-                  <Ionicons name="close-circle" size={20} color="#A0A0A0" />
+                  <Ionicons name="close-circle" size={22} color="#faf9f4ff" />
                 </TouchableOpacity>
               )}
             </View>
@@ -189,12 +189,12 @@ export default function SearchScreen() {
               renderItem={renderVideoItem}
               keyExtractor={(item) => item._id}
               numColumns={3}
-              contentContainerStyle={styles.resultsContainer}
+              contentContainerStyle={styles.resultsContainerPremium}
               columnWrapperStyle={styles.row}
               showsVerticalScrollIndicator={false}
             />
           ) : (
-            <View style={styles.content}>
+            <View style={styles.contentPremium}>
               {renderEmptyState()}
             </View>
           )}
@@ -205,6 +205,55 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
+    searchContainerPremium: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(34, 17, 7, 0.85)',
+      borderRadius: 32,
+      paddingHorizontal: 18,
+      height: 48,
+      borderWidth: 1,
+      borderColor: '#f6f5f1ff',
+      shadowColor: '#f6f4efff',
+      shadowOpacity: 0.18,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 8,
+    },
+    searchInputPremium: {
+      flex: 1,
+      color: '#fefcf8ff',
+      fontSize: 16,
+      fontWeight: '600',
+      paddingVertical: 0,
+      marginLeft: 8,
+    },
+    resultsContainerPremium: {
+      padding: 18,
+      backgroundColor: 'rgba(8,8,18,0.98)',
+      borderRadius: 18,
+      margin: 8,
+      shadowColor: '#f7e7b3ff',
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 4,
+    },
+    contentPremium: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 32,
+      backgroundColor: 'rgba(8,8,18,0.98)',
+      borderRadius: 18,
+      margin: 8,
+      shadowColor: '#faf9f4ff',
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 4,
+    },
   safeArea: {
     flex: 1,
     backgroundColor: '#050509',

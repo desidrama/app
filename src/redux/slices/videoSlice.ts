@@ -56,19 +56,13 @@ const videoSlice = createSlice({
       state.continueWatching = action.payload;
     },
     addContinueWatchingVideo: (state, action: PayloadAction<ContinueWatchingVideo>) => {
-      // Check if video already exists
-      const exists = state.continueWatching.some(
-        (item) => item.videoId._id === action.payload.videoId._id
-      );
-      if (!exists) {
-        state.continueWatching.unshift(action.payload);
-      } else {
-        // Update existing video and move to top
-        state.continueWatching = state.continueWatching
-          .filter((item) => item.videoId._id !== action.payload.videoId._id)
-          .concat([action.payload])
-          .reverse();
-      }
+      // Remove old entry if exists, then add new to top
+      state.continueWatching = [
+        action.payload,
+        ...state.continueWatching.filter(
+          (item) => item.videoId._id !== action.payload.videoId._id
+        ),
+      ];
     },
     removeContinueWatchingVideo: (state, action: PayloadAction<string>) => {
       state.continueWatching = state.continueWatching.filter(

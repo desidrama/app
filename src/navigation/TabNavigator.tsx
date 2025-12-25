@@ -16,14 +16,12 @@ import CustomTabBar from '../components/CustomTabBar';
 
 export type TabParamList = {
   Home: undefined;
-
+  Search: undefined;
   Reels: {
     targetVideoId?: string;
     resumeTime?: number;
     progress?: number;
   } | undefined;
-
- 
   Rewards: undefined;
   Profile: undefined;
 };
@@ -66,6 +64,7 @@ const makeSafe = (Comp: any, name: string) => {
 
 const TabNavigator: React.FC = () => {
   const SafeHome = useMemo(() => makeSafe(HomeScreen, 'HomeScreen'), []);
+  const SafeSearch = useMemo(() => makeSafe(require('../screens/home/SearchScreen').default, 'SearchScreen'), []);
   const SafeReels = useMemo(() => makeSafe(ReelsFeedScreen, 'ReelsFeedScreen'), []);
   const SafeRewards = useMemo(() => makeSafe(RewardsScreen, 'RewardsScreen'), []);
   const SafeProfile = useMemo(() => makeSafe(ProfileScreen, 'ProfileScreen'), []);
@@ -80,16 +79,14 @@ const TabNavigator: React.FC = () => {
       }}
     >
       <Tab.Screen name="Home" component={SafeHome} />
-
-      {/* 🔥 IMPORTANT CHANGE — HIDE TAB BAR ON REELS */}
+      <Tab.Screen name="Search" component={SafeSearch} />
       <Tab.Screen
         name="Reels"
         component={SafeReels}
         options={{
-          tabBarStyle: { display: 'none' }, // 👈 removes bottom bar on reels
+          tabBarStyle: { display: 'none' },
         }}
       />
-
       <Tab.Screen name="Rewards" component={SafeRewards} />
       <Tab.Screen name="Profile" component={SafeProfile} />
     </Tab.Navigator>

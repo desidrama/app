@@ -180,6 +180,8 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     switch (routeName) {
       case 'Home':
         return isActive ? 'home' : 'home-outline';
+      case 'Search':
+        return isActive ? 'search' : 'search-outline'; // Magnifying glass
       case 'Reels':
         return isActive ? 'play-circle' : 'play-circle-outline';
       case 'Rewards':
@@ -211,48 +213,65 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   return (
     <View 
-      style={[
-        styles.wrapper, 
-        { 
-          paddingBottom: bottomInset,
-        }
-      ]}
+      style={[styles.wrapper, { paddingBottom: bottomInset }]}
     >
-      <View style={[styles.tabBar, { height: tabBarHeight }]}>
-        {state.routes.map((route, index) => {
-          const isFocused = state.index === index;
-          const anim = anims[index];
-
+      <View style={[styles.tabBar, { height: tabBarHeight }]}> 
+        {/* Custom order: Home, Search, Reels (center), Rewards, Profile */}
+        {[0, 1, 2, 3, 4].map((customIndex) => {
+          // Map custom order: 0=Home, 1=Search, 2=Reels, 3=Rewards, 4=Profile
+          const route = state.routes[customIndex];
+          if (!route) return null;
+          const isFocused = state.index === customIndex;
+          const anim = anims[customIndex];
           const rotate = anim.rotate.interpolate({
             inputRange: [-1, -0.15, 0, 0.15, 1],
             outputRange: ['-25deg', '-8deg', '0deg', '8deg', '360deg'],
           });
+
+          // Highlight and bulge the Reels icon (improved, no gold shadow/border)
+          const isReels = route.name === 'Reels';
+          const iconSize = isReels ? 38 : 28;
+          const iconColor = isReels && isFocused ? '#FFD54A' : isFocused ? '#FFD54A' : '#FFFFFF';
+          const iconWrapperStyle = [
+            styles.iconWrapper,
+            isReels && {
+              backgroundColor: '#181820',
+              borderWidth: 0,
+              borderColor: 'transparent',
+              shadowColor: 'transparent',
+              shadowOpacity: 0,
+              shadowRadius: 0,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: 0,
+              transform: [
+                { scale: anim.scale },
+                { translateY: isFocused ? -12 : 0 },
+                { rotate },
+              ],
+            },
+            !isReels && {
+              transform: [
+                { translateY: anim.translateY },
+                { scale: anim.scale },
+                { rotate },
+              ],
+            },
+          ];
 
           return (
             <TouchableOpacity
               key={route.key}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
-              onPress={handlePress(index)}
-              style={styles.tabItem}
+              onPress={handlePress(customIndex)}
+              style={[styles.tabItem, isReels && styles.reelTabItem]}
               activeOpacity={0.8}
             >
-              <Animated.View
-                style={[
-                  styles.iconWrapper,
-                  {
-                    transform: [
-                      { translateY: anim.translateY },
-                      { scale: anim.scale },
-                      { rotate },
-                    ],
-                  },
-                ]}
-              >
+              <Animated.View style={iconWrapperStyle}>
                 <Ionicons
                   name={iconFor(route.name, isFocused)}
-                  size={28}
-                  color={isFocused ? '#FFD54A' : '#FFFFFF'}
+                  size={iconSize}
+                  color={iconColor}
                 />
               </Animated.View>
             </TouchableOpacity>
@@ -264,6 +283,12 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 }
 
 const styles = StyleSheet.create({
+    reelTabItem: {
+      flex: 1.2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10,
+    },
   wrapper: {
     position: 'absolute',
     left: 0,

@@ -1,143 +1,92 @@
-// ============================================
 // FILE: src/components/VideoCard.tsx
-// ============================================
+
 import React from 'react';
-import {
-  View,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  Text,
-  Animated,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+
+const colors = {
+  surface: '#14141F',
+  textPrimary: '#F5F5FA',
+  textSecondary: '#A5A5C0',
+};
 
 interface VideoCardProps {
   title: string;
   imageUrl: string;
-  onPress?: () => void;
+  episodeNumber?: number;
+  genre?: string;
+  onPress: () => void;
 }
 
-export default function VideoCard({ title, imageUrl, onPress }: VideoCardProps) {
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-  const opacityAnim = React.useRef(new Animated.Value(0)).current;
-
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.95,
-        speed: 20,
-        bounciness: 10,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0.3,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        speed: 20,
-        bounciness: 10,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
+export default function VideoCard({
+  title,
+  imageUrl,
+  episodeNumber,
+  genre,
+  onPress,
+}: VideoCardProps) {
   return (
     <TouchableOpacity
+      style={styles.container}
       onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      activeOpacity={0.8}
-      style={styles.cardWrapper}
+      activeOpacity={0.85}
     >
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            transform: [{ scale: scaleAnim }],
-          },
-        ]}
-      >
-        <Image
-          source={{ uri: imageUrl }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-        <Animated.View
-          style={[
-            styles.playButtonOverlay,
-            {
-              opacity: opacityAnim,
-            },
-          ]}
-        >
-          <TouchableOpacity style={styles.playButton}>
-            <Ionicons name="play" size={32} color="#FFFFFF" />
-          </TouchableOpacity>
-        </Animated.View>
-        <View style={styles.cardFooter}>
-          <Text style={styles.videoTitle} numberOfLines={1}>
-            {title}
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.image}
+        resizeMode="cover"
+      />
+      
+      
+      
+      {/* Text Overlay */}
+      <View style={styles.textOverlay}>
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+        {(episodeNumber || genre) && (
+          <Text style={styles.meta} numberOfLines={1}>
+            {episodeNumber ? `Episode ${episodeNumber}` : ''}
+            {episodeNumber && genre ? ' · ' : ''}
+            {genre || ''}
           </Text>
-        </View>
-      </Animated.View>
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  cardWrapper: {
-    width: 110,
-    marginRight: 12,
-  },
-  card: {
-    borderRadius: 8,
+  container: {
+    width: 140,
+    height: 200,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.surface,
+    position: 'relative',
+    elevation: 0,
+    shadowOpacity: 0,
   },
-  thumbnail: {
-    width: 110,
-    height: 160,
-    backgroundColor: '#1a1a1a',
+  image: {
+    width: '100%',
+    height: '100%',
   },
-  playButtonOverlay: {
+  
+  textOverlay: {
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 8,
   },
-  playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  title: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
-  cardFooter: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: '#0A0A0A',
-  },
-  videoTitle: {
+  meta: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '400',
+    color: colors.textSecondary,
   },
 });
