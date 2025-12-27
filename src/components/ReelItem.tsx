@@ -81,35 +81,164 @@ const formatCount = (count: number): string => {
 export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, onSwipeLeft, onSwipeRight, canGoNext = false, canGoPrevious = false }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   
-  // Swipe gesture handling
-  const swipeThreshold = 50; // Minimum distance for swipe
+  // Swipe gesture handling with smooth screen transition
+  const swipeThreshold = width * 0.25; // 25% of screen width to trigger navigation
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (evt, gestureState) => {
         // Only respond to horizontal swipes (not vertical)
-        // Require minimum horizontal movement and ensure it's more horizontal than vertical
+        // Lower threshold for more responsive feel
         const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 15;
-        return isHorizontal && hasMinHorizontalMovement;
+        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 10;
+        const isNotVerticalScroll = Math.abs(gestureState.dy) < 40; // Allow more vertical movement
+        return isHorizontal && hasMinHorizontalMovement && isNotVerticalScroll;
       },
       onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        // Capture horizontal swipes early to prevent child components from handling them
+        // Capture horizontal swipes early
         const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 15;
-        return isHorizontal && hasMinHorizontalMovement;
+        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 10;
+        const isNotVerticalScroll = Math.abs(gestureState.dy) < 40;
+        return isHorizontal && hasMinHorizontalMovement && isNotVerticalScroll;
       },
-      onPanResponderRelease: (evt, gestureState) => {
-        if (Math.abs(gestureState.dx) > swipeThreshold) {
-          if (gestureState.dx > 0 && onSwipeLeft && canGoNext) {
-            // Swipe right = next webseries
-            onSwipeLeft();
-          } else if (gestureState.dx < 0 && onSwipeRight && canGoPrevious) {
-            // Swipe left = previous webseries
-            onSwipeRight();
+      onPanResponderGrant: () => {
+        // Stop any ongoing animations
+        screenTranslateX.stopAnimation();
+        swipeIndicatorOpacity.stopAnimation();
+        swipeIndicatorTranslateX.stopAnimation();
+        
+        // Reset to current position
+        screenTranslateX.setValue(0);
+        swipeIndicatorOpacity.setValue(0);
+        swipeIndicatorTranslateX.setValue(0);
+        setSwipeDirection(null);
+        isSwipingRef.current = true;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Directly follow finger movement - smooth and responsive
+        const absDx = Math.abs(gestureState.dx);
+        
+        if (absDx > 5) {
+          // Apply screen translation directly - 1:1 with finger movement
+          // Allow full screen width translation for smooth feel
+          const maxTranslation = width * 0.95; // Allow up to 95% of screen width
+          const clampedDx = Math.max(-maxTranslation, Math.min(maxTranslation, gestureState.dx));
+          screenTranslateX.setValue(clampedDx);
+          
+          // Determine swipe direction and show indicators
+          if (gestureState.dx < 0) {
+            // Right to left swipe (finger moving left) = Previous webseries
+            if (canGoPrevious) {
+              setSwipeDirection('left');
+              const progress = Math.min(absDx / 200, 1); // Normalize to 0-1
+              swipeIndicatorOpacity.setValue(progress * 0.9);
+              swipeIndicatorTranslateX.setValue(gestureState.dx * 0.2);
+            } else {
+              // Can't go previous, reduce translation
+              screenTranslateX.setValue(clampedDx * 0.3);
+            }
+          } else {
+            // Left to right swipe (finger moving right) = Next webseries
+            if (canGoNext) {
+              setSwipeDirection('right');
+              const progress = Math.min(absDx / 200, 1); // Normalize to 0-1
+              swipeIndicatorOpacity.setValue(progress * 0.9);
+              swipeIndicatorTranslateX.setValue(gestureState.dx * 0.2);
+            } else {
+              // Can't go next, reduce translation
+              screenTranslateX.setValue(clampedDx * 0.3);
+            }
           }
         }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        isSwipingRef.current = false;
+        const absDx = Math.abs(gestureState.dx);
+        const velocity = Math.abs(gestureState.vx || 0);
+        
+        // Check if should navigate based on distance or velocity
+        const shouldNavigate = absDx > swipeThreshold || (absDx > width * 0.15 && velocity > 0.5);
+        
+        if (shouldNavigate) {
+          // Complete the transition smoothly
+          const targetX = gestureState.dx < 0 ? -width : width;
+          
+          // Use velocity to determine animation duration (faster swipe = faster animation)
+          const baseDuration = 300;
+          const velocityFactor = Math.min(Math.abs(velocity) * 100, 200);
+          const duration = Math.max(200, baseDuration - velocityFactor);
+          
+          Animated.parallel([
+            Animated.timing(screenTranslateX, {
+              toValue: targetX,
+              duration: duration,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(swipeIndicatorOpacity, {
+              toValue: 0,
+              duration: 150,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(swipeIndicatorTranslateX, {
+              toValue: 0,
+              duration: 150,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            // Reset screen position immediately after animation
+            screenTranslateX.setValue(0);
+            setSwipeDirection(null);
+            
+            // Trigger navigation
+            if (gestureState.dx < 0 && onSwipeRight && canGoPrevious) {
+              // Swipe right to left = previous webseries
+              onSwipeRight();
+            } else if (gestureState.dx > 0 && onSwipeLeft && canGoNext) {
+              // Swipe left to right = next webseries
+              onSwipeLeft();
+            }
+          });
+        } else {
+          // Snap back smoothly if threshold not met
+          Animated.parallel([
+            Animated.spring(screenTranslateX, {
+              toValue: 0,
+              tension: 80,
+              friction: 9,
+              useNativeDriver: true,
+            }),
+            Animated.timing(swipeIndicatorOpacity, {
+              toValue: 0,
+              duration: 200,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(swipeIndicatorTranslateX, {
+              toValue: 0,
+              duration: 200,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            setSwipeDirection(null);
+          });
+        }
+      },
+      onPanResponderTerminate: () => {
+        // Handle gesture cancellation (e.g., by system)
+        isSwipingRef.current = false;
+        Animated.spring(screenTranslateX, {
+          toValue: 0,
+          tension: 80,
+          friction: 9,
+          useNativeDriver: true,
+        }).start(() => {
+          setSwipeDirection(null);
+        });
       },
     })
   ).current;
@@ -144,6 +273,15 @@ const moreSheetY = useRef(new Animated.Value(height)).current;
 const descSheetY = useRef(new Animated.Value(height)).current;
 const commentSheetY = useRef(new Animated.Value(height)).current;
 const playPauseButtonOpacity = useRef(new Animated.Value(0)).current;
+  
+  // Swipe indicator animations
+  const swipeIndicatorOpacity = useRef(new Animated.Value(0)).current;
+  const swipeIndicatorTranslateX = useRef(new Animated.Value(0)).current;
+  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+  
+  // Screen transition animation for smooth swipe
+  const screenTranslateX = useRef(new Animated.Value(0)).current;
+  const isSwipingRef = useRef(false);
 
   const [showEpisodes, setShowEpisodes] = useState(false);
 const [showComments, setShowComments] = useState(false);
@@ -953,7 +1091,15 @@ const closeMore = () => {
   // Episodes array is now loaded from API in openEpisodes
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <Animated.View 
+      style={[
+        styles.container,
+        {
+          transform: [{ translateX: screenTranslateX }],
+        },
+      ]} 
+      {...panResponder.panHandlers}
+    >
       {/* VIDEO */}
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -1048,6 +1194,35 @@ const closeMore = () => {
             />
           </View>
         </TouchableOpacity>
+      )}
+      
+      {/* SWIPE INDICATOR - Shows during horizontal swipe */}
+      {swipeDirection && (
+        <Animated.View
+          style={[
+            styles.swipeIndicator,
+            swipeDirection === 'left' ? styles.swipeIndicatorLeft : styles.swipeIndicatorRight,
+            {
+              opacity: swipeIndicatorOpacity,
+              transform: [{ translateX: swipeIndicatorTranslateX }],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <View style={styles.swipeIndicatorContent}>
+            {swipeDirection === 'left' ? (
+              <>
+                <Ionicons name="chevron-back" size={32} color="#FFFFFF" />
+                <Text style={styles.swipeIndicatorText}>Previous</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.swipeIndicatorText}>Next</Text>
+                <Ionicons name="chevron-forward" size={32} color="#FFFFFF" />
+              </>
+            )}
+          </View>
+        </Animated.View>
       )}
       
       {/* LEFT NAVIGATION BUTTON (Previous) - Hidden but still functional */}
@@ -1910,7 +2085,7 @@ const closeMore = () => {
           </Animated.View>
         </>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -2061,6 +2236,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginHorizontal: 8,
+  },
+  
+  // Swipe indicator styles
+  swipeIndicator: {
+    position: 'absolute',
+    top: '50%',
+    zIndex: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeIndicatorLeft: {
+    left: 20,
+  },
+  swipeIndicatorRight: {
+    right: 20,
+  },
+  swipeIndicatorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  swipeIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginHorizontal: 8,
+    letterSpacing: 0.5,
   },
   
   // Play/Pause button
