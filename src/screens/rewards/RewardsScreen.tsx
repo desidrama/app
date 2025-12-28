@@ -349,10 +349,15 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             Coins & Rewards
           </Text>
 
-          <View style={styles.coinPill} accessible accessibilityLabel={`${userCoins} coins`}>
+          <TouchableOpacity
+            style={styles.coinPill}
+            accessible
+            accessibilityLabel={`${userCoins} coins`}
+            onPress={() => navigation?.navigate?.('BuyCoins' as any)}
+          >
             <Text style={styles.coinText}>{loading ? '...' : userCoins}</Text>
             <FontAwesome5 name="coins" size={14} color="#F5B800" />
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Pull-to-Refresh Indicator */}
@@ -480,6 +485,29 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           ))}
+
+          {/* Buy Coins */}
+          <Text style={styles.sectionTitle}>Buy Coins</Text>
+
+          <TouchableOpacity
+            style={[styles.missionCard, styles.buyCoinsCard]}
+            onPress={() => navigation?.navigate?.('BuyCoins' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.missionLeft}>
+              <View style={[styles.missionIconCircle, { backgroundColor: '#FFD54A' }]}>
+                <FontAwesome5 name="coins" size={18} color="#111827" />
+              </View>
+              <View>
+                <Text style={styles.missionTitle}>Purchase Coins</Text>
+                <Text style={styles.missionSubtitle}>Get more coins instantly</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={[styles.missionCTA, styles.buyCoinsCTA]}>
+              <Text style={[styles.missionCTAText, styles.buyCoinsCTAText]}>Buy Now</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
 
           {/* Watch Ad and earn */}
           <Text style={styles.sectionTitle}>Watch Ad and earn</Text>
@@ -866,5 +894,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9CA3AF',
     textAlign: 'center',
+  },
+  buyCoinsCard: {
+    borderWidth: 2,
+    borderColor: '#FFD54A',
+    backgroundColor: '#1d1b10',
+  },
+  buyCoinsCTA: {
+    backgroundColor: '#FFD54A',
+  },
+  buyCoinsCTAText: {
+    color: '#111827',
   },
 });

@@ -85,7 +85,7 @@ export interface CoinTransaction {
   _id: string;
   userId: string;
   type: 'earned' | 'redeemed';
-  source: 'ad_view' | 'social_follow' | 'daily_login' | 'referral' | 'signup_bonus' | 'reel_watch';
+  source: 'ad_view' | 'social_follow' | 'daily_login' | 'referral' | 'signup_bonus' | 'reel_watch' | 'purchase';
   amount: number;
   description: string;
   metadata?: any;

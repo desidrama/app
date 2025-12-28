@@ -45,6 +45,7 @@
           "iosAppId": "ca-app-pub-3940256099942544~1458002511"
         }
       ],
+      "react-native-cashfree-pg-sdk",
       [
         "expo-build-properties",
         {
@@ -57,9 +58,9 @@
     "extra": {
       "apiBaseUrl": "Configured via app.config.js and .env file",
       "eas": {
-        "projectId": "b71faa6b-a136-470c-916d-d0d39081cabf"
+        
       }
     },
-    "owner": "shivamtiwari28"
+    "owner": "shubham1719"
   }
 }

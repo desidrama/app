@@ -15,6 +15,7 @@ import OTPScreen from '../screens/auth/OTPScreen';
 import TabNavigator from './TabNavigator';
 import SplashScreen from '../screens/Splash/splashscreen';
 import SearchScreen from '../screens/home/SearchScreen';
+import BuyCoinsScreen from '../screens/rewards/BuyCoinsScreen';
 import * as storage from '../utils/storage';
 
 export type RootStackParamList = {
@@ -23,6 +24,7 @@ export type RootStackParamList = {
   OTPScreen: { phoneNumber: string } | undefined;
   Main: undefined;
   Search: undefined;
+  BuyCoins: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -136,6 +138,7 @@ export default function AppNavigator() {
         {/* Main tab navigator (Home / Reels / Coins / Profile) */}
         <Stack.Screen name="Main" component={TabNavigator} />
         <Stack.Screen name="Search" component={SearchScreen} />
+        <Stack.Screen name="BuyCoins" component={BuyCoinsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
