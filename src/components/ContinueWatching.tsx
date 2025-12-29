@@ -249,8 +249,8 @@ export default function ContinueWatching({
     <View style={styles.wrapper}>
       <LinearGradient
         colors={[
-          'rgba(43, 35, 1, 0.3)',
-          'rgba(85, 66, 47, 0.2)',
+          'rgba(13, 11, 0, 1)',
+          'rgba(7, 4, 0, 1)',
           'rgba(8, 8, 18, 0.95)',
         ]}
         locations={[0, 0.5, 1]}
@@ -295,13 +295,14 @@ const styles = StyleSheet.create({
   wrapper: {
     marginTop: 8,
     marginBottom: 0,
+    borderRadius: 15,
     overflow: 'hidden', // Ensures rounded corners are clipped
   },
   gradientContainer: {
     width: '100%',
     paddingVertical: 20,
     paddingBottom: 24,
-    borderRadius: 26, // Rounded edges for the entire section
+    
     overflow: 'hidden', // Ensures gradient respects border radius
   },
   content: {

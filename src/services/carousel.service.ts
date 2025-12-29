@@ -7,6 +7,9 @@ export interface CarouselItem {
   _id: string;
   title: string;
   description?: string;
+  tagline?: string;
+  duration?: string;
+  episodeCount?: number;
   imageUrl: string;
   contentType: 'webseries' | 'reels' | 'trending' | 'custom';
   contentId?: string;
