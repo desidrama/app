@@ -10,12 +10,21 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
+import { Animated } from 'react-native';
+
 import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState } from '../../redux/store';
+import { setUser } from '../../redux/slices/userSlice';
+
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { videoService } from '../../services/video.service';
 import ReelItem from '../../components/ReelItem';
+import RewardedEpisodeAd from '../../components/RewardedEpisodeAd';
 import styles from './styles/ReelPlayerStyles';
 import type { Video as VideoType } from '../../types';
 import type { TabParamList } from '../../navigation/TabNavigator';
@@ -48,7 +57,32 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const route = useRoute<ReelsScreenRouteProp>();
   const routeParams = route.params;
   const insets = useSafeAreaInsets();
-  
+  const adHandledRef = useRef(false);
+  const adReelIndexRef = useRef<number | null>(null);
+
+
+// =========================
+// REDUX COINS (FIX 1)
+// =========================
+const dispatch = useDispatch();
+const user = useSelector((state: RootState) => state.user.profile);
+const SKIP_COST = 30;
+
+const coinAnim = useRef(new Animated.Value(1)).current;
+
+
+
+
+
+
+
+const deductCoins = (amount: number) => {
+  setCoins(prev => Math.max(prev - amount, 0));
+};
+
+
+
+  const prevIndexRef = useRef<number | null>(null);
   const [reels, setReels] = useState<Reel[]>([]);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
@@ -57,6 +91,35 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const [hasPrevious, setHasPrevious] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  useEffect(() => {
+  adHandledRef.current = false;
+}, [currentIndex]);
+
+  const [showAd, setShowAd] = useState(false);
+  const [isAdOpen, setIsAdOpen] = useState(false);
+  const [showAdPopup, setShowAdPopup] = useState(false);
+  const [shouldPlayAd, setShouldPlayAd] = useState(false);
+  const [coins, setCoins] = useState(60); // 🔥 START WITH 60 COINS (DEV)
+
+
+
+
+  const [preloadAd, setPreloadAd] = useState(false);
+  const currentEpisodeNumber = reels[currentIndex]?.episodeNumber ?? 1;
+  useEffect(() => {
+  if (currentEpisodeNumber > 1) {
+    setPreloadAd(true);   // 👈 start loading ad early
+  }
+}, [currentEpisodeNumber]);
+
+  const shouldShowAd = currentEpisodeNumber > 1;
+  const shouldShowAdForIndex = useCallback(
+  (index: number) => {
+    return (reels[index]?.episodeNumber ?? 1) > 1;
+  },
+  [reels]
+);
+
   const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
   const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
   const [targetVideoFound, setTargetVideoFound] = useState<boolean>(false);
@@ -341,13 +404,51 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, [loadPage]);
 
   // Viewability: determine active reel
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+  const handleEpisodeEnd = useCallback(() => {
+  // 🔥 Decide based on the reel being LEFT
+  const indexToCheck = prevIndexRef.current ?? currentIndex;
+
+  if (!shouldShowAdForIndex(indexToCheck)) {
+  return;
+}
+
+
+  if (adHandledRef.current) return;
+
+  adHandledRef.current = true;
+adReelIndexRef.current = indexToCheck; // 👈 remember reel
+setIsAdOpen(true);
+setShowAd(true);
+setShowAdPopup(true);
+setShouldPlayAd(false);
+
+
+
+}, [currentIndex, shouldShowAdForIndex]);
+
+
+  const onViewableItemsChanged = useCallback(
+  ({ viewableItems }: any) => {
     if (!viewableItems || viewableItems.length === 0) return;
+
     const first = viewableItems[0];
-    if (typeof first.index === 'number') {
-      setCurrentIndex(first.index);
+    if (typeof first.index !== 'number') return;
+
+    // 🔥 USER IS LEAVING THE PREVIOUS REEL
+    if (
+      prevIndexRef.current !== null &&
+      first.index !== prevIndexRef.current
+    ) {
+      handleEpisodeEnd();
     }
-  }).current;
+
+    prevIndexRef.current = first.index;
+    setCurrentIndex(first.index);
+  },
+  [handleEpisodeEnd]
+);
+
+
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 70,
@@ -390,6 +491,10 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       loadMore();
     }
   }, [currentIndex, reels.length, hasMore, loadMore]);
+  // 🔥 Called when a video/episode finishes playing
+    
+
+
 
   // Navigate to previous webseries
   const goToPrevious = useCallback(() => {
@@ -423,6 +528,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         isActive={index === currentIndex}
         initialTime={initialTime}
         screenFocused={isScreenFocused}
+        onVideoEnd={handleEpisodeEnd}
         onEpisodeSelect={(episodeId) => {
           // #region agent log
           fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
@@ -547,6 +653,190 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
             </View>
         ) : null}
       />
+      {preloadAd && showAd && (
+  <View
+    pointerEvents="box-none"
+    style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 9999,
+    }}
+  >
+
+
+    {/* Coins bar ABOVE ad */}
+
+  {/* Coins bar ABOVE ad */}
+
+<Modal visible={showAdPopup} transparent animationType="fade">
+  <View
+    style={{
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    }}
+  >
+    <View
+      style={{
+        width: '88%',
+        backgroundColor: '#121212',
+        borderRadius: 22,
+        paddingVertical: 22,
+        paddingHorizontal: 20,
+        shadowColor: '#000',
+        shadowOpacity: 0.5,
+        shadowRadius: 20,
+        elevation: 20,
+      }}
+    >
+      {/* Title */}
+      <Text
+        style={{
+          color: '#fff',
+          fontSize: 20,
+          fontWeight: '700',
+          textAlign: 'center',
+        }}
+      >
+        Unlock Next Reel
+      </Text>
+
+      {/* Subtitle */}
+      <Text
+        style={{
+          color: '#aaa',
+          fontSize: 14,
+          textAlign: 'center',
+          marginTop: 6,
+        }}
+      >
+        Watch a short ad or use coins to continue
+      </Text>
+
+      {/* Coins pill */}
+      <Animated.View
+  style={{
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#1E1E1E',
+    transform: [{ scale: coinAnim }], // 👈 animation hook
+  }}
+>
+
+        <Text style={{ fontSize: 16 }}>🪙</Text>
+        <Text
+          style={{
+            color: '#FFD54A',
+            fontWeight: '600',
+            marginLeft: 6,
+          }}
+        >
+          {coins} coins available
+        </Text>
+      </Animated.View>
+
+
+      {/* Skip using coins (PRIMARY CTA) */}
+      <Pressable
+        disabled={coins < SKIP_COST}
+        onPress={() => {
+          deductCoins(SKIP_COST);
+          setShowAdPopup(false);
+          setShowAd(false);
+          setPreloadAd(false);
+          setShouldPlayAd(false);
+          adHandledRef.current = false;
+          adReelIndexRef.current = null;
+        }}
+        style={{
+          marginTop: 22,
+          paddingVertical: 14,
+          borderRadius: 14,
+          backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
+        }}
+      >
+        <Text
+          style={{
+            textAlign: 'center',
+            fontWeight: '700',
+            fontSize: 15,
+            color: '#000',
+          }}
+        >
+          Skip using {SKIP_COST} coins
+        </Text>
+      </Pressable>
+
+      {/* Watch ad (SECONDARY CTA) */}
+      <Pressable
+        onPress={() => {
+  setShowAdPopup(false);
+
+  setPreloadAd(true); // ✅ ensure ad container is mounted
+  setShowAd(true);    // ✅ keep overlay active
+
+  setShouldPlayAd(true); // ▶️ play ad
+}}
+
+        style={{
+          marginTop: 12,
+          paddingVertical: 13,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: '#333',
+          backgroundColor: '#181818',
+        }}
+      >
+        <Text
+          style={{
+            textAlign: 'center',
+            color: '#fff',
+            fontWeight: '600',
+            fontSize: 14,
+          }}
+        >
+          Watch a short ad
+        </Text>
+      </Pressable>
+    </View>
+  </View>
+</Modal>
+
+
+{/* Ad stays EXACTLY the same */}
+
+    {/* Ad stays EXACTLY the same */}
+    <View style={{ flex: 1 }}>
+  <RewardedEpisodeAd
+    show={shouldPlayAd}
+    onAdFinished={() => {
+  setShowAdPopup(false);
+  setIsAdOpen(false);
+  setShowAd(false);
+  setPreloadAd(false);
+  setShouldPlayAd(false);
+  adHandledRef.current = false;
+  adReelIndexRef.current = null;
+  // ✅ stay on Reel 2
+}}
+
+  />
+</View>
+
+  </View>
+)}
+
+
+
     </SafeAreaView>
   );
 };

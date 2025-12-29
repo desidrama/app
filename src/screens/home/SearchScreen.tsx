@@ -1,6 +1,6 @@
 // FILE: src/screens/home/SearchScreen.tsx
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,15 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const MOST_SEARCHED = [
+  'Ghost',
+  'Digilocker',
+  'Meridian Exposed',
+  'Firewall of Lies',
+  'eyes',
+  'Machine',
+];
+
 
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -64,9 +73,41 @@ export default function SearchScreen() {
     }
   }, []);
 
+    const loadTrendingVideos = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await videoService.searchVideos(' ', 1);
+
+      if (response.success && response.data) {
+        setSearchResults(response.data);
+      }
+    } catch (err) {
+      console.error('Trending load error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+    useEffect(() => {
+  if (!hasSearched && searchResults.length === 0) {
+    loadTrendingVideos();
+  }
+}, [loadTrendingVideos, hasSearched, searchResults.length]);
+
+
+
+
   const handleSearch = () => {
     performSearch(searchQuery);
   };
+
+  const handleMostSearchedPress = (term: string) => {
+  setSearchQuery(term);
+  performSearch(term);
+};
+
 
   const handleVideoPress = (video: VideoType) => {
     // Navigate to Reels tab with the selected video
@@ -86,16 +127,37 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.videoItem}
-        onPress={() => handleVideoPress(item)}
-        activeOpacity={0.8}
-      >
-        <VideoCard
-          title={item.title}
-          imageUrl={fullImageUrl}
-          onPress={() => handleVideoPress(item)}
-        />
-      </TouchableOpacity>
+  style={hasSearched ? styles.videoItemSearch : styles.videoItemTrending}
+  onPress={() => handleVideoPress(item)}
+  activeOpacity={0.8}
+>
+
+  {/* Poster */}
+  <View
+  style={{
+    borderRadius: 14,
+    overflow: 'hidden',
+  }}
+>
+
+
+    <VideoCard
+      imageUrl={fullImageUrl}   // 👈 no title here
+      onPress={() => handleVideoPress(item)}
+    />
+  </View>
+
+  {/* Title BELOW poster */}
+  <Text
+  style={styles.posterTitle}
+  numberOfLines={2}
+  ellipsizeMode="tail"
+>
+  {item.title}
+</Text>
+
+</TouchableOpacity>
+
     );
   };
 
@@ -181,19 +243,46 @@ export default function SearchScreen() {
               )}
             </View>
           </View>
+{/* Most searched */}
+{!hasSearched && searchQuery.length === 0 && (
+  <View style={styles.mostSearchedContainer}>
+    <Text style={styles.mostSearchedTitle}>Most searched</Text>
 
+    <View style={styles.mostSearchedRow}>
+      {MOST_SEARCHED.map((item) => (
+        <TouchableOpacity
+          key={item}
+          style={styles.mostSearchedChip}
+          onPress={() => handleMostSearchedPress(item)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.mostSearchedText}>{item}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  </View>
+)}
           {/* Results */}
-          {searchResults.length > 0 ? (
-            <FlatList
-              data={searchResults}
-              renderItem={renderVideoItem}
-              keyExtractor={(item) => item._id}
-              numColumns={3}
-              contentContainerStyle={styles.resultsContainerPremium}
-              columnWrapperStyle={styles.row}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
+          {/* Results */}
+{searchResults.length > 0 ? (
+  <>
+    {/* Trending label */}
+    {!hasSearched && (
+      <Text style={styles.trendingLabel}>Trending now</Text>
+    )}
+
+    <FlatList
+      data={searchResults}
+      renderItem={renderVideoItem}
+      keyExtractor={(item) => item._id}
+      numColumns={3}
+      contentContainerStyle={styles.resultsContainerPremium}
+      columnWrapperStyle={styles.row}
+      showsVerticalScrollIndicator={false}
+    />
+  </>
+) : (
+
             <View style={styles.contentPremium}>
               {renderEmptyState()}
             </View>
@@ -230,7 +319,8 @@ const styles = StyleSheet.create({
       marginLeft: 8,
     },
     resultsContainerPremium: {
-      padding: 18,
+      paddingVertical: 18,
+      paddingHorizontal: 10,  // 👈 allows visible column gaps
       backgroundColor: 'rgba(8,8,18,0.98)',
       borderRadius: 18,
       margin: 8,
@@ -307,17 +397,32 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   row: {
-    justifyContent: 'flex-start',
+  justifyContent: 'flex-start',
   },
-  videoItem: {
-    width: '33.33%',
-    paddingHorizontal: 4,
-    marginBottom: 16,
-  },
+  videoItemSearch: {
+  width: '33.33%',
+  paddingHorizontal: 8,   // ✅ SAME GAP when searching
+  marginBottom: 14,
+},
+videoItemTrending: {
+  width: '33.33%',
+  paddingHorizontal: 8,   // ✅ horizontal gap
+  marginBottom: 18,       // ✅ vertical gap
+},
+
+
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  posterTitle: {
+  marginTop: 6,
+  fontSize: 13,
+  fontWeight: '600',
+  color: '#FFFFFF',
+  textAlign: 'center',   // ✅ center text
+},
+
   emptyText: {
     marginTop: 16,
     fontSize: 18,
@@ -325,11 +430,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
   },
+  trendingLabel: {
+  marginLeft: 18,
+  marginBottom: 8,
+  marginTop: 6,
+  fontSize: 20,          // 👈 bigger
+  fontWeight: '700',
+  color: '#FFD54A',
+},
+
+
   emptySubtext: {
     marginTop: 8,
     fontSize: 14,
     color: '#A5A5AB',
     textAlign: 'center',
+  },
+    emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#A5A5AB',
+    textAlign: 'center',
+  },
+
+  // 👇 MOST SEARCHED STYLES — ADD HERE
+  mostSearchedContainer: {
+    marginHorizontal: 18,
+    marginBottom: 12,
+  },
+
+  mostSearchedTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFD54A',
+    marginBottom: 8,
+  },
+
+  mostSearchedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  mostSearchedChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#221107',
+    borderWidth: 1,
+    borderColor: '#FFD54A55',
+  },
+
+  mostSearchedText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
