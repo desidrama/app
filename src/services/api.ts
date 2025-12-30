@@ -56,11 +56,11 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
       // Only log token addition in debug mode to reduce noise
       if (__DEV__) {
-        console.log('🔑 Token added to request:', {
-          url: config.url,
-          hasToken: !!token,
-          tokenLength: token.length,
-        });
+      console.log('🔑 Token added to request:', {
+        url: config.url,
+        hasToken: !!token,
+        tokenLength: token.length,
+      });
       }
     }
     // Silently handle missing tokens - some routes may work without auth

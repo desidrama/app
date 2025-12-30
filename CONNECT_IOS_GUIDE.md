@@ -126,3 +126,4 @@ npx expo start -c
 3. Check Windows Firewall allows Node.js
 4. Restart both devices
 5. Clear Expo Go cache (shake device → Settings → Clear cache)
+
