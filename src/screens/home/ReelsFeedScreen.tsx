@@ -44,6 +44,8 @@ type Reel = {
   description?: string;
   seasonId?: any;
   episodeNumber?: number;
+  adStatus?: 'locked' | 'unlocked';
+
   thumbnailUrl?: string;
 };
 
@@ -67,6 +69,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 const dispatch = useDispatch();
 const user = useSelector((state: RootState) => state.user.profile);
 const SKIP_COST = 30;
+const coins = user?.coinsBalance ?? user?.coins ?? 0;
 
 const coinAnim = useRef(new Animated.Value(1)).current;
 
@@ -76,9 +79,25 @@ const coinAnim = useRef(new Animated.Value(1)).current;
 
 
 
+
+
 const deductCoins = (amount: number) => {
-  setCoins(prev => Math.max(prev - amount, 0));
+  if (!user) return;
+
+  const currentCoins = user.coinsBalance ?? user.coins ?? 0;
+  const updatedCoins = Math.max(currentCoins - amount, 0);
+
+  dispatch(
+    setUser({
+      ...user,
+      coinsBalance:
+        user.coinsBalance !== undefined ? updatedCoins : user.coinsBalance,
+      coins:
+        user.coinsBalance === undefined ? updatedCoins : user.coins,
+    })
+  );
 };
+
 
 
 
@@ -99,26 +118,12 @@ const deductCoins = (amount: number) => {
   const [isAdOpen, setIsAdOpen] = useState(false);
   const [showAdPopup, setShowAdPopup] = useState(false);
   const [shouldPlayAd, setShouldPlayAd] = useState(false);
-  const [coins, setCoins] = useState(60); // 🔥 START WITH 60 COINS (DEV)
+
 
 
 
 
   const [preloadAd, setPreloadAd] = useState(false);
-  const currentEpisodeNumber = reels[currentIndex]?.episodeNumber ?? 1;
-  useEffect(() => {
-  if (currentEpisodeNumber > 1) {
-    setPreloadAd(true);   // 👈 start loading ad early
-  }
-}, [currentEpisodeNumber]);
-
-  const shouldShowAd = currentEpisodeNumber > 1;
-  const shouldShowAdForIndex = useCallback(
-  (index: number) => {
-    return (reels[index]?.episodeNumber ?? 1) > 1;
-  },
-  [reels]
-);
 
   const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
   const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
@@ -166,6 +171,7 @@ const deductCoins = (amount: number) => {
             description: video.description,
       seasonId: (video as any).seasonId,
       episodeNumber: (video as any).episodeNumber,
+      adStatus: (video as any).adStatus ?? 'unlocked',
       thumbnailUrl: (video as any).thumbnailUrl || (video as any).thumbnail,
     };
   }, []);
@@ -408,9 +414,12 @@ const deductCoins = (amount: number) => {
   // 🔥 Decide based on the reel being LEFT
   const indexToCheck = prevIndexRef.current ?? currentIndex;
 
-  if (!shouldShowAdForIndex(indexToCheck)) {
+  const reel = reels[indexToCheck];
+
+if (!reel || reel.adStatus !== 'locked') {
   return;
 }
+
 
 
   if (adHandledRef.current) return;
@@ -424,7 +433,8 @@ setShouldPlayAd(false);
 
 
 
-}, [currentIndex, shouldShowAdForIndex]);
+}, [currentIndex, reels]);
+
 
 
   const onViewableItemsChanged = useCallback(
@@ -676,30 +686,49 @@ setShouldPlayAd(false);
     style={{
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'center',
-      alignItems: 'center',
+      justifyContent: 'flex-end', // bottom sheet
     }}
   >
     <View
       style={{
-        width: '88%',
+        width: '100%',
+        minHeight: '55%',
         backgroundColor: '#121212',
-        borderRadius: 22,
-        paddingVertical: 22,
-        paddingHorizontal: 20,
+
+        // Bottom sheet styling
+        borderTopLeftRadius: 26,
+        borderTopRightRadius: 26,
+
+        paddingTop: 14,
+        paddingBottom: 28,
+        paddingHorizontal: 22,
+
         shadowColor: '#000',
-        shadowOpacity: 0.5,
-        shadowRadius: 20,
-        elevation: 20,
+        shadowOpacity: 0.6,
+        shadowRadius: 24,
+        elevation: 24,
       }}
     >
+      {/* Drag indicator */}
+      <View
+        style={{
+          alignSelf: 'center',
+          width: 44,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: '#444',
+          marginBottom: 16,
+        }}
+      />
+
       {/* Title */}
       <Text
         style={{
           color: '#fff',
-          fontSize: 20,
-          fontWeight: '700',
+          fontSize: 22,
+          fontWeight: '800',
           textAlign: 'center',
+          letterSpacing: 0.3,
         }}
       >
         Unlock Next Reel
@@ -709,9 +738,10 @@ setShouldPlayAd(false);
       <Text
         style={{
           color: '#aaa',
-          fontSize: 14,
+          fontSize: 15,
           textAlign: 'center',
-          marginTop: 6,
+          marginTop: 8,
+          lineHeight: 20,
         }}
       >
         Watch a short ad or use coins to continue
@@ -719,37 +749,45 @@ setShouldPlayAd(false);
 
       {/* Coins pill */}
       <Animated.View
-  style={{
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#1E1E1E',
-    transform: [{ scale: coinAnim }], // 👈 animation hook
-  }}
->
-
+        style={{
+          alignSelf: 'center',
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: 18,
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          borderRadius: 22,
+          backgroundColor: '#1E1E1E',
+          transform: [{ scale: coinAnim }],
+        }}
+      >
         <Text style={{ fontSize: 16 }}>🪙</Text>
         <Text
           style={{
             color: '#FFD54A',
             fontWeight: '600',
-            marginLeft: 6,
+            marginLeft: 8,
+            fontSize: 14,
           }}
         >
           {coins} coins available
         </Text>
       </Animated.View>
 
-
-      {/* Skip using coins (PRIMARY CTA) */}
+      {/* PRIMARY CTA — Skip using coins */}
       <Pressable
         disabled={coins < SKIP_COST}
         onPress={() => {
           deductCoins(SKIP_COST);
+
+          setReels(prev =>
+  prev.map((reel, index) =>
+    index === currentIndex
+      ? { ...reel, adStatus: 'unlocked' }
+      : reel
+  )
+);
+  
           setShowAdPopup(false);
           setShowAd(false);
           setPreloadAd(false);
@@ -758,17 +796,17 @@ setShouldPlayAd(false);
           adReelIndexRef.current = null;
         }}
         style={{
-          marginTop: 22,
-          paddingVertical: 14,
-          borderRadius: 14,
+          marginTop: 26,
+          paddingVertical: 16,
+          borderRadius: 16,
           backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
         }}
       >
         <Text
           style={{
             textAlign: 'center',
-            fontWeight: '700',
-            fontSize: 15,
+            fontWeight: '800',
+            fontSize: 16,
             color: '#000',
           }}
         >
@@ -776,21 +814,18 @@ setShouldPlayAd(false);
         </Text>
       </Pressable>
 
-      {/* Watch ad (SECONDARY CTA) */}
+      {/* SECONDARY CTA — Watch ad */}
       <Pressable
         onPress={() => {
-  setShowAdPopup(false);
-
-  setPreloadAd(true); // ✅ ensure ad container is mounted
-  setShowAd(true);    // ✅ keep overlay active
-
-  setShouldPlayAd(true); // ▶️ play ad
-}}
-
+          setShowAdPopup(false);
+          setPreloadAd(true);
+          setShowAd(true);
+          setShouldPlayAd(true);
+        }}
         style={{
-          marginTop: 12,
-          paddingVertical: 13,
-          borderRadius: 14,
+          marginTop: 14,
+          paddingVertical: 14,
+          borderRadius: 16,
           borderWidth: 1,
           borderColor: '#333',
           backgroundColor: '#181818',
@@ -812,6 +847,7 @@ setShouldPlayAd(false);
 </Modal>
 
 
+
 {/* Ad stays EXACTLY the same */}
 
     {/* Ad stays EXACTLY the same */}
@@ -819,11 +855,19 @@ setShouldPlayAd(false);
   <RewardedEpisodeAd
     show={shouldPlayAd}
     onAdFinished={() => {
+      
   setShowAdPopup(false);
   setIsAdOpen(false);
   setShowAd(false);
   setPreloadAd(false);
   setShouldPlayAd(false);
+
+  setReels(prev =>
+  prev.map((r, i) =>
+    i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
+  )
+);
+
   adHandledRef.current = false;
   adReelIndexRef.current = null;
   // ✅ stay on Reel 2
