@@ -48,20 +48,10 @@ type ReelItemProps = {
   initialTime?: number;
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
-  onSwipeLeft?: () => void; // Callback for left swipe (next webseries)
-  onSwipeRight?: () => void; // Callback for right swipe (previous webseries)
-  canGoNext?: boolean; // Whether next webseries is available
-  canGoPrevious?: boolean; // Whether previous webseries is available
+  // Swipe gestures removed - only vertical scrolling for navigation
 };
 
-const RANGES = [
-  { label: '1 - 18', start: 1 },
-  { label: '19 - 41', start: 19 },
-  { label: '41 - 62', start: 41 },
-  { label: '62 - 83', start: 62 },
-];
-
-const EMOJIS = ['😍', '👍', '😆', '😮', '😢', '😡'];
+// RANGES and EMOJIS removed - using backend-driven episode grouping
 
 const PROGRESS_UPDATE_INTERVAL = 5000; // Save progress every 5 seconds
 const MIN_PROGRESS_TO_SAVE = 3; // Only save if at least 3 seconds watched
@@ -78,170 +68,72 @@ const formatCount = (count: number): string => {
   return count.toString();
 };
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, onSwipeLeft, onSwipeRight, canGoNext = false, canGoPrevious = false }: ReelItemProps) {
+// ActionButton Component - Professional press animation and haptic feedback
+// Control Layer - Blocks video tap propagation
+const ActionButton = React.memo(({ 
+  icon, 
+  iconColor, 
+  label, 
+  onPress,
+  style 
+}: { 
+  icon: string; 
+  iconColor: string; 
+  label: string; 
+  onPress: (e: any) => void;
+  style?: any;
+}) => {
+  const scaleAnim = React.useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.92,
+      tension: 300,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 300,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <TouchableOpacity
+      style={[styles.premiumActionBtn, style]}
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} // Larger tap area
+    >
+      <Animated.View 
+        style={[
+          styles.premiumIconContainer,
+          { transform: [{ scale: scaleAnim }] }
+        ]}
+      >
+        <Ionicons name={icon as any} size={24} color={iconColor} />
+      </Animated.View>
+      <Text style={styles.premiumCountLabel}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   
-  // Swipe gesture handling with smooth screen transition
-  const swipeThreshold = width * 0.25; // 25% of screen width to trigger navigation
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Only respond to horizontal swipes (not vertical)
-        // Lower threshold for more responsive feel
-        const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 10;
-        const isNotVerticalScroll = Math.abs(gestureState.dy) < 40; // Allow more vertical movement
-        return isHorizontal && hasMinHorizontalMovement && isNotVerticalScroll;
-      },
-      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        // Capture horizontal swipes early
-        const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-        const hasMinHorizontalMovement = Math.abs(gestureState.dx) > 10;
-        const isNotVerticalScroll = Math.abs(gestureState.dy) < 40;
-        return isHorizontal && hasMinHorizontalMovement && isNotVerticalScroll;
-      },
-      onPanResponderGrant: () => {
-        // Stop any ongoing animations
-        screenTranslateX.stopAnimation();
-        swipeIndicatorOpacity.stopAnimation();
-        swipeIndicatorTranslateX.stopAnimation();
-        
-        // Reset to current position
-        screenTranslateX.setValue(0);
-        swipeIndicatorOpacity.setValue(0);
-        swipeIndicatorTranslateX.setValue(0);
-        setSwipeDirection(null);
-        isSwipingRef.current = true;
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        // Directly follow finger movement - smooth and responsive
-        const absDx = Math.abs(gestureState.dx);
-        
-        if (absDx > 5) {
-          // Apply screen translation directly - 1:1 with finger movement
-          // Allow full screen width translation for smooth feel
-          const maxTranslation = width * 0.95; // Allow up to 95% of screen width
-          const clampedDx = Math.max(-maxTranslation, Math.min(maxTranslation, gestureState.dx));
-          screenTranslateX.setValue(clampedDx);
-          
-          // Determine swipe direction and show indicators
-          if (gestureState.dx < 0) {
-            // Right to left swipe (finger moving left) = Previous webseries
-            if (canGoPrevious) {
-              setSwipeDirection('left');
-              const progress = Math.min(absDx / 200, 1); // Normalize to 0-1
-              swipeIndicatorOpacity.setValue(progress * 0.9);
-              swipeIndicatorTranslateX.setValue(gestureState.dx * 0.2);
-            } else {
-              // Can't go previous, reduce translation
-              screenTranslateX.setValue(clampedDx * 0.3);
-            }
-          } else {
-            // Left to right swipe (finger moving right) = Next webseries
-            if (canGoNext) {
-              setSwipeDirection('right');
-              const progress = Math.min(absDx / 200, 1); // Normalize to 0-1
-              swipeIndicatorOpacity.setValue(progress * 0.9);
-              swipeIndicatorTranslateX.setValue(gestureState.dx * 0.2);
-            } else {
-              // Can't go next, reduce translation
-              screenTranslateX.setValue(clampedDx * 0.3);
-            }
-          }
-        }
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        isSwipingRef.current = false;
-        const absDx = Math.abs(gestureState.dx);
-        const velocity = Math.abs(gestureState.vx || 0);
-        
-        // Check if should navigate based on distance or velocity
-        const shouldNavigate = absDx > swipeThreshold || (absDx > width * 0.15 && velocity > 0.5);
-        
-        if (shouldNavigate) {
-          // Complete the transition smoothly
-          const targetX = gestureState.dx < 0 ? -width : width;
-          
-          // Use velocity to determine animation duration (faster swipe = faster animation)
-          const baseDuration = 300;
-          const velocityFactor = Math.min(Math.abs(velocity) * 100, 200);
-          const duration = Math.max(200, baseDuration - velocityFactor);
-          
-          Animated.parallel([
-            Animated.timing(screenTranslateX, {
-              toValue: targetX,
-              duration: duration,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(swipeIndicatorOpacity, {
-              toValue: 0,
-              duration: 150,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(swipeIndicatorTranslateX, {
-              toValue: 0,
-              duration: 150,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            // Reset screen position immediately after animation
-            screenTranslateX.setValue(0);
-            setSwipeDirection(null);
-            
-            // Trigger navigation
-            if (gestureState.dx < 0 && onSwipeRight && canGoPrevious) {
-              // Swipe right to left = previous webseries
-              onSwipeRight();
-            } else if (gestureState.dx > 0 && onSwipeLeft && canGoNext) {
-              // Swipe left to right = next webseries
-              onSwipeLeft();
-            }
-          });
-        } else {
-          // Snap back smoothly if threshold not met
-          Animated.parallel([
-            Animated.spring(screenTranslateX, {
-              toValue: 0,
-              tension: 80,
-              friction: 9,
-              useNativeDriver: true,
-            }),
-            Animated.timing(swipeIndicatorOpacity, {
-              toValue: 0,
-              duration: 200,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(swipeIndicatorTranslateX, {
-              toValue: 0,
-              duration: 200,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            setSwipeDirection(null);
-          });
-        }
-      },
-      onPanResponderTerminate: () => {
-        // Handle gesture cancellation (e.g., by system)
-        isSwipingRef.current = false;
-        Animated.spring(screenTranslateX, {
-          toValue: 0,
-          tension: 80,
-          friction: 9,
-          useNativeDriver: true,
-        }).start(() => {
-          setSwipeDirection(null);
-        });
-      },
-    })
-  ).current;
+  // Swipe gestures removed - only vertical scrolling for reels navigation (YouTube Shorts-style)
   // #region agent log
   useEffect(() => {
     const shareButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
@@ -268,31 +160,25 @@ export default function ReelItem({ reel, isActive, initialTime = 0, screenFocuse
   const userPausedRef = useRef(false); // Track if user intentionally paused
 
   const episodeSheetY = useRef(new Animated.Value(height)).current;
-const episodeSheetBackdropOpacity = useRef(new Animated.Value(0)).current;
 const moreSheetY = useRef(new Animated.Value(height)).current;
 const descSheetY = useRef(new Animated.Value(height)).current;
-const commentSheetY = useRef(new Animated.Value(height)).current;
-const playPauseButtonOpacity = useRef(new Animated.Value(0)).current;
+const commentSheetY = useRef(new Animated.Value(0)).current; // Comments sheet starts at 0 (fully visible when open)
+// Removed playPauseButtonOpacity - Instagram-style: no visible play/pause button
+
+  // Initialize sheet positions on mount - sheets should start off-screen
   
-  // Swipe indicator animations
-  const swipeIndicatorOpacity = useRef(new Animated.Value(0)).current;
-  const swipeIndicatorTranslateX = useRef(new Animated.Value(0)).current;
-  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
-  
-  // Screen transition animation for smooth swipe
-  const screenTranslateX = useRef(new Animated.Value(0)).current;
-  const isSwipingRef = useRef(false);
+  // Swipe indicators and screen transitions removed
 
   const [showEpisodes, setShowEpisodes] = useState(false);
 const [showComments, setShowComments] = useState(false);
 const [showDescSheet, setShowDescSheet] = useState(false);
 const [showMore, setShowMore] = useState(false);
 
-  // Open/close comments with animation
+  // Open/close comments with animation (Full bottom sheet - Instagram Reels style)
   useEffect(() => {
     if (showComments) {
       Animated.timing(commentSheetY, {
-        toValue: 0,
+        toValue: 0, // Full bottom sheet (100% visible)
         duration: 300,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
@@ -311,16 +197,42 @@ const [loadingEpisodes, setLoadingEpisodes] = useState(false);
 const [episodesSheetEpisodes, setEpisodesSheetEpisodes] = useState<VideoType[]>([]);
 const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
-  const [showReactions, setShowReactions] = useState(false);
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(null);
-  const [animatingEmoji, setAnimatingEmoji] = useState<string | null>(null);
+  // Like state (YouTube Shorts-style: simple like/unlike)
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(reel.initialLikes || 0);
   
-  // Animation values for balloon effect
-  const emojiScale = useRef(new Animated.Value(0)).current;
-  const emojiOpacity = useRef(new Animated.Value(0)).current;
-  const emojiTranslateY = useRef(new Animated.Value(0)).current;
-  
-  // PanResponder for swipe-down to close episode sheet
+  // PanResponder for swipe-down to close comments sheet (YouTube Shorts-style)
+  const commentSheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to vertical swipes downward
+        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Only allow downward swipes
+        if (gestureState.dy > 0) {
+          commentSheetY.setValue(Math.max(0, gestureState.dy)); // Full bottom sheet
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // If swiped down enough, close sheet
+        if (gestureState.dy > 50) {
+          setShowComments(false);
+        } else {
+          // Snap back to original position (full bottom sheet)
+          Animated.spring(commentSheetY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 65,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  // PanResponder for swipe-down to close episode sheet (YouTube Shorts-style)
   const episodeSheetPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -331,9 +243,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       onPanResponderMove: (evt, gestureState) => {
         // Only allow downward swipes
         if (gestureState.dy > 0) {
-          const episodesButtonBottom = 80 + (20 * 2);
-          const sheetTopPosition = height - episodesButtonBottom - (height * 0.75);
-          const initialPosition = sheetTopPosition > 0 ? sheetTopPosition : height * 0.15;
+          const initialPosition = height * 0.6; // 40% sheet height
           episodeSheetY.setValue(Math.max(initialPosition, initialPosition + gestureState.dy));
         }
       },
@@ -343,9 +253,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           closeEpisodes();
         } else {
           // Snap back to original position
-          const episodesButtonBottom = 80 + (20 * 2);
-          const sheetTopPosition = height - episodesButtonBottom - (height * 0.75);
-          const initialPosition = sheetTopPosition > 0 ? sheetTopPosition : height * 0.15;
+          const initialPosition = height * 0.6; // 40% sheet height means it starts at 60% from top
           Animated.spring(episodeSheetY, {
             toValue: initialPosition,
             useNativeDriver: true,
@@ -357,19 +265,78 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     })
   ).current;
 
-  const [activeRange, setActiveRange] = useState(RANGES[0]);
+  // PanResponder for draggable progress bar
+  const progressBarWidth = useRef(new Animated.Value(0)).current;
+  const progressBarPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: async () => {
+        if (!isActive || !videoRef.current) return;
+        try {
+          const status = await videoRef.current.getStatusAsync();
+          if (status.isLoaded && status.durationMillis) {
+            try {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            } catch {}
+          }
+        } catch {}
+      },
+      onPanResponderMove: async (evt, gestureState) => {
+        if (!isActive || !videoRef.current) return;
+        try {
+          const status = await videoRef.current.getStatusAsync();
+          if (!status.isLoaded || !status.durationMillis) return;
+          
+          // Use pageX to get absolute screen position, subtract container's left position (16px padding)
+          const screenX = evt.nativeEvent.pageX;
+          const containerLeft = 16; // Left padding
+          const containerX = screenX - containerLeft;
+          const barWidth = width - 32; // Account for padding (16px each side)
+          const tapPercent = Math.max(0, Math.min(1, containerX / barWidth));
+          const newTime = (status.durationMillis / 1000) * tapPercent;
+          
+          // Update visual progress immediately
+          const progressPercent = (newTime / (status.durationMillis / 1000)) * 100;
+          progressBarWidth.setValue(progressPercent);
+        } catch {}
+      },
+      onPanResponderRelease: async (evt, gestureState) => {
+        if (!isActive || !videoRef.current) return;
+        try {
+          const status = await videoRef.current.getStatusAsync();
+          if (!status.isLoaded || !status.durationMillis) return;
+          
+          // Use pageX to get absolute screen position, subtract container's left position (16px padding)
+          const screenX = evt.nativeEvent.pageX;
+          const containerLeft = 16; // Left padding
+          const containerX = screenX - containerLeft;
+          const barWidth = width - 32; // Account for padding
+          const tapPercent = Math.max(0, Math.min(1, containerX / barWidth));
+          const newTime = (status.durationMillis / 1000) * tapPercent;
+          
+          await videoRef.current.setPositionAsync(newTime * 1000);
+          try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch {}
+        } catch (error) {
+          console.error('Error seeking:', error);
+        }
+      },
+    })
+  ).current;
+
   const [activeEpisode, setActiveEpisode] = useState(1);
   const [progress, setProgress] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [showPlayPauseButton, setShowPlayPauseButton] = useState(false);
-  const playPauseButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Removed showPlayPauseButton and playPauseButtonTimeoutRef - Instagram-style: no visible play/pause button
   
   // Premium UI auto-hide state
   const [uiVisible, setUiVisible] = useState(true);
   const uiHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const uiOpacity = useRef(new Animated.Value(1)).current;
-  const [videoQuality, setVideoQuality] = useState('Auto');
+  // Video quality removed - Auto quality only (handled by backend/CDN)
   const [audioTrack, setAudioTrack] = useState('Original');
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [comment, setComment] = useState('');
@@ -429,43 +396,17 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   }, [isActive, initialTime, reel.videoUrl, screenFocused]);
 
   const openEpisodes = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openEpisodes',message:'Opening episodes sheet',data:{reelId:reel.id,hasSeasonId:!!reel.seasonId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-    // #endregion
-    
-    // Pause video when sheet opens
+    console.log('🎯 openEpisodes called');
+    // CRITICAL: Pause video and lock interactions when sheet opens
     if (isActive && videoRef.current) {
       videoRef.current.pauseAsync().catch(() => {});
+      setIsPlaying(false);
+      userPausedRef.current = true; // Prevent auto-resume
     }
     
-    // Calculate position to appear at top of episodes button
-    // Episodes button is at bottom: 80, and there are 2 buttons above it (like + comments)
-    // Each button has marginBottom: 20, so total offset = 80 + (20 * 2) = 120 from bottom
-    // We want sheet to start from that position
-    const episodesButtonBottom = 80 + (20 * 2); // Like button + Comments button spacing
-    const sheetTopPosition = height - episodesButtonBottom - (height * 0.75); // Sheet height is 0.75 of screen
-    
+    // Set state first - useEffect will handle animation
+    // FAIL-SAFE: Force state to true to ensure modal renders
     setShowEpisodes(true);
-    
-    // Reset animation values
-    episodeSheetY.setValue(height);
-    episodeSheetBackdropOpacity.setValue(0);
-    
-    // Animate sheet slide-up with backdrop fade
-    Animated.parallel([
-      Animated.timing(episodeSheetY, {
-        toValue: sheetTopPosition > 0 ? sheetTopPosition : height * 0.15,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(episodeSheetBackdropOpacity, {
-        toValue: 0.6,
-        duration: 300,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }),
-    ]).start();
     
     // Fetch episodes if seasonId exists
     if (reel.seasonId) {
@@ -475,20 +416,33 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         const response = await videoService.getEpisodes(seasonId);
         if (response.success && response.data) {
           setEpisodesSheetEpisodes(response.data);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openEpisodes',message:'Episodes loaded for sheet',data:{reelId:reel.id,episodeCount:response.data.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-          // #endregion
         }
       } catch (error) {
         console.error('Error loading episodes for sheet:', error);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openEpisodes',message:'Error loading episodes for sheet',data:{reelId:reel.id,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-        // #endregion
       } finally {
         setLoadingEpisodesSheet(false);
       }
     }
   };
+
+  // Handle Episodes sheet animation - Same pattern as Comment sheet
+  useEffect(() => {
+    if (showEpisodes) {
+      Animated.timing(episodeSheetY, {
+        toValue: 0, // Fully visible (same as commentSheet)
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(episodeSheetY, {
+        toValue: height, // Off screen
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showEpisodes, episodeSheetY, height]);
 
   // Pause video when screen loses focus
   useEffect(() => {
@@ -537,9 +491,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             setIsPlaying(true);
             userPausedRef.current = false; // Clear user pause flag when video auto-plays
             
-      // Hide play button when video starts playing automatically
-      setShowPlayPauseButton(false);
-      playPauseButtonOpacity.setValue(0);
+      // Removed play button - Instagram-style: no visible play/pause button
       
       // Auto-hide UI after 2.5 seconds when video starts
       setTimeout(() => {
@@ -582,25 +534,35 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       };
       
       playVideo();
-    } else if (videoRef.current) {
-      // IMMEDIATELY clear the progress saving interval when video becomes inactive
+    } else {
+      // Video is NOT active - IMMEDIATELY mute and pause
       if (progressSaveIntervalRef.current) {
         clearInterval(progressSaveIntervalRef.current);
         progressSaveIntervalRef.current = null;
         console.log(`🛑 ReelItem: Cleared progress interval for ${reel.title} (video inactive)`);
       }
       
-      // Pause and mute video immediately to prevent audio overlap
-      videoRef.current.setIsMutedAsync(true).catch(() => {});
-      videoRef.current.pauseAsync().catch(() => {});
-      setIsPlaying(false);
+      // IMMEDIATELY pause and mute video to prevent audio overlap
+      if (videoRef.current) {
+        try {
+          videoRef.current.setIsMutedAsync(true).catch(() => {});
+          videoRef.current.pauseAsync().catch(() => {});
+          setIsPlaying(false);
+          console.log(`🔇 ReelItem: IMMEDIATELY muted and paused video for ${reel.title} (not active)`);
+        } catch (error) {
+          console.error(`Error muting/pausing video: ${reel.title}`, error);
+        }
+      }
       setPlaybackSpeed(1.0);
-      videoRef.current.setRateAsync(1.0, true).catch(() => {});
+      if (videoRef.current) {
+        videoRef.current.setRateAsync(1.0, true).catch(() => {});
+      }
       
       // Then save final progress (if valid) after a short delay
+      const videoRefCopy = videoRef.current;
       setTimeout(() => {
-        if (isMountedRef.current && videoRef.current && videoDurationRef.current > 0) {
-          videoRef.current.getStatusAsync().then((status) => {
+        if (isMountedRef.current && videoRefCopy && videoDurationRef.current > 0) {
+          videoRefCopy.getStatusAsync().then((status) => {
             if (status.isLoaded) {
               const currentTimeSeconds = (status.positionMillis || 0) / 1000;
               const durationSeconds = videoDurationRef.current;
@@ -683,6 +645,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     if (videoDurationRef.current > 0) {
       const progressPercent = (currentTime / videoDurationRef.current) * 100;
       setProgress(progressPercent);
+      // Update animated progress bar width
+      progressBarWidth.setValue(progressPercent);
     }
     
     // Update playing state
@@ -768,11 +732,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         clearTimeout(uiHideTimeoutRef.current);
         uiHideTimeoutRef.current = null;
       }
-      // Cleanup play/pause button timeout
-      if (playPauseButtonTimeoutRef.current) {
-        clearTimeout(playPauseButtonTimeoutRef.current);
-        playPauseButtonTimeoutRef.current = null;
-      }
+      // Removed play/pause button timeout cleanup
       // Safely cleanup player on unmount
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(true).catch(() => {});
@@ -781,14 +741,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     };
   }, []);
 
-  // Cleanup play/pause button timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (playPauseButtonTimeoutRef.current) {
-        clearTimeout(playPauseButtonTimeoutRef.current);
-      }
-    };
-  }, []);
+  // Removed play/pause button timeout cleanup - Instagram-style: no visible play/pause button
 
   // Save progress on unmount (always save if progress is valid, regardless of isActive)
   useEffect(() => {
@@ -888,101 +841,82 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     });
   }, [uiOpacity]);
 
-  // Show play/pause button temporarily (used by other handlers)
-  const showPlayPauseButtonTemporarily = () => {
-    setShowPlayPauseButton(true);
-    
-    // Animate button in
-    Animated.timing(playPauseButtonOpacity, {
-      toValue: 1,
-      duration: 200,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-    
-    // Clear existing timeout
-    if (playPauseButtonTimeoutRef.current) {
-      clearTimeout(playPauseButtonTimeoutRef.current);
-    }
-    
-    // Hide button after 1.5 seconds
-    playPauseButtonTimeoutRef.current = setTimeout(() => {
-      Animated.timing(playPauseButtonOpacity, {
-        toValue: 0,
-        duration: 300,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: true,
-      }).start(() => {
-        setShowPlayPauseButton(false);
-      });
-    }, 1500);
-  };
+  // Removed showPlayPauseButtonTemporarily - Instagram-style: no visible play/pause button
 
-  const handleScreenPress = async () => {
+  // Handle screen tap: Left = Seek back, Right = Seek forward, Center = Play/Pause
+  const handleScreenPress = async (event: any) => {
     if (!isActive || !videoRef.current) return;
     
     // Show UI on tap
     showUI();
     
     try {
-      // Get current playing state
       const status = await videoRef.current.getStatusAsync();
       if (!status.isLoaded) return;
       
-      if (status.isPlaying) {
-        // Pause video - mark as user-intended pause
-        userPausedRef.current = true;
-        await videoRef.current.pauseAsync();
-        setIsPlaying(false);
+      // Get tap position
+      const { locationX } = event.nativeEvent;
+      const screenWidth = width;
+      const tapX = locationX;
+      
+      // Determine if tap is on left, center, or right third of screen
+      const leftThird = screenWidth / 3;
+      const rightThird = (screenWidth * 2) / 3;
+      
+      if (tapX < leftThird) {
+        // Tap left → seek backward 10 seconds
+        const currentTime = (status.positionMillis || 0) / 1000;
+        const newTime = Math.max(0, currentTime - 10);
+        await videoRef.current.setPositionAsync(newTime * 1000);
+        
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {}
+      } else if (tapX > rightThird) {
+        // Tap right → seek forward 10 seconds
+        const currentTime = (status.positionMillis || 0) / 1000;
+        const duration = (status.durationMillis || 0) / 1000;
+        const newTime = Math.min(duration, currentTime + 10);
+        await videoRef.current.setPositionAsync(newTime * 1000);
+        
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {}
       } else {
-        // Play video - clear user pause flag
-        userPausedRef.current = false;
-        await videoRef.current.setIsMutedAsync(false);
-        await videoRef.current.playAsync();
-        setIsPlaying(true);
+        // Center tap → toggle play/pause (Instagram-style: no visible button)
+        if (status.isPlaying) {
+          userPausedRef.current = true;
+          await videoRef.current.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          userPausedRef.current = false;
+          await videoRef.current.setIsMutedAsync(false);
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
+        }
+        
+        // No visible play/pause button - just toggle state (Instagram-style)
       }
-      
-      // Show play/pause button
-      setShowPlayPauseButton(true);
-      Animated.timing(playPauseButtonOpacity, {
-        toValue: 1,
-        duration: 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-      
-      // Clear existing timeout
-      if (playPauseButtonTimeoutRef.current) {
-        clearTimeout(playPauseButtonTimeoutRef.current);
-      }
-      
-      // Hide button after 1.5 seconds
-      playPauseButtonTimeoutRef.current = setTimeout(() => {
-        Animated.timing(playPauseButtonOpacity, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }).start(() => {
-          setShowPlayPauseButton(false);
-        });
-      }, 1500);
     } catch {
       // Silently ignore ALL errors - player is disposed
     }
   };
 
-  const handlePressIn = () => {
-    // Hold to play at 2x
+  // Long-press handler for 2x speed (replaces onPressIn)
+  const handleLongPress = () => {
+    // Long-press anywhere on video to play at 2x speed
     if (isActive && videoRef.current) {
       setPlaybackSpeed(2.0);
       videoRef.current.setRateAsync(2.0, true).catch(() => {});
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch {}
     }
   };
 
   const handlePressOut = () => {
-    // Release to return to 1x
-    if (isActive && videoRef.current) {
+    // Release long-press to return to 1x speed
+    if (isActive && videoRef.current && playbackSpeed === 2.0) {
       setPlaybackSpeed(1.0);
       videoRef.current.setRateAsync(1.0, true).catch(() => {});
     }
@@ -990,43 +924,38 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
 
   const closeEpisodes = () => {
-    Animated.timing(episodeSheetY, {
-      toValue: height,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(() => setShowEpisodes(false));
+    console.log('🎯 closeEpisodes called');
+    setShowEpisodes(false);
   };
 
   const openMore = () => {
-    // Hide play/pause button immediately when opening more sheet
-    setShowPlayPauseButton(false);
-    if (playPauseButtonTimeoutRef.current) {
-      clearTimeout(playPauseButtonTimeoutRef.current);
-      playPauseButtonTimeoutRef.current = null;
-    }
-    playPauseButtonOpacity.setValue(0);
-    
-    // Hide UI immediately
-    hideUI();
-    
+    console.log('🎯 openMore called');
     setShowMore(true);
-    Animated.timing(moreSheetY, {
-      toValue: 0,
-      duration: 240,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
   };
 
-const closeMore = () => {
-  Animated.timing(moreSheetY, {
-    toValue: height,
-    duration: 220,
-    useNativeDriver: true,
-  }).start(() => {
+  const closeMore = () => {
+    console.log('🎯 closeMore called');
     setShowMore(false);
-  });
-};
+  };
+
+  // Handle More sheet animation - Same pattern as Comment sheet
+  useEffect(() => {
+    if (showMore) {
+      Animated.timing(moreSheetY, {
+        toValue: 0, // Fully visible (same as commentSheet)
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(moreSheetY, {
+        toValue: height, // Off screen
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showMore, moreSheetY, height]);
 
 
   const openDesc = async () => {
@@ -1080,33 +1009,31 @@ const closeMore = () => {
     console.log('Episode pressed:', episode.title);
   };
 
-  // Handle like button
-  const handleLike = () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:handleLike',message:'Like button pressed',data:{reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet'})}).catch(()=>{});
-    // #endregion
-    videoService.likeVideo(reel.id).catch(console.error);
+  // Handle like button (YouTube Shorts-style: simple like/unlike)
+  const handleLike = async () => {
+    try {
+      const response = await videoService.likeVideo(reel.id);
+      if (response?.success) {
+        setIsLiked(!isLiked);
+        setLikeCount(response.data?.likes || (isLiked ? likeCount - 1 : likeCount + 1));
+        // Haptic feedback
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {}
+      }
+    } catch (error) {
+      console.error('Error liking video:', error);
+    }
   };
 
   // Episodes array is now loaded from API in openEpisodes
 
   return (
-    <Animated.View 
-      style={[
-        styles.container,
-        {
-          transform: [{ translateX: screenTranslateX }],
-        },
-      ]} 
-      {...panResponder.panHandlers}
-    >
-      {/* VIDEO */}
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPress={handleScreenPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-      >
+    <View style={styles.container}>
+      {/* ========================================
+          LAYER 1: VIDEO LAYER (No UI, No Touch)
+          ======================================== */}
+      <View style={styles.videoLayer} pointerEvents={showEpisodes || showMore ? "none" : "none"}>
         <Video
           ref={videoRef}
           source={{ uri: reel.videoUrl }}
@@ -1114,16 +1041,24 @@ const closeMore = () => {
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
           isLooping
-          isMuted={!isActive}
+          isMuted={true} // Always start muted, will be unmuted when active
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           useNativeControls={false}
           progressUpdateIntervalMillis={100}
           onLoadStart={() => {
             console.log(`🎥 Video loading started: ${reel.title}`);
+            // Immediately mute on load start to prevent audio overlap
+            if (videoRef.current) {
+              videoRef.current.setIsMutedAsync(true).catch(() => {});
+            }
           }}
           onLoad={(status) => {
             console.log(`✅ Video loaded: ${reel.title}`, status.isLoaded);
-            // Auto-play when loaded if active
+            // Ensure muted on load
+            if (videoRef.current) {
+              videoRef.current.setIsMutedAsync(true).catch(() => {});
+            }
+            // Only unmute and play if this video is active
             if (isActive && screenFocused && videoRef.current && status.isLoaded) {
               videoRef.current.setIsMutedAsync(false).catch(() => {});
               videoRef.current.playAsync().catch(() => {});
@@ -1133,126 +1068,34 @@ const closeMore = () => {
             console.error(`❌ Video error for ${reel.title}:`, error);
           }}
         />
-        {/* Premium Gradient overlay + Vignette for better text readability */}
+        {/* Visual overlays only (no interaction) */}
         <LinearGradient
           colors={['transparent', 'transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
           locations={[0, 0.5, 0.7, 1]}
           style={styles.videoOverlay}
           pointerEvents="none"
         />
-        {/* Vignette overlay for cinematic effect */}
         <View style={styles.vignetteOverlay} pointerEvents="none" />
-      </Pressable>
+      </View>
 
-      {/* PLAY/PAUSE BUTTON - Enhanced UI */}
-      {showPlayPauseButton && !showMore && (
-        <Animated.View 
-          style={[
-            styles.playPauseButtonContainer,
-            { 
-              opacity: playPauseButtonOpacity,
-            }
-          ]}
-          pointerEvents="none"
-        >
-          <Animated.View 
-            style={[
-              styles.playPauseButton,
-              {
-                transform: [
-                  {
-                    scale: playPauseButtonOpacity.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.8, 1],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Ionicons 
-              name={isPlaying ? "pause" : "play"} 
-              size={52} 
-              color="#fff" 
-            />
-          </Animated.View>
-        </Animated.View>
-      )}
+      {/* ========================================
+          LAYER 2: GESTURE LAYER (Tap/Seek Only)
+          ======================================== */}
+      {/* Gesture layer only covers video area, NOT button areas */}
+      <Pressable
+        style={styles.gestureLayer}
+        onPress={handleScreenPress}
+        onLongPress={handleLongPress}
+        onPressOut={handlePressOut}
+        delayLongPress={300}
+        // Do NOT capture touches meant for buttons - buttons will be on Control Layer with higher zIndex
+      />
+
+      {/* ========================================
+          LAYER 3: CONTROL LAYER (Buttons)
+          ======================================== */}
       
-      {/* Always show play button when paused (even if not tapped) */}
-      {!isPlaying && isActive && !showPlayPauseButton && !showMore && (
-        <TouchableOpacity
-          style={styles.playPauseButtonContainer}
-          onPress={handleScreenPress}
-          activeOpacity={0.9}
-        >
-          <View style={styles.playPauseButton}>
-            <Ionicons 
-              name="play" 
-              size={52} 
-              color="#fff" 
-            />
-          </View>
-        </TouchableOpacity>
-      )}
-      
-      {/* SWIPE INDICATOR - Shows during horizontal swipe */}
-      {swipeDirection && (
-        <Animated.View
-          style={[
-            styles.swipeIndicator,
-            swipeDirection === 'left' ? styles.swipeIndicatorLeft : styles.swipeIndicatorRight,
-            {
-              opacity: swipeIndicatorOpacity,
-              transform: [{ translateX: swipeIndicatorTranslateX }],
-            },
-          ]}
-          pointerEvents="none"
-        >
-          <View style={styles.swipeIndicatorContent}>
-            {swipeDirection === 'left' ? (
-              <>
-                <Ionicons name="chevron-back" size={32} color="#FFFFFF" />
-                <Text style={styles.swipeIndicatorText}>Previous</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.swipeIndicatorText}>Next</Text>
-                <Ionicons name="chevron-forward" size={32} color="#FFFFFF" />
-              </>
-            )}
-          </View>
-        </Animated.View>
-      )}
-      
-      {/* LEFT NAVIGATION BUTTON (Previous) - Hidden but still functional */}
-      {canGoPrevious && (
-        <TouchableOpacity
-          style={[styles.navButton, styles.navButtonLeft, styles.navButtonHidden]}
-          onPress={onSwipeRight}
-          activeOpacity={0.7}
-        >
-          <View style={styles.navButtonContent}>
-            <Ionicons name="chevron-back" size={24} color="#fff" />
-            <Text style={styles.navButtonText}>Previous</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-      
-      {/* RIGHT NAVIGATION BUTTON (Next) - Hidden but still functional */}
-      {canGoNext && (
-        <TouchableOpacity
-          style={[styles.navButton, styles.navButtonRight, styles.navButtonHidden]}
-          onPress={onSwipeLeft}
-          activeOpacity={0.7}
-        >
-          <View style={styles.navButtonContent}>
-            <Text style={styles.navButtonText}>Next</Text>
-            <Ionicons name="chevron-forward" size={24} color="#fff" />
-          </View>
-        </TouchableOpacity>
-      )}
-      {/* TOP RIGHT SHARE - Premium Glass Container */}
+      {/* TOP RIGHT SHARE BUTTON - Back to original position */}
       <Animated.View 
         style={[
           styles.topRightActions, 
@@ -1267,26 +1110,17 @@ const closeMore = () => {
         <TouchableOpacity 
           style={styles.topActionBtn}
           activeOpacity={0.8}
-          onPress={async () => {
+          onPress={async (e: any) => {
+            e.stopPropagation();
             showUI();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:share',message:'Share button pressed',data:{reelId:reel.id,reelTitle:reel.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'share'})}).catch(()=>{});
-            // #endregion
             try {
               const shareMessage = `Check out "${reel.title}" on Digital Kalakar! 🎬\n\n${reel.description || 'Watch now!'}`;
-              const result = await Share.share({
+              await Share.share({
                 message: shareMessage,
                 title: reel.title,
               });
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:share',message:'Share completed',data:{reelId:reel.id,action:result.action},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'share'})}).catch(()=>{});
-              // #endregion
             } catch (error) {
               console.error('Error sharing:', error);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:share',message:'Share error',data:{reelId:reel.id,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'share'})}).catch(()=>{});
-              // #endregion
-              Alert.alert('Error', 'Unable to share. Please try again.');
             }
           }}
         >
@@ -1294,223 +1128,124 @@ const closeMore = () => {
         </TouchableOpacity>
       </Animated.View>
 
-
-      {/* Enhanced Progress Bar - Premium */}
+      {/* PROGRESS BAR - Bottom edge, draggable (Control Layer) */}
       <Animated.View 
         style={[
-          styles.progressContainer,
+          styles.progressBarContainer,
           {
             opacity: uiOpacity,
+            bottom: Math.max(insets.bottom, 16),
           }
         ]}
-        pointerEvents="none"
+        pointerEvents={uiVisible ? 'auto' : 'none'}
       >
-        <View style={styles.progressBarBackground}>
+        <View style={styles.progressBarBackground} {...progressBarPanResponder.panHandlers}>
           <Animated.View 
             style={[
-              styles.progressBar, 
+              styles.progressBarFill, 
               { 
-                width: `${progress}%`,
+                width: progressBarWidth.interpolate({
+                  inputRange: [0, 100],
+                  outputRange: ['0%', '100%'],
+                }),
               }
             ]} 
           />
         </View>
-        {playbackSpeed === 2.0 && (
-          <Animated.View 
-            style={[
-              styles.speedButtonContainer, 
-              {
-                opacity: playPauseButtonOpacity.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.7, 1],
-                }),
-              }
-            ]} 
-            pointerEvents="none"
-          >
-            <Ionicons name="play-forward" size={14} color="#FFD54A" style={{ marginRight: 4 }} />
-            <Text style={styles.speedTextSimple}>2x</Text>
-            </Animated.View>
-          )}
       </Animated.View>
 
 
-      {/* RIGHT ACTIONS - Premium Glassmorphism Design */}
+      {/* RIGHT ACTION RAIL - Instagram Style (Control Layer - Highest Priority) */}
       <Animated.View 
         style={[
           styles.rightActions,
           {
             opacity: uiOpacity,
+            bottom: Math.max(insets.bottom, 80),
           }
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
       >
-        {/* LIKE - Premium Design with Emoji Reactions */}
-        <View style={styles.likeWrapper}>
-          <TouchableOpacity
-            style={styles.premiumActionBtn}
-            onPress={() => {
-              showUI();
-              handleLike();
-              
-              // Set selected reaction (heart emoji for like)
-              if (!selectedReaction) {
-                setSelectedReaction('❤️');
-                
-                // Premium micro-interaction animation
-                const likeScale = new Animated.Value(1);
-                Animated.sequence([
-                  Animated.spring(likeScale, {
-                    toValue: 1.25,
-                    tension: 300,
-                    friction: 8,
-                    useNativeDriver: true,
-                  }),
-                  Animated.spring(likeScale, {
-                    toValue: 1,
-                    tension: 300,
-                    friction: 8,
-                    useNativeDriver: true,
-                  }),
-                ]).start();
-                
-                // Trigger emoji reaction animation
-                const randomEmoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
-                setAnimatingEmoji(randomEmoji);
-                
-                // Animate emoji balloon
-                emojiScale.setValue(0);
-                emojiOpacity.setValue(1);
-                emojiTranslateY.setValue(0);
-                
-                Animated.parallel([
-                  Animated.spring(emojiScale, {
-                    toValue: 1,
-                    tension: 100,
-                    friction: 6,
-                    useNativeDriver: true,
-                  }),
-                  Animated.sequence([
-                    Animated.timing(emojiTranslateY, {
-                      toValue: -60,
-                      duration: 500,
-                      easing: Easing.out(Easing.ease),
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(emojiOpacity, {
-                      toValue: 0,
-                      duration: 200,
-                      useNativeDriver: true,
-                    }),
-                  ]),
-                ]).start(() => {
-                  setAnimatingEmoji(null);
-                  emojiScale.setValue(0);
-                  emojiOpacity.setValue(0);
-                  emojiTranslateY.setValue(0);
-                });
-              } else {
-                setSelectedReaction(null);
-              }
-              
-              // Haptic feedback
-              try {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              } catch {}
-            }}
-            activeOpacity={0.9}
-          >
-            <Animated.View style={[styles.premiumIconContainer]}>
-              <Ionicons 
-                name={selectedReaction ? "heart" : "heart-outline"} 
-                size={24} 
-                color={selectedReaction ? "#FF5A5F" : "#FFFFFF"} 
-              />
-            </Animated.View>
-            <Text style={styles.premiumCountLabel}>
-              {formatCount(reel.initialLikes || 0)}
-            </Text>
-          </TouchableOpacity>
-          
-          {/* Emoji Reaction Animation */}
-          {animatingEmoji && (
-            <Animated.View
-              style={[
-                styles.balloonEmojiWrapper,
-                {
-                  transform: [
-                    { translateX: -40 }, // Center horizontally (from style)
-                    { scale: emojiScale },
-                    { translateY: emojiTranslateY },
-                  ],
-                  opacity: emojiOpacity,
-                },
-              ]}
-            >
-              <View style={styles.balloonEmojiContainer}>
-                <Text style={styles.balloonEmoji}>{animatingEmoji}</Text>
-              </View>
-            </Animated.View>
-          )}
-        </View>
+        {/* LIKE - With press animation and haptic feedback */}
+        <ActionButton
+          icon={isLiked ? "heart" : "heart-outline"}
+          iconColor={isLiked ? "#FF5A5F" : "#FFFFFF"}
+          label={formatCount(likeCount)}
+          onPress={(e) => {
+            e.stopPropagation(); // Prevent video tap
+            showUI();
+            handleLike();
+          }}
+        />
 
-        {/* COMMENTS - Premium Design */}
-        <TouchableOpacity
-          style={styles.premiumActionBtn}
-          onPress={() => {
+        {/* COMMENTS */}
+        <ActionButton
+          icon="chatbubble-outline"
+          iconColor="#FFFFFF"
+          label={formatCount(reel.comments || comments.length || 0)}
+          onPress={(e) => {
+            e.stopPropagation();
             showUI();
             setShowComments(true);
           }}
-          activeOpacity={0.9}
-        >
-          <View style={styles.premiumIconContainer}>
-            <Ionicons name="chatbubble-outline" size={24} color="#FFFFFF" />
-          </View>
-          <Text style={styles.premiumCountLabel}>
-            {formatCount(reel.comments || comments.length || 0)}
-          </Text>
-        </TouchableOpacity>
+        />
 
-        {/* EPISODES - Premium Design */}
-        <TouchableOpacity 
-          style={styles.premiumActionBtn} 
-          onPress={() => {
+        {/* EPISODES */}
+        <ActionButton
+          icon="albums-outline"
+          iconColor="#FFFFFF"
+          label="Eps"
+          onPress={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            console.log('🎯 Episodes button pressed');
             showUI();
             openEpisodes();
           }}
-          activeOpacity={0.9}
-        >
-          <View style={styles.premiumIconContainer}>
-            <Ionicons name="albums-outline" size={24} color="#FFFFFF" />
-          </View>
-          <Text style={styles.premiumCountLabel} numberOfLines={1} adjustsFontSizeToFit>
-            Eps
-          </Text>
-        </TouchableOpacity>
+        />
 
-        {/* MORE - Premium Design */}
-        <TouchableOpacity 
-          style={styles.premiumActionBtn} 
-          onPress={() => {
+        {/* MORE (⋯) */}
+        <ActionButton
+          icon="ellipsis-horizontal"
+          iconColor="#FFFFFF"
+          label="More"
+          onPress={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            console.log('🎯 More button pressed');
             showUI();
             openMore();
           }}
-          activeOpacity={0.9}
-        >
-          <View style={styles.premiumIconContainer}>
-            <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
-          </View>
-          <Text style={styles.premiumCountLabel}>More</Text>
-        </TouchableOpacity>
+        />
       </Animated.View>
 
-      {/* BOTTOM INFO - Premium Layout */}
-      {!showMore && (
+      {/* EPISODE INDICATOR - OTT Style (Top-left, non-intrusive) */}
+      {reel.episodeNumber && (
+        <Animated.View 
+          style={[
+            styles.episodeIndicator,
+            {
+              top: insets.top + (Platform.OS === 'ios' ? 8 : 12) + 8, // Below progress bar
+              left: insets.left + 16,
+              opacity: uiOpacity,
+            }
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.episodeIndicatorText}>
+            Ep {reel.episodeNumber}
+          </Text>
+        </Animated.View>
+      )}
+
+      {/* BOTTOM INFO - Title/Metadata (Control Layer - Blocks video tap) */}
+      {!showMore && !showComments && !showEpisodes && (
         <Animated.View 
           style={[
             styles.bottomInfo,
             {
               opacity: uiOpacity,
+              bottom: Math.max(insets.bottom, 16),
             }
           ]}
           pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1608,26 +1343,30 @@ const closeMore = () => {
         onLike={handleLike}
       />
 
-      {/* EPISODES SHEET - Premium OTT Style */}
+      {/* EPISODES SHEET - Same pattern as Comment Sheet (WORKING REFERENCE) */}
       {showEpisodes && (
-        <>
-          {/* Animated Backdrop */}
-          <Animated.View
-            style={[
-              styles.sheetBackdrop,
-              { opacity: episodeSheetBackdropOpacity },
-            ]}
+        <View style={styles.overlayLayer} pointerEvents="box-none">
+          <Pressable
+            style={styles.sheetBackdrop}
+            onPress={closeEpisodes}
+            pointerEvents="auto"
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.episodeSheetContainer}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeEpisodes} />
-          </Animated.View>
-          
-          <Animated.View
-            style={[
-              styles.sheet,
-              { transform: [{ translateY: episodeSheetY }] },
-            ]}
-            {...episodeSheetPanResponder.panHandlers}
-          >
+            <Animated.View
+              style={[
+                styles.episodeSheet,
+                { 
+                  paddingBottom: Math.max(insets.bottom, 20),
+                  transform: [{ translateY: episodeSheetY }],
+                },
+              ]}
+              pointerEvents="auto"
+              {...episodeSheetPanResponder.panHandlers}
+            >
             {/* Premium Header with Divider */}
             <View style={styles.episodeSheetHeader}>
               <Text style={styles.episodeSheetTitle} numberOfLines={1}>
@@ -1719,29 +1458,38 @@ const closeMore = () => {
                 <Text style={styles.episodesLoadingText}>No episodes available</Text>
               </View>
             )}
-          </Animated.View>
-        </>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
       )}
 
-      {/* COMMENTS SHEET - Instagram Style */}
+      {/* ========================================
+          LAYER 4: OVERLAY LAYER (Sheets/Modals)
+          ======================================== */}
+      
+      {/* COMMENTS SHEET - Full Bottom Sheet (Instagram Style) */}
       {showComments && (
-        <View style={styles.commentWrap}>
+        <View style={styles.overlayLayer} pointerEvents="box-none">
           <Pressable
             style={styles.sheetBackdrop}
             onPress={() => setShowComments(false)}
+            pointerEvents="auto"
           />
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ flex: 1 }}
+            style={styles.commentSheetContainer}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
             <Animated.View
               style={[
-                styles.commentBox,
+                styles.commentSheet,
                 { 
-                  paddingBottom: Math.max(insets.bottom, 8),
+                  paddingBottom: Math.max(insets.bottom, 20),
                   transform: [{ translateY: commentSheetY }],
                 },
               ]}
+              pointerEvents="auto"
+              {...commentSheetPanResponder.panHandlers}
             >
               {/* Handle Bar */}
               <View style={styles.commentHandleBar} />
@@ -1757,10 +1505,12 @@ const closeMore = () => {
                 </TouchableOpacity>
               </View>
 
-              {/* Comments List */}
+              {/* Comments List - Scrollable */}
               <FlatList
                 data={comments}
                 keyExtractor={(item) => item.id}
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 16 }}
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
                     {/* Avatar */}
@@ -1840,7 +1590,6 @@ const closeMore = () => {
                     <Text style={styles.commentEmptySubtext}>Be the first to comment!</Text>
                   </View>
                 }
-                contentContainerStyle={{ paddingBottom: 16 }}
               />
 
               {/* Input Section */}
@@ -1901,18 +1650,29 @@ const closeMore = () => {
         </View>
       )}
 
-      {/* MORE SHEET */}
+      {/* MORE SHEET - Same pattern as Comment Sheet (WORKING REFERENCE) */}
       {showMore && (
-        <>
-          <Pressable style={styles.sheetBackdrop} onPress={closeMore} />
-          <Animated.View
-            style={[
-              styles.moreSheet,
-              { 
-                transform: [{ translateY: moreSheetY }],
-              },
-            ]}
+        <View style={styles.overlayLayer} pointerEvents="box-none">
+          <Pressable
+            style={styles.sheetBackdrop}
+            onPress={closeMore}
+            pointerEvents="auto"
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.moreSheetContainer}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
+            <Animated.View
+              style={[
+                styles.moreSheet,
+                { 
+                  paddingBottom: Math.max(insets.bottom, 20),
+                  transform: [{ translateY: moreSheetY }],
+                },
+              ]}
+              pointerEvents="auto"
+            >
             {/* Header */}
             <View style={styles.moreSheetHeader}>
               <Text style={styles.moreSheetTitle}>More Options</Text>
@@ -1957,31 +1717,7 @@ const closeMore = () => {
                 </View>
               </View>
 
-              {/* Video Quality Section */}
-              <View style={styles.moreSection}>
-                <Text style={styles.moreSectionTitle}>Video Quality</Text>
-                <View style={styles.moreOptionsRow}>
-                  {['Auto', '1080p', '720p', '480p', '360p'].map((quality) => (
-                    <TouchableOpacity
-                      key={quality}
-                      style={[
-                        styles.moreOptionChip,
-                        videoQuality === quality && styles.moreOptionChipActive,
-                      ]}
-                      onPress={() => setVideoQuality(quality)}
-                    >
-                      <Text
-                        style={[
-                          styles.moreOptionChipText,
-                          videoQuality === quality && styles.moreOptionChipTextActive,
-                        ]}
-                      >
-                        {quality}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
+              {/* Video Quality Section - Removed (Auto quality only, handled by backend/CDN) */}
 
               {/* Audio Track Section */}
               <View style={styles.moreSection}>
@@ -2082,10 +1818,11 @@ const closeMore = () => {
                 <Text style={styles.moreCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </Animated.View>
-        </>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
       )}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -2096,6 +1833,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#0E0E0E',
     overflow: 'hidden',
   },
+  
+  // LAYER 1: VIDEO LAYER (No UI, No Touch)
+  videoLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  
+  // LAYER 2: GESTURE LAYER (Tap/Seek Only - Does NOT cover button areas)
+  gestureLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    // Exclude right side (action buttons) and bottom (metadata) from gesture area
+    paddingRight: 80, // Exclude right action rail
+    paddingBottom: 120, // Exclude bottom metadata
+  },
+  
+  // LAYER 3: CONTROL LAYER (Buttons - Highest Priority for Taps)
+  
+  // OVERLAY LAYER - Used by all sheets (Comment, Episode, More)
+  overlayLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  
+  // Sheet backdrop (Fade Overlay - Below Sheet)
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    // No z-index needed - rendered before sheet in DOM order
+  },
+  
   
   videoOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -2122,9 +1891,9 @@ const styles = StyleSheet.create({
   rightActions: {
     position: 'absolute',
     right: 16,
-    bottom: 80,
+    bottom: Math.max(80, 80), // Respect bottom safe area
     alignItems: 'center',
-    zIndex: 100,
+    zIndex: 500, // High zIndex for action buttons
   },
   
   // Episode button position for sheet alignment
@@ -2132,10 +1901,10 @@ const styles = StyleSheet.create({
     bottom: 80 + (20 * 2), // bottom of rightActions + spacing for two buttons (like + comments)
   },
   
-  // Premium Glassmorphism Action Buttons
+  // Premium Glassmorphism Action Buttons - Professional spacing (16dp between buttons)
   premiumActionBtn: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16, // 16dp spacing (Instagram/YouTube Shorts standard)
     minWidth: 44,
   },
   premiumIconContainer: {
@@ -2206,74 +1975,7 @@ const styles = StyleSheet.create({
     }),
   },
   
-  // Navigation buttons
-  navButton: {
-    position: 'absolute',
-    top: '50%',
-    zIndex: 50,
-    opacity: 0.3,
-  },
-  navButtonLeft: {
-    left: 16,
-  },
-  navButtonRight: {
-    right: 16,
-  },
-  navButtonHidden: {
-    opacity: 0,
-    pointerEvents: 'none',
-  },
-  navButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  navButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginHorizontal: 8,
-  },
-  
-  // Swipe indicator styles
-  swipeIndicator: {
-    position: 'absolute',
-    top: '50%',
-    zIndex: 200,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swipeIndicatorLeft: {
-    left: 20,
-  },
-  swipeIndicatorRight: {
-    right: 20,
-  },
-  swipeIndicatorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  swipeIndicatorText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    marginHorizontal: 8,
-    letterSpacing: 0.5,
-  },
+  // Navigation buttons and swipe indicators removed - YouTube Shorts style (vertical scrolling only)
   
   // Play/Pause button
   playPauseButtonContainer: {
@@ -2294,27 +1996,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   
-  // Progress bar speed indicator - centered on progress bar line
-  speedButtonContainer: {
-    position: 'absolute',
-    left: '50%',
-    bottom: 46, // Perfectly aligned with center of progress bar (bar at bottom: 48, height: 4, so center is at 48 - 2 = 46)
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    transform: [{ translateX: -50 }], // Center horizontally
-    zIndex: 151, // Above progress bar
-    minHeight: 20,
-  },
-  speedTextSimple: {
-    color: '#FFD54A',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  // Speed indicator styles removed - 2x speed shown only during long-press (no visual indicator on progress bar)
 
   descMetaRow: {
   flexDirection: 'row',
@@ -2395,63 +2077,6 @@ infoValue: {
     textShadowRadius: 3,
     marginTop: 2,
   },
-  reactionEmoji: {
-    fontSize: 42, // Bigger emoji on button after selection
-    lineHeight: 50,
-  },
-
-  likeWrapper: {
-    position: 'relative',
-    alignItems: 'center',
-    marginBottom: 0,
-  },
-  
-  balloonEmojiWrapper: {
-    position: 'absolute',
-    left: '50%',
-    top: -40, // Position above the button
-    width: 80,
-    height: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    pointerEvents: 'none',
-  },
-  
-  balloonEmojiContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 80,
-    height: 80,
-  },
-  
-  balloonEmoji: {
-    fontSize: 45, // Smaller, smoother size
-    lineHeight: 45,
-    textAlign: 'center',
-  },
-
-  emojiRow: {
-    position: 'absolute',
-    right: 60,
-    top: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingLeft: 12,
-    paddingRight: 16,
-    paddingVertical: 8,
-    borderRadius: 30,
-    minWidth: 260,
-    zIndex: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
-  },
 
 
 
@@ -2475,12 +2100,30 @@ infoValue: {
   },
 
 
+  // Episode Indicator - OTT Style (Top-left)
+  episodeIndicator: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    zIndex: 200,
+  },
+  episodeIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  // BOTTOM INFO - Title/Metadata (Control Layer)
   bottomInfo: {
     position: 'absolute',
     left: 16,
-    bottom: 80,
-    right: 100,
-    zIndex: 100,
+    right: 100, // Leave space for right action rail
+    zIndex: 4000, // Control Layer - Above gesture, blocks video tap
   },
   tagsRow: {
     flexDirection: 'row',
@@ -2559,35 +2202,29 @@ infoValue: {
     marginTop: 6,
   },
 
-  progressContainer: {
+  // PROGRESS BAR - Bottom edge, draggable (no shadow/border)
+  progressBarContainer: {
     position: 'absolute',
-    bottom: 48,
-    left: 0,
-    right: 0,
-    height: 4,
-    zIndex: 150,
+    left: 16,
+    right: 16,
+    height: 3,
+    zIndex: 4000, // Control Layer
     justifyContent: 'center',
-    alignItems: 'center',
   },
   progressBarBackground: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 2,
+    width: '100%',
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 1.5,
+    overflow: 'hidden',
   },
-  progressBar: { 
-    height: '100%', 
-    backgroundColor: '#FFD54A',
-    borderRadius: 2,
-    shadowColor: '#FFD54A',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 3,
+  progressBarFill: { 
+    height: 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 1.5,
   },
+  
+  // Legacy progress bar styles (deprecated - removed duplicate progressBarBackground)
 
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -2607,23 +2244,48 @@ infoValue: {
 
   fullDesc: { color: '#ddd', marginTop: 8 },
 
-  sheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  // EPISODE SHEET - Same pattern as Comment Sheet
+  episodeSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: height * 0.4, // 40% height (OTT style)
+    width: '100%',
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingTop: 16,
+    zIndex: 10001, // Above backdrop (same as commentSheet)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 21, // Same as commentSheet
+    ...Platform.select({
+      ios: {
+        backgroundColor: '#0E0E0E',
+      },
+      android: {
+        backgroundColor: '#0E0E0E',
+      },
+    }),
   },
+  
+  // Legacy sheet styles (deprecated)
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: height * 0.15, // Position at top of episodes button (approximately)
-    height: height * 0.75,
+    bottom: 0,
+    height: height * 0.4,
     backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     paddingTop: 16,
     zIndex: 250,
-    // Premium floating shadow
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -2636,29 +2298,31 @@ infoValue: {
       },
     }),
   },
+  // MORE SHEET - Same pattern as Comment Sheet
   moreSheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: height * 0.85,
+    height: height * 0.4, // 40% of screen height
+    width: '100%',
     backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
     paddingHorizontal: 20,
-    paddingBottom: 40,
-    zIndex: 300, // Higher than play/pause button (zIndex: 200)
-    // Premium styling
+    zIndex: 10001, // Above backdrop (same as commentSheet)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 21, // Same as commentSheet
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.6,
-        shadowRadius: 16,
+        backgroundColor: '#0E0E0E',
       },
       android: {
-        elevation: 16,
+        backgroundColor: '#0E0E0E',
       },
     }),
   },
@@ -2803,6 +2467,53 @@ infoValue: {
     fontSize: 14,
   },
 
+  // COMMENT SHEET - Full Bottom Sheet (Overlay Layer) - REFERENCE IMPLEMENTATION
+  commentSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  commentSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: height * 0.85, // 85% height (full bottom sheet)
+    maxHeight: height * 0.85,
+    width: '100%',
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    zIndex: 10001, // Above backdrop
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 21,
+    ...Platform.select({
+      ios: {
+        backgroundColor: 'rgba(14, 14, 14, 0.95)',
+      },
+      android: {
+        backgroundColor: '#0E0E0E',
+      },
+    }),
+  },
+  
+  // EPISODE SHEET - Same pattern as Comment Sheet
+  episodeSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  
+  // MORE SHEET - Same pattern as Comment Sheet
+  moreSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  
+  // Legacy comment styles (deprecated)
   commentWrap: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
@@ -2826,7 +2537,6 @@ infoValue: {
     shadowOpacity: 0.6,
     shadowRadius: 16,
     elevation: 16,
-    // Blurred background effect hint
     ...Platform.select({
       ios: {
         backgroundColor: 'rgba(14, 14, 14, 0.95)',
@@ -2949,6 +2659,7 @@ infoValue: {
     color: '#999',
     fontSize: 14,
   },
+  // COMMENT INPUT - Fixed at bottom (Instagram Style)
   commentInputSection: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -2956,6 +2667,7 @@ infoValue: {
     paddingBottom: 8,
     borderTopWidth: 0.5,
     borderTopColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#0E0E0E', // Solid background so it stays visible
   },
   commentInputAvatar: {
     marginRight: 12,

@@ -560,13 +560,10 @@ setShouldPlayAd(false);
             // The existing logic will handle fetching and scrolling
           }
         }}
-        onSwipeLeft={goToNext}
-        onSwipeRight={goToPrevious}
-        canGoNext={currentIndex < reels.length - 1 || hasMore}
-        canGoPrevious={currentIndex > 0 || (hasPrevious && page > 1)}
+        // Swipe gestures removed - only vertical scrolling for navigation
       />
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, goToNext, goToPrevious, hasMore, hasPrevious, page]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
 
   // #region agent log
   // Log safe area insets for debugging
@@ -888,13 +885,16 @@ setShouldPlayAd(false);
 const backButtonStyles = StyleSheet.create({
   backButton: {
     position: 'absolute',
-    zIndex: 1000,
+    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
     width: 47,
     height: 47,
     borderRadius: 23.5,
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
+    // Ensure back button is always clickable, even during ads
+    pointerEvents: 'auto',
+    elevation: 1000, // Android elevation (equivalent to zIndex)
   },
 });
 
