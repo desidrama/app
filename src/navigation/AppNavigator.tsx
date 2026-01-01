@@ -1,40 +1,246 @@
+// // ============================================
+// // FILE: src/navigation/AppNavigator.tsx
+// // ============================================
+// import React, { useEffect, useRef } from 'react';
+// import { NavigationContainer } from '@react-navigation/native';
+// import { createNativeStackNavigator } from '@react-navigation/native-stack';
+// import { useDispatch, useSelector } from 'react-redux';
+// import { CommonActions } from '@react-navigation/native';
+// import { useTheme } from '../context/ThemeContext';
+
+// import { RootState } from '../redux/store';
+// import { setAuthChecked, restoreAuth, logout } from '../redux/slices/authSlice';
+
+// import LoginScreen from '../screens/auth/LoginScreen';
+// import OTPScreen from '../screens/auth/OTPScreen';
+// import TabNavigator from './TabNavigator';
+// import SplashScreen from '../screens/Splash/splashscreen';
+// import SearchScreen from '../screens/home/SearchScreen';
+// import * as storage from '../utils/storage';
+// import AddCoinsScreen from '../components/AddCoinsScreen';
+
+
+
+// export type RootStackParamList = {
+//   Splash: undefined;
+//   Login: undefined;
+//   OTPScreen: { phoneNumber: string } | undefined;
+//   Main: undefined;
+//   Search: undefined;
+// };
+
+// const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// export default function AppNavigator() {
+//   const dispatch = useDispatch();
+//   const { isAuthenticated, authChecked } = useSelector((state: RootState) => state.auth);
+//   const { colors } = useTheme();
+//   const navigationRef = useRef<any>(null);
+
+//   // Check/restore auth on mount
+//   useEffect(() => {
+//     const checkAuth = async () => {
+//       try {
+//         const token = await storage.getToken();
+
+//         if (token) {
+//           const refreshToken = await storage.getRefreshToken();
+//           const userData = await storage.getUser();
+
+//           dispatch(
+//             restoreAuth({
+//               token,
+//               refreshToken: refreshToken || undefined,
+//               user: userData ? JSON.parse(userData) : undefined,
+//             })
+//           );
+//         } else {
+//           // Ensure redux knows user is not authenticated
+//           dispatch(logout());
+//         }
+//       } catch (error) {
+//         console.error('Auth check error:', error);
+//         dispatch(logout());
+//       } finally {
+//         dispatch(setAuthChecked(true));
+//       }
+//     };
+
+//     checkAuth();
+//     // run once
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [dispatch]);
+
+//   // Reset navigation when auth status becomes known or changes.
+//   // If authChecked is false we show the splash screen only, so no resets needed.
+//   useEffect(() => {
+//     if (!authChecked) return;
+
+//     // Wait until navigation is ready before dispatching resets
+//     const tryReset = () => {
+//       if (!navigationRef.current || !navigationRef.current.isReady?.()) return;
+
+//       try {
+//         if (isAuthenticated) {
+//           // Ensure stack is reset to Main (so user can't go back to Login)
+//           navigationRef.current.dispatch(
+//             CommonActions.reset({
+//               index: 0,
+//               routes: [{ name: 'Main' }],
+//             })
+//           );
+//         } else {
+//           // Not authenticated -> reset to Login stack
+//           navigationRef.current.dispatch(
+//             CommonActions.reset({
+//               index: 0,
+//               routes: [{ name: 'Login' }],
+//             })
+//           );
+//         }
+//       } catch (err) {
+//         // If reset fails for any reason, don't crash — component rendering will still show the right screens.
+//         // The conditional rendering below ensures the correct screens are mounted.
+//         // eslint-disable-next-line no-console
+//         console.warn('Navigation reset failed', err);
+//       }
+//     };
+
+//     // If navigation not ready yet, retry on next tick
+//     if (navigationRef.current?.isReady?.()) {
+//       tryReset();
+//     } else {
+//       const id = setTimeout(tryReset, 250);
+//       return () => clearTimeout(id);
+//     }
+//   }, [isAuthenticated, authChecked]);
+
+//   // While we haven't checked auth yet, show Splash exclusively.
+//   if (!authChecked) {
+//     return (
+//       <NavigationContainer 
+//         ref={navigationRef}
+//         theme={{
+//           dark: true,
+//           colors: {
+//             primary: colors.yellow,
+//             background: colors.background,
+//             card: colors.surface,
+//             text: colors.textPrimary,
+//             border: colors.borderLight,
+//             notification: colors.error,
+//           },
+//           fonts: {
+//             regular: { fontFamily: 'System', fontWeight: '400' },
+//             medium: { fontFamily: 'System', fontWeight: '500' },
+//             bold: { fontFamily: 'System', fontWeight: '700' },
+//             heavy: { fontFamily: 'System', fontWeight: '900' },
+//           },
+//         }}
+//       >
+//         <Stack.Navigator screenOptions={{ headerShown: false }}>
+//           <Stack.Screen name="Splash" component={SplashScreen} />
+//         </Stack.Navigator>
+//       </NavigationContainer>
+//     );
+//   }
+
+//   // After authChecked: conditionally show stacks depending on isAuthenticated
+//   return (
+//     <NavigationContainer 
+//       ref={navigationRef}
+//       theme={{
+//         dark: true,
+//         colors: {
+//           primary: colors.yellow,
+//           background: colors.background,
+//           card: colors.surface,
+//           text: colors.textPrimary,
+//           border: colors.borderLight,
+//           notification: colors.error,
+//         },
+//         fonts: {
+//           regular: { fontFamily: 'System', fontWeight: '400' },
+//           medium: { fontFamily: 'System', fontWeight: '500' },
+//           bold: { fontFamily: 'System', fontWeight: '700' },
+//           heavy: { fontFamily: 'System', fontWeight: '900' },
+//         },
+//       }}
+//     >
+//       <Stack.Navigator screenOptions={{ headerShown: false }}>
+//         {!isAuthenticated ? (
+//           <>
+//             {/* Only show auth screens when not authenticated */}
+//             <Stack.Screen name="Login" component={LoginScreen} />
+//             <Stack.Screen name="OTPScreen" component={OTPScreen} />
+//           </>
+//         ) : null}
+
+//         {/* Main tab navigator (Home / Reels / Coins / Profile) */}
+//         <Stack.Screen name="Main" component={TabNavigator} />
+//         <Stack.Screen name="Search" component={SearchScreen} />
+//         <Stack.Screen name="AddCoins" component={AddCoinsScreen} options={{ headerShown: false }} />
+
+//       </Stack.Navigator>
+//     </NavigationContainer>
+//   );
+// }
+
+
 // ============================================
 // FILE: src/navigation/AppNavigator.tsx
 // ============================================
 import React, { useEffect, useRef } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, CommonActions, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
-import { CommonActions } from '@react-navigation/native';
-import { useTheme } from '../context/ThemeContext';
 
+import { useTheme } from '../context/ThemeContext';
 import { RootState } from '../redux/store';
 import { setAuthChecked, restoreAuth, logout } from '../redux/slices/authSlice';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OTPScreen from '../screens/auth/OTPScreen';
-import TabNavigator from './TabNavigator';
 import SplashScreen from '../screens/Splash/splashscreen';
 import SearchScreen from '../screens/home/SearchScreen';
+
+import TabNavigator from './TabNavigator';
+import AddCoinsScreen from '../components/AddCoinsScreen';
 import * as storage from '../utils/storage';
 
+
+// --------------------------------------------
+// TYPES
+// --------------------------------------------
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   OTPScreen: { phoneNumber: string } | undefined;
   Main: undefined;
   Search: undefined;
+  AddCoins: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+
+// ============================================
+// APP NAVIGATOR
+// ============================================
 export default function AppNavigator() {
   const dispatch = useDispatch();
-  const { isAuthenticated, authChecked } = useSelector((state: RootState) => state.auth);
-  const { colors } = useTheme();
-  const navigationRef = useRef<any>(null);
+  const { isAuthenticated, authChecked } = useSelector(
+    (state: RootState) => state.auth
+  );
 
-  // Check/restore auth on mount
+  const { colors } = useTheme();
+
+  const navigationRef =
+    useRef<NavigationContainerRef<RootStackParamList> | null>(null);
+
+  // --------------------------------------------
+  // AUTH RESTORE (ON APP START)
+  // --------------------------------------------
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -52,11 +258,10 @@ export default function AppNavigator() {
             })
           );
         } else {
-          // Ensure redux knows user is not authenticated
           dispatch(logout());
         }
       } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('Auth restore failed:', error);
         dispatch(logout());
       } finally {
         dispatch(setAuthChecked(true));
@@ -64,77 +269,51 @@ export default function AppNavigator() {
     };
 
     checkAuth();
-    // run once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
-  // Reset navigation when auth status becomes known or changes.
-  // If authChecked is false we show the splash screen only, so no resets needed.
+  // --------------------------------------------
+  // RESET NAVIGATION ON AUTH CHANGE
+  // --------------------------------------------
   useEffect(() => {
-    if (!authChecked) return;
+    if (!authChecked || !navigationRef.current?.isReady()) return;
 
-    // Wait until navigation is ready before dispatching resets
-    const tryReset = () => {
-      if (!navigationRef.current || !navigationRef.current.isReady?.()) return;
+    const routeName = isAuthenticated ? 'Main' : 'Login';
 
-      try {
-        if (isAuthenticated) {
-          // Ensure stack is reset to Main (so user can't go back to Login)
-          navigationRef.current.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{ name: 'Main' }],
-            })
-          );
-        } else {
-          // Not authenticated -> reset to Login stack
-          navigationRef.current.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            })
-          );
-        }
-      } catch (err) {
-        // If reset fails for any reason, don't crash — component rendering will still show the right screens.
-        // The conditional rendering below ensures the correct screens are mounted.
-        // eslint-disable-next-line no-console
-        console.warn('Navigation reset failed', err);
-      }
-    };
-
-    // If navigation not ready yet, retry on next tick
-    if (navigationRef.current?.isReady?.()) {
-      tryReset();
-    } else {
-      const id = setTimeout(tryReset, 250);
-      return () => clearTimeout(id);
-    }
+    navigationRef.current.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: routeName }],
+      })
+    );
   }, [isAuthenticated, authChecked]);
 
-  // While we haven't checked auth yet, show Splash exclusively.
+  // --------------------------------------------
+  // THEME
+  // --------------------------------------------
+  const navigationTheme = {
+    dark: true,
+    colors: {
+      primary: colors.yellow,
+      background: colors.background,
+      card: colors.surface,
+      text: colors.textPrimary,
+      border: colors.borderLight,
+      notification: colors.error,
+    },
+    fonts: {
+      regular: { fontFamily: 'System', fontWeight: '400' },
+      medium: { fontFamily: 'System', fontWeight: '500' },
+      bold: { fontFamily: 'System', fontWeight: '700' },
+      heavy: { fontFamily: 'System', fontWeight: '900' },
+    },
+  };
+
+  // --------------------------------------------
+  // SPLASH (UNTIL AUTH CHECKED)
+  // --------------------------------------------
   if (!authChecked) {
     return (
-      <NavigationContainer 
-        ref={navigationRef}
-        theme={{
-          dark: true,
-          colors: {
-            primary: colors.yellow,
-            background: colors.background,
-            card: colors.surface,
-            text: colors.textPrimary,
-            border: colors.borderLight,
-            notification: colors.error,
-          },
-          fonts: {
-            regular: { fontFamily: 'System', fontWeight: '400' },
-            medium: { fontFamily: 'System', fontWeight: '500' },
-            bold: { fontFamily: 'System', fontWeight: '700' },
-            heavy: { fontFamily: 'System', fontWeight: '900' },
-          },
-        }}
-      >
+      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Splash" component={SplashScreen} />
         </Stack.Navigator>
@@ -142,40 +321,24 @@ export default function AppNavigator() {
     );
   }
 
-  // After authChecked: conditionally show stacks depending on isAuthenticated
+  // --------------------------------------------
+  // MAIN NAVIGATION
+  // --------------------------------------------
   return (
-    <NavigationContainer 
-      ref={navigationRef}
-      theme={{
-        dark: true,
-        colors: {
-          primary: colors.yellow,
-          background: colors.background,
-          card: colors.surface,
-          text: colors.textPrimary,
-          border: colors.borderLight,
-          notification: colors.error,
-        },
-        fonts: {
-          regular: { fontFamily: 'System', fontWeight: '400' },
-          medium: { fontFamily: 'System', fontWeight: '500' },
-          bold: { fontFamily: 'System', fontWeight: '700' },
-          heavy: { fontFamily: 'System', fontWeight: '900' },
-        },
-      }}
-    >
+    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!isAuthenticated ? (
+
+        {!isAuthenticated && (
           <>
-            {/* Only show auth screens when not authenticated */}
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="OTPScreen" component={OTPScreen} />
           </>
-        ) : null}
+        )}
 
-        {/* Main tab navigator (Home / Reels / Coins / Profile) */}
         <Stack.Screen name="Main" component={TabNavigator} />
         <Stack.Screen name="Search" component={SearchScreen} />
+        <Stack.Screen name="AddCoins" component={AddCoinsScreen} />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

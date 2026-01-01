@@ -511,6 +511,23 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Buy Coins Section */}
+          <View style={styles.buyCoinsContainer}>
+            <View style={styles.buyCoinsContent}>
+              <View style={styles.buyCoinsTextSection}>
+                <Text style={[styles.buyCoinsTitle, { color: colors.textPrimary }]}>Need More Coins?</Text>
+                <Text style={[styles.buyCoinsSubtitle, { color: colors.textSecondary }]}>Buy coins to unlock premium episodes</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('AddCoins')}
+                style={[styles.buyCoinsButton, { backgroundColor: colors.yellow }]}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="coins" size={16} color={colors.textOnYellow} />
+                <Text style={[styles.buyCoinsButtonText, { color: colors.textOnYellow }]}>Buy Coins</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           {/* Coin History */}
           <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Transaction History</Text>
 
@@ -775,6 +792,60 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#111827',
+  },
+
+  // Buy Coins Section
+  buyCoinsContainer: {
+    marginVertical: 20,
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  buyCoinsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'linear-gradient(135deg, rgba(255, 165, 0, 0.1) 0%, rgba(255, 165, 0, 0.05) 100%)',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 165, 0, 0.2)',
+  },
+  buyCoinsTextSection: {
+    flex: 1,
+  },
+  buyCoinsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  buyCoinsSubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    lineHeight: 18,
+  },
+  buyCoinsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFA500',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginLeft: 12,
+    gap: 6,
+    shadowColor: '#FFA500',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  buyCoinsButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   // Coin History
