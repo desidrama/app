@@ -20,6 +20,7 @@ import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
 import VideoCard from '../../components/VideoCard';
 import { API_BASE_URL } from '../../utils/api';
+import { useTheme } from '../../context/ThemeContext';
 
 type RootStackParamList = {
   Main: undefined;
@@ -30,6 +31,7 @@ type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 
 
 export default function SearchScreen() {
   const navigation = useNavigation<SearchScreenNavigationProp>();
+  const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<VideoType[]>([]);
   const [loading, setLoading] = useState(false);
@@ -142,6 +144,7 @@ export default function SearchScreen() {
 
 
     <VideoCard
+      title={item.title}
       imageUrl={fullImageUrl}   // 👈 no title here
       onPress={() => handleVideoPress(item)}
     />
@@ -164,66 +167,66 @@ export default function SearchScreen() {
   const renderEmptyState = () => {
     if (loading) {
       return (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#FFD54A" />
-          <Text style={styles.emptyText}>Searching...</Text>
+        <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.yellow} />
+          <Text style={[styles.emptyText, { color: colors.textPrimary }]}>Searching...</Text>
         </View>
       );
     }
 
     if (error) {
       return (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
-          <Text style={styles.emptyText}>{error}</Text>
+        <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+          <Text style={[styles.emptyText, { color: colors.textPrimary }]}>{error}</Text>
         </View>
       );
     }
 
     if (hasSearched && searchResults.length === 0) {
       return (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="search-outline" size={48} color="#A5A5AB" />
-          <Text style={styles.emptyText}>No results found</Text>
-          <Text style={styles.emptySubtext}>Try a different search term</Text>
+        <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
+          <Ionicons name="search-outline" size={48} color={colors.textMuted} />
+          <Text style={[styles.emptyText, { color: colors.textPrimary }]}>No results found</Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>Try a different search term</Text>
         </View>
       );
     }
 
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="search-outline" size={48} color="#A5A5AB" />
-        <Text style={styles.emptyText}>Start searching for videos</Text>
-        <Text style={styles.emptySubtext}>Enter a keyword to find content</Text>
+      <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
+        <Ionicons name="search-outline" size={48} color={colors.textMuted} />
+        <Text style={[styles.emptyText, { color: colors.textPrimary }]}>Start searching for videos</Text>
+        <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>Enter a keyword to find content</Text>
       </View>
     );
   };
 
   return (
-    <View style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#080812" />
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.textPrimary === '#1A1A1A' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
       <SafeAreaView style={styles.safeAreaInner}>
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { backgroundColor: colors.background }]}>
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
-              <Ionicons name="arrow-back" size={24} color="#f1eddfff" />
+              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
 
-            <View style={styles.searchContainerPremium}>
+            <View style={[styles.searchContainerPremium, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
               <Ionicons
                 name="search"
                 size={20}
-                color="#faf9f6ff"
+                color={colors.textPrimary}
                 style={styles.searchIcon}
               />
               <TextInput
-                style={styles.searchInputPremium}
+                style={[styles.searchInputPremium, { color: colors.textPrimary }]}
                 placeholder="Search premium videos..."
-                placeholderTextColor="#fbf8ef99"
+                placeholderTextColor={colors.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 onSubmitEditing={handleSearch}
@@ -238,25 +241,25 @@ export default function SearchScreen() {
                     setHasSearched(false);
                   }}
                 >
-                  <Ionicons name="close-circle" size={22} color="#faf9f4ff" />
+                  <Ionicons name="close-circle" size={22} color={colors.textPrimary} />
                 </TouchableOpacity>
               )}
             </View>
           </View>
 {/* Most searched */}
 {!hasSearched && searchQuery.length === 0 && (
-  <View style={styles.mostSearchedContainer}>
-    <Text style={styles.mostSearchedTitle}>Most searched</Text>
+  <View style={[styles.mostSearchedContainer, { backgroundColor: colors.background }]}>
+    <Text style={[styles.mostSearchedTitle, { color: colors.textPrimary }]}>Most searched</Text>
 
     <View style={styles.mostSearchedRow}>
       {MOST_SEARCHED.map((item) => (
         <TouchableOpacity
           key={item}
-          style={styles.mostSearchedChip}
+          style={[styles.mostSearchedChip, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
           onPress={() => handleMostSearchedPress(item)}
           activeOpacity={0.8}
         >
-          <Text style={styles.mostSearchedText}>{item}</Text>
+          <Text style={[styles.mostSearchedText, { color: colors.textPrimary }]}>{item}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -268,7 +271,7 @@ export default function SearchScreen() {
   <>
     {/* Trending label */}
     {!hasSearched && (
-      <Text style={styles.trendingLabel}>Trending now</Text>
+      <Text style={[styles.trendingLabel, { color: colors.textPrimary }]}>Trending now</Text>
     )}
 
     <FlatList
@@ -298,13 +301,10 @@ const styles = StyleSheet.create({
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: 'rgba(34, 17, 7, 0.85)',
       borderRadius: 32,
       paddingHorizontal: 18,
       height: 48,
       borderWidth: 1,
-      borderColor: '#f6f5f1ff',
-      shadowColor: '#f6f4efff',
       shadowOpacity: 0.18,
       shadowRadius: 12,
       shadowOffset: { width: 0, height: 2 },
@@ -312,7 +312,6 @@ const styles = StyleSheet.create({
     },
     searchInputPremium: {
       flex: 1,
-      color: '#fefcf8ff',
       fontSize: 16,
       fontWeight: '600',
       paddingVertical: 0,
@@ -320,11 +319,9 @@ const styles = StyleSheet.create({
     },
     resultsContainerPremium: {
       paddingVertical: 18,
-      paddingHorizontal: 10,  // 👈 allows visible column gaps
-      backgroundColor: 'rgba(8,8,18,0.98)',
+      paddingHorizontal: 10,
       borderRadius: 18,
       margin: 8,
-      shadowColor: '#f7e7b3ff',
       shadowOpacity: 0.08,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 2 },
@@ -335,10 +332,8 @@ const styles = StyleSheet.create({
       justifyContent: 'center',
       alignItems: 'center',
       paddingHorizontal: 32,
-      backgroundColor: 'rgba(8,8,18,0.98)',
       borderRadius: 18,
       margin: 8,
-      shadowColor: '#faf9f4ff',
       shadowOpacity: 0.08,
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 2 },
@@ -346,14 +341,12 @@ const styles = StyleSheet.create({
     },
   safeArea: {
     flex: 1,
-    backgroundColor: '#050509',
   },
   safeAreaInner: {
     flex: 1,
   },
   container: {
     flex: 1,
-    backgroundColor: '#050509',
   },
   header: {
     flexDirection: 'row',
@@ -361,7 +354,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 12) : 16,
     paddingBottom: 12,
-    backgroundColor: '#050509',
   },
   backButton: {
     marginRight: 12,
@@ -371,19 +363,16 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#221107',
     borderRadius: 26,
     paddingHorizontal: 14,
     height: 40,
     borderWidth: 1,
-    borderColor: '#332016',
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    color: '#FFFFFF',
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -401,15 +390,14 @@ const styles = StyleSheet.create({
   },
   videoItemSearch: {
   width: '33.33%',
-  paddingHorizontal: 8,   // ✅ SAME GAP when searching
+  paddingHorizontal: 8,
   marginBottom: 14,
 },
 videoItemTrending: {
   width: '33.33%',
-  paddingHorizontal: 8,   // ✅ horizontal gap
-  marginBottom: 18,       // ✅ vertical gap
+  paddingHorizontal: 8,
+  marginBottom: 18,
 },
-
 
   emptyContainer: {
     alignItems: 'center',
@@ -419,37 +407,26 @@ videoItemTrending: {
   marginTop: 6,
   fontSize: 13,
   fontWeight: '600',
-  color: '#FFFFFF',
-  textAlign: 'center',   // ✅ center text
+  textAlign: 'center',
 },
 
   emptyText: {
     marginTop: 16,
     fontSize: 18,
     fontWeight: '600',
-    color: '#FFFFFF',
     textAlign: 'center',
   },
   trendingLabel: {
   marginLeft: 18,
   marginBottom: 8,
   marginTop: 6,
-  fontSize: 20,          // 👈 bigger
+  fontSize: 20,
   fontWeight: '700',
-  color: '#FFD54A',
 },
-
 
   emptySubtext: {
     marginTop: 8,
     fontSize: 14,
-    color: '#A5A5AB',
-    textAlign: 'center',
-  },
-    emptySubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#A5A5AB',
     textAlign: 'center',
   },
 
@@ -462,7 +439,6 @@ videoItemTrending: {
   mostSearchedTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFD54A',
     marginBottom: 8,
   },
 
@@ -476,13 +452,10 @@ videoItemTrending: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#221107',
     borderWidth: 1,
-    borderColor: '#FFD54A55',
   },
 
   mostSearchedText: {
-    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },

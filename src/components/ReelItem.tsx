@@ -18,7 +18,7 @@ import {
   PanResponder,
   ScrollView,
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -158,6 +158,26 @@ export default function ReelItem({ reel, isActive, initialTime = 0, screenFocuse
   const isActiveRef = useRef(isActive);
   const isMountedRef = useRef(true);
   const userPausedRef = useRef(false); // Track if user intentionally paused
+  const playbackRetryCountRef = useRef(0); // Track retry attempts for audio focus
+
+  // Configure audio mode for video playback (once on mount)
+  useEffect(() => {
+    const configureAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true, // Let system duck other audio when video plays
+          interruptionModeAndroid: 1, // DO_NOT_DUCK
+          interruptionModeIOS: 1, // DO_NOT_MIX
+        });
+      } catch (error) {
+        console.warn('Error configuring audio mode:', error);
+      }
+    };
+    
+    configureAudio();
+  }, []);
 
   const episodeSheetY = useRef(new Animated.Value(height)).current;
 const moreSheetY = useRef(new Animated.Value(height)).current;
@@ -472,6 +492,49 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   }, [screenFocused, reel.id]);
 
+  // Helper function to play video with retry logic for audio focus errors
+  const playVideoWithRetry = async (retryCount = 0): Promise<boolean> => {
+    if (!videoRef.current || !isMountedRef.current) return false;
+    
+    try {
+      const status = await videoRef.current.getStatusAsync();
+      if (!status.isLoaded) {
+        // Video not ready yet, retry after delay
+        if (retryCount < 3) {
+          await new Promise(resolve => setTimeout(resolve, 200 + retryCount * 100));
+          return playVideoWithRetry(retryCount + 1);
+        }
+        return false;
+      }
+      
+      // Unmute and play
+      await videoRef.current.setIsMutedAsync(false);
+      await videoRef.current.playAsync();
+      playbackRetryCountRef.current = 0;
+      return true;
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      
+      // Check if this is an audio focus error
+      if (errorMsg.includes('AudioFocusNotAcquiredException') || errorMsg.includes('audio focus')) {
+        // Audio focus error - retry with exponential backoff
+        if (retryCount < 5) {
+          const delayMs = Math.min(1000, 100 * Math.pow(2, retryCount)); // 100ms, 200ms, 400ms, 800ms, 1600ms
+          console.log(`🔊 Audio focus conflict, retrying in ${delayMs}ms (attempt ${retryCount + 1}/5) for ${reel.title}`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          return playVideoWithRetry(retryCount + 1);
+        } else {
+          console.error(`❌ Failed to acquire audio focus after 5 retries for ${reel.title}`);
+          return false;
+        }
+      } else {
+        // Other error
+        console.error(`Error playing video ${reel.title}:`, error);
+        return false;
+      }
+    }
+  };
+
   useEffect(() => {
     // Only play if both isActive AND screenFocused AND user hasn't intentionally paused
     if (isActive && screenFocused && videoRef.current && !userPausedRef.current) {
@@ -481,55 +544,23 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:isActive',message:'Video becoming active - attempting play',data:{reelId:reel.id,hasVideoRef:!!videoRef.current,screenFocused,videoUrl:reel.videoUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'video-play'})}).catch(()=>{});
           // #endregion
           
-          // Wait for video to be loaded
-          const status = await videoRef.current!.getStatusAsync();
-          
-          if (status.isLoaded) {
-            // Unmute and play video
-            await videoRef.current!.setIsMutedAsync(false);
-            await videoRef.current!.playAsync();
+          // Use retry function with exponential backoff for audio focus errors
+          const success = await playVideoWithRetry();
+          if (success) {
             setIsPlaying(true);
             userPausedRef.current = false; // Clear user pause flag when video auto-plays
             
-      // Removed play button - Instagram-style: no visible play/pause button
-      
-      // Auto-hide UI after 2.5 seconds when video starts
-      setTimeout(() => {
-        if (isMountedRef.current && isActive && screenFocused) {
-          hideUI();
-        }
-      }, 2500);
-          } else {
-            // Retry after a short delay if video is not loaded yet
-            setTimeout(async () => {
-              if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
-                try {
-                  const retryStatus = await videoRef.current.getStatusAsync();
-                  if (retryStatus.isLoaded) {
-                    await videoRef.current.setIsMutedAsync(false);
-                    await videoRef.current.playAsync();
-                    setIsPlaying(true);
-                  }
-                } catch (error) {
-                  console.error('Error retrying video play:', error);
-                }
+            // Auto-hide UI after 2.5 seconds when video starts
+            setTimeout(() => {
+              if (isMountedRef.current && isActive && screenFocused) {
+                hideUI();
               }
-            }, 300);
+            }, 2500);
+          } else {
+            console.warn(`Failed to play video ${reel.title} after retries`);
           }
         } catch (error) {
-          console.error('Error playing video:', error);
-          // Retry once more after delay
-          setTimeout(async () => {
-            if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
-              try {
-                await videoRef.current.setIsMutedAsync(false);
-                await videoRef.current.playAsync();
-                setIsPlaying(true);
-              } catch (retryError) {
-                console.error('Error on retry play:', retryError);
-              }
-            }
-          }, 500);
+          console.error('Error in playVideo:', error);
         }
       };
       
@@ -1060,8 +1091,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             }
             // Only unmute and play if this video is active
             if (isActive && screenFocused && videoRef.current && status.isLoaded) {
-              videoRef.current.setIsMutedAsync(false).catch(() => {});
-              videoRef.current.playAsync().catch(() => {});
+              // Use retry function to handle audio focus conflicts
+              playVideoWithRetry().catch((error) => {
+                console.error(`Error playing video on load for ${reel.title}:`, error);
+              });
             }
           }}
           onError={(error) => {

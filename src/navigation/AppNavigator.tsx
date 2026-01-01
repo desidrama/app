@@ -6,6 +6,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import { CommonActions } from '@react-navigation/native';
+import { useTheme } from '../context/ThemeContext';
 
 import { RootState } from '../redux/store';
 import { setAuthChecked, restoreAuth, logout } from '../redux/slices/authSlice';
@@ -30,6 +31,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function AppNavigator() {
   const dispatch = useDispatch();
   const { isAuthenticated, authChecked } = useSelector((state: RootState) => state.auth);
+  const { colors } = useTheme();
   const navigationRef = useRef<any>(null);
 
   // Check/restore auth on mount
@@ -113,7 +115,26 @@ export default function AppNavigator() {
   // While we haven't checked auth yet, show Splash exclusively.
   if (!authChecked) {
     return (
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer 
+        ref={navigationRef}
+        theme={{
+          dark: true,
+          colors: {
+            primary: colors.yellow,
+            background: colors.background,
+            card: colors.surface,
+            text: colors.textPrimary,
+            border: colors.borderLight,
+            notification: colors.error,
+          },
+          fonts: {
+            regular: { fontFamily: 'System', fontWeight: '400' },
+            medium: { fontFamily: 'System', fontWeight: '500' },
+            bold: { fontFamily: 'System', fontWeight: '700' },
+            heavy: { fontFamily: 'System', fontWeight: '900' },
+          },
+        }}
+      >
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Splash" component={SplashScreen} />
         </Stack.Navigator>
@@ -123,7 +144,26 @@ export default function AppNavigator() {
 
   // After authChecked: conditionally show stacks depending on isAuthenticated
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer 
+      ref={navigationRef}
+      theme={{
+        dark: true,
+        colors: {
+          primary: colors.yellow,
+          background: colors.background,
+          card: colors.surface,
+          text: colors.textPrimary,
+          border: colors.borderLight,
+          notification: colors.error,
+        },
+        fonts: {
+          regular: { fontFamily: 'System', fontWeight: '400' },
+          medium: { fontFamily: 'System', fontWeight: '500' },
+          bold: { fontFamily: 'System', fontWeight: '700' },
+          heavy: { fontFamily: 'System', fontWeight: '900' },
+        },
+      }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <>

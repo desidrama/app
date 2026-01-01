@@ -22,14 +22,17 @@ import React from 'react';
  import { SafeAreaProvider } from "react-native-safe-area-context";
  import { store } from './src/redux/store';
  import AppNavigator from './src/navigation/AppNavigator';
+ import { ThemeProvider } from './src/context/ThemeContext';
 
  export default function App() {
    return (
      <Provider store={store}>
-      <SafeAreaProvider>
-        <StatusBar style="light" />
-        <AppNavigator />
-      </SafeAreaProvider>
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <StatusBar style="light" />
+          <AppNavigator />
+        </SafeAreaProvider>
+      </ThemeProvider>
     </Provider>
   );
  }

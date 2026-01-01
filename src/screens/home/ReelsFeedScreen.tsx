@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../redux/store';
 import { setUser } from '../../redux/slices/userSlice';
+import { useTheme } from '../../context/ThemeContext';
 
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { videoService } from '../../services/video.service';
@@ -56,6 +57,7 @@ type ReelsScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Reels'>;
 
 const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
   const navigation = useNavigation<ReelsScreenNavigationProp>();
+  const { colors } = useTheme();
   const route = useRoute<ReelsScreenRouteProp>();
   const routeParams = route.params;
   const insets = useSafeAreaInsets();
@@ -188,10 +190,14 @@ const deductCoins = (amount: number) => {
       console.log('✅ Found video at index:', index);
       setCurrentIndex(index);
       setTargetVideoFound(true);
-      // Scroll immediately
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToIndex({ index, animated: false });
-      });
+      // Scroll immediately - but guard against empty array
+      if (reels.length > 0) {
+        requestAnimationFrame(() => {
+          if (flatListRef.current && reels.length > 0) {
+            flatListRef.current.scrollToIndex({ index, animated: false });
+          }
+        });
+      }
       return;
     }
     
@@ -207,7 +213,9 @@ const deductCoins = (amount: number) => {
           setCurrentIndex(0);
           setTargetVideoFound(true);
           setTimeout(() => {
-            flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+            if (flatListRef.current && reels.length > 0) {
+              flatListRef.current.scrollToIndex({ index: 0, animated: false });
+            }
           }, 100);
         }
       } catch (error) {
@@ -227,6 +235,12 @@ const deductCoins = (amount: number) => {
       setTargetVideoId(videoId);
       setResumeTime(resume);
       setTargetVideoFound(false);
+      // Clear reels so the targetVideoId effect will reload with the new video
+      setReels([]);
+      setCurrentIndex(0);
+      setPage(1);
+      setHasMore(true);
+      // Don't scroll here - let the targetVideoId effect handle it after loading
     }
   }, [routeParams]);
 
@@ -255,10 +269,12 @@ const deductCoins = (amount: number) => {
             setCurrentIndex(0);
             setTargetVideoFound(true);
             
-            // Scroll to index 0 immediately
-            requestAnimationFrame(() => {
-              flatListRef.current?.scrollToIndex({ index: 0, animated: false });
-            });
+            // Scroll to index 0 - but only after reels are definitely in state
+            setTimeout(() => {
+              if (flatListRef.current && reels.length > 0) {
+                flatListRef.current.scrollToIndex({ index: 0, animated: false });
+              }
+            }, 100);
             
             // Then load the feed in the background (after a short delay to ensure scroll happens)
             setTimeout(() => {
@@ -266,10 +282,11 @@ const deductCoins = (amount: number) => {
             }, 300);
           } else {
             // If target video not found, just load normal feed
+            console.warn('❌ Target video not found:', targetVideoId);
             loadPage(1, { replace: true });
           }
         } catch (error) {
-          console.error('Error loading target video:', error);
+          console.error('❌ Error loading target video:', error);
           // Fallback to normal feed load
           loadPage(1, { replace: true });
         }
@@ -281,7 +298,7 @@ const deductCoins = (amount: number) => {
       loadPage(1, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetVideoId]); // Only run when targetVideoId changes or on mount
+  }, [targetVideoId]); // Only run when targetVideoId changes
 
   // Load a page (forward or initial)
   const loadPage = useCallback(
@@ -307,7 +324,9 @@ const deductCoins = (amount: number) => {
               setTargetVideoFound(true);
               
               setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+                if (flatListRef.current && reels.length > 0) {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                }
               }, 50);
             } else {
               // Target not in feed, append normally
@@ -525,7 +544,7 @@ setShouldPlayAd(false);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:372',message:'renderItem called',data:{itemId:item.id,index,currentIndex,targetVideoId,resumeTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
-    // Check if this is the target video and pass resumeTime
+    // Always use resumeTime only for the current target video
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
     // #region agent log
@@ -538,29 +557,16 @@ setShouldPlayAd(false);
         isActive={index === currentIndex}
         initialTime={initialTime}
         screenFocused={isScreenFocused}
-        onVideoEnd={handleEpisodeEnd}
         onEpisodeSelect={(episodeId) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-          // #endregion
-          // Find the episode in the reels list
-          const episodeIndex = reels.findIndex(r => r.id === episodeId);
-          if (episodeIndex !== -1) {
-            setCurrentIndex(episodeIndex);
-            setTargetVideoId(episodeId);
-            setResumeTime(0);
-            // Scroll to the episode
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: true });
-            }, 100);
-          } else {
-            // Episode not in current feed, fetch it
-            setTargetVideoId(episodeId);
-            setResumeTime(0);
-            // The existing logic will handle fetching and scrolling
-          }
+          // Always reset resumeTime and targetVideoFound for new episode
+          setCurrentIndex(0);
+          setTargetVideoId(episodeId);
+          setResumeTime(0);
+          setTargetVideoFound(false);
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+          }, 100);
         }}
-        // Swipe gestures removed - only vertical scrolling for navigation
       />
     );
   }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);

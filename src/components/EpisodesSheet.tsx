@@ -14,6 +14,8 @@ import {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+
+// Type for a single episode
 type Episode = {
   _id?: string;
   episodeNumber?: number;
@@ -23,8 +25,11 @@ type Episode = {
   isPublished?: boolean;
 };
 
+
+// Type for a range of episodes (for pagination)
 type Range = { id: string; label: string; start: number; end: number };
 
+// Default episode ranges for navigation
 const DEFAULT_RANGES: Range[] = [
   { id: '1-18', label: '1 - 18', start: 1, end: 18 },
   { id: '19-41', label: '19 - 41', start: 19, end: 41 },
@@ -32,6 +37,8 @@ const DEFAULT_RANGES: Range[] = [
   { id: '62-83', label: '62 - 83', start: 62, end: 83 },
 ];
 
+
+// Props for EpisodesSheet component
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -44,6 +51,9 @@ type Props = {
   totalEpisodesFallback?: number; // used when no episodes provided for mock
 };
 
+/**
+ * EpisodesSheet: Bottom sheet for selecting and viewing episodes in a series.
+ */
 const EpisodesSheet: React.FC<Props> = ({
   visible,
   onClose,
@@ -99,7 +109,7 @@ const EpisodesSheet: React.FC<Props> = ({
     return arr;
   }, [activeRangeId, ranges]);
 
-  // Helpers
+  // Helpers for closing and selecting episodes
   const handleBackdropPress = () => {
     onClose();
   };
@@ -112,7 +122,7 @@ const EpisodesSheet: React.FC<Props> = ({
   // If not visible, still render with pointerEvents none on the container, but keep in tree to avoid unmount flicker
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'auto' : 'none'}>
-      {/* Backdrop */}
+      {/* Backdrop for closing the sheet */}
       <TouchableWithoutFeedback onPress={handleBackdropPress}>
         <Animated.View
           style={[
@@ -122,7 +132,7 @@ const EpisodesSheet: React.FC<Props> = ({
         />
       </TouchableWithoutFeedback>
 
-      {/* Animated sheet */}
+      {/* Animated sheet with episode list */}
       <Animated.View
         pointerEvents={visible ? 'auto' : 'none'}
         style={[
@@ -146,7 +156,7 @@ const EpisodesSheet: React.FC<Props> = ({
           contentContainerStyle={{ paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Range chips */}
+          {/* Range chips for episode navigation */}
           <View style={styles.rangeRow}>
             {ranges.map((range) => {
               const active = range.id === activeRangeId;
@@ -186,7 +196,7 @@ const EpisodesSheet: React.FC<Props> = ({
                   );
                 })
             ) : (
-              // mock numbers
+              // mock numbers for placeholder
               mockEpisodeNumbers.map((n) => (
                 <TouchableOpacity key={n} style={styles.epChip} onPress={() => handleEpisodePress(n)}>
                   <Text style={styles.epText}>{n}</Text>

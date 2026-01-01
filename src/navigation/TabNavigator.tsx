@@ -4,6 +4,7 @@
 import React, { useMemo } from 'react';
 import { View, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useTheme } from '../context/ThemeContext';
 
 // Static imports — Metro can analyze these properly.
 import HomeScreen from '../screens/home/HomeScreen';
@@ -63,6 +64,7 @@ const makeSafe = (Comp: any, name: string) => {
 };
 
 const TabNavigator: React.FC = () => {
+  const { colors } = useTheme();
   const SafeHome = useMemo(() => makeSafe(HomeScreen, 'HomeScreen'), []);
   const SafeSearch = useMemo(() => makeSafe(require('../screens/home/SearchScreen').default, 'SearchScreen'), []);
   const SafeReels = useMemo(() => makeSafe(ReelsFeedScreen, 'ReelsFeedScreen'), []);

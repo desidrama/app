@@ -22,6 +22,7 @@ import { CoinTransaction } from '../../types';
 import { Alert } from 'react-native';
 import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { useTheme } from '../../context/ThemeContext';
 
 type DailyReward = {
   day: number;
@@ -86,6 +87,7 @@ const TAB_BAR_SAFE_PADDING = 140; // ensure content visible above tab bar / home
 
 const CoinsScreen: React.FC<any> = ({ navigation }) => {
   const dispatch = useDispatch();
+  const { colors } = useTheme();
   const user = useSelector((state: RootState) => state.user.profile);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [selectedDay, setSelectedDay] = useState(1);
@@ -327,8 +329,8 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
   const topOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset }]}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset, backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity
@@ -337,11 +339,11 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             accessibilityRole="button"
             accessibilityLabel="Back"
           >
-            <Ionicons name="chevron-back" size={22} color="#fff" />
+            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
 
           <Text
-            style={styles.headerTitle}
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
             numberOfLines={1}
             accessible
             accessibilityRole="header"
@@ -349,9 +351,9 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             Coins & Rewards
           </Text>
 
-          <View style={styles.coinPill} accessible accessibilityLabel={`${userCoins} coins`}>
-            <Text style={styles.coinText}>{loading ? '...' : userCoins}</Text>
-            <FontAwesome5 name="coins" size={14} color="#F5B800" />
+          <View style={[styles.coinPill, { backgroundColor: colors.surfaceElevated }]} accessible accessibilityLabel={`${userCoins} coins`}>
+            <Text style={[styles.coinText, { color: colors.textPrimary }]}>{loading ? '...' : userCoins}</Text>
+            <FontAwesome5 name="coins" size={14} color={colors.yellow} />
           </View>
         </View>
 
@@ -361,7 +363,7 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             pullDistance={pullDistance}
             threshold={threshold}
             refreshing={refreshing}
-            color="#F5B800"
+            color={colors.yellow}
             topOffset={topOffset + 60}
           />
         )}
@@ -376,16 +378,16 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#090407"
-              colors={['#090407']}
+              tintColor={colors.yellow}
+              colors={[colors.yellow]}
               progressViewOffset={-1000}
             />
           }
         >
           {/* Daily Rewards */}
-          <Text style={styles.sectionTitle}>Daily Rewards</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Daily Rewards</Text>
 
-          <View style={styles.dailyCard}>
+          <View style={[styles.dailyCard, { backgroundColor: colors.surface }]}>
              <ScrollView
                horizontal
                showsHorizontalScrollIndicator={false}
@@ -403,21 +405,23 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
                      key={reward.day}
                      style={[
                        styles.dayItem,
-                       isSelected && styles.dayItemActive,
-                       showCompleted && styles.dayItemCompleted,
+                       { borderColor: colors.borderLight, backgroundColor: colors.surface },
+                       isSelected && { borderColor: colors.yellow, backgroundColor: colors.surfaceElevated, borderWidth: 2 },
+                       showCompleted && { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderWidth: 2 },
                      ]}
                      onPress={() => !hasClaimedToday && setSelectedDay(reward.day)}
                      activeOpacity={0.8}
                      disabled={hasClaimedToday && !showCompleted}
                    >
                      {showCompleted && (
-                       <View style={styles.completedBadge}>
+                       <View style={[styles.completedBadge, { backgroundColor: colors.background }]}>
                          <Ionicons name="checkmark-circle" size={20} color="#10B981" />
                        </View>
                      )}
                      <View style={[
                        styles.dayCoinCircle,
-                       showCompleted && styles.dayCoinCircleCompleted
+                       { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+                       showCompleted && { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' }
                      ]}>
                        {showCompleted ? (
                          <Ionicons name="checkmark" size={18} color="#10B981" />
@@ -425,15 +429,16 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
                          <FontAwesome5
                            name="coins"
                            size={16}
-                           color={isSelected ? "#F5B800" : "#9CA3AF"}
+                           color={isSelected ? colors.yellow : colors.textMuted}
                          />
                        )}
                      </View>
                      <Text
                        style={[
                          styles.dayLabel,
-                         isSelected && !showCompleted && styles.dayLabelActive,
-                         showCompleted && styles.dayLabelCompleted,
+                         { color: colors.textMuted },
+                         isSelected && !showCompleted && { color: colors.yellow, fontWeight: '700' },
+                         showCompleted && { color: '#10B981', fontWeight: '700' },
                        ]}
                      >
                        Day {reward.day}
@@ -448,11 +453,12 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
               activeOpacity={0.9}
               style={[
                 styles.claimButton,
+                { backgroundColor: colors.yellow },
                 (hasClaimedToday || claiming) && styles.claimButtonDisabled
               ]}
               disabled={hasClaimedToday || claiming}
             >
-              <Text style={styles.claimButtonText}>
+              <Text style={[styles.claimButtonText, { color: colors.textOnYellow }]}>
                 {claiming 
                   ? 'Claiming...' 
                   : hasClaimedToday 
@@ -463,28 +469,28 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
           </View>
 
           {/* Missions */}
-          <Text style={styles.sectionTitle}>Missions</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Missions</Text>
 
           {MISSIONS.map(m => (
-            <View key={m.id} style={styles.missionCard}>
+            <View key={m.id} style={[styles.missionCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
               <View style={styles.missionLeft}>
                 {renderMissionIcon(m)}
                 <View>
-                  <Text style={styles.missionTitle}>{m.title}</Text>
-                  <Text style={styles.missionSubtitle}>{m.coins} Coins</Text>
+                  <Text style={[styles.missionTitle, { color: colors.textPrimary }]}>{m.title}</Text>
+                  <Text style={[styles.missionSubtitle, { color: colors.textSecondary }]}>{m.coins} Coins</Text>
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.missionCTA}>
-                <Text style={styles.missionCTAText}>{m.cta}</Text>
+              <TouchableOpacity style={[styles.missionCTA, { backgroundColor: colors.surfaceElevated }]}>
+                <Text style={[styles.missionCTAText, { color: colors.textPrimary }]}>{m.cta}</Text>
               </TouchableOpacity>
             </View>
           ))}
 
           {/* Watch Ad and earn */}
-          <Text style={styles.sectionTitle}>Watch Ad and earn</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Watch Ad and earn</Text>
 
-          <View style={styles.missionCard}>
+          <View style={[styles.missionCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
             <View style={styles.missionLeft}>
               {renderMissionIcon({
                 id: 'ad',
@@ -495,37 +501,38 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
                 iconType: 'ad',
               })}
               <View>
-                <Text style={styles.missionTitle}>Watch Ads</Text>
-                <Text style={styles.missionSubtitle}>5 Coins</Text>
+                <Text style={[styles.missionTitle, { color: colors.textPrimary }]}>Watch Ads</Text>
+                <Text style={[styles.missionSubtitle, { color: colors.textSecondary }]}>5 Coins</Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.missionCTA}>
-              <Text style={styles.missionCTAText}>Watch</Text>
+            <TouchableOpacity style={[styles.missionCTA, { backgroundColor: colors.surfaceElevated }]}>
+              <Text style={[styles.missionCTAText, { color: colors.textPrimary }]}>Watch</Text>
             </TouchableOpacity>
           </View>
 
           {/* Coin History */}
-          <Text style={styles.sectionTitle}>Transaction History</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Transaction History</Text>
 
           {loadingHistory ? (
             <View style={styles.historyLoadingContainer}>
-              <Text style={styles.historyLoadingText}>Loading history...</Text>
+              <Text style={[styles.historyLoadingText, { color: colors.textSecondary }]}>Loading history...</Text>
             </View>
           ) : coinHistory.length === 0 ? (
-            <View style={styles.emptyHistoryContainer}>
-              <Ionicons name="time-outline" size={48} color="#666" />
-              <Text style={styles.emptyHistoryText}>No transactions yet</Text>
-              <Text style={styles.emptyHistorySubtext}>Your coin transactions will appear here</Text>
+            <View style={[styles.emptyHistoryContainer, { backgroundColor: 'transparent' }]}>
+              <Ionicons name="time-outline" size={48} color={colors.textMuted} />
+              <Text style={[styles.emptyHistoryText, { color: colors.textPrimary }]}>No transactions yet</Text>
+              <Text style={[styles.emptyHistorySubtext, { color: colors.textSecondary }]}>Your coin transactions will appear here</Text>
             </View>
           ) : (
             <View style={styles.historyContainer}>
               {coinHistory.map((transaction) => (
-                <View key={transaction._id} style={styles.historyItem}>
+                <View key={transaction._id} style={[styles.historyItem, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
                   <View style={styles.historyItemLeft}>
                     <View style={[
                       styles.historyIconContainer,
-                      transaction.type === 'earned' ? styles.historyIconEarned : styles.historyIconRedeemed
+                      { backgroundColor: colors.surfaceElevated },
+                      transaction.type === 'earned' ? { backgroundColor: 'rgba(16, 185, 129, 0.15)' } : { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
                     ]}>
                       <Ionicons
                         name={getSourceIcon(transaction.source, transaction.type) as any}
@@ -534,21 +541,22 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
                       />
                     </View>
                     <View style={styles.historyItemContent}>
-                      <Text style={styles.historyItemTitle}>
+                      <Text style={[styles.historyItemTitle, { color: colors.textPrimary }]}>
                         {transaction.type === 'earned' ? 'Earned' : 'Redeemed'} - {getSourceName(transaction.source)}
                       </Text>
-                      <Text style={styles.historyItemDescription}>{transaction.description}</Text>
-                      <Text style={styles.historyItemDate}>{formatDate(transaction.createdAt)}</Text>
+                      <Text style={[styles.historyItemDescription, { color: colors.textSecondary }]}>{transaction.description}</Text>
+                      <Text style={[styles.historyItemDate, { color: colors.textMuted }]}>{formatDate(transaction.createdAt)}</Text>
                     </View>
                   </View>
                   <View style={styles.historyItemRight}>
                     <Text style={[
                       styles.historyItemAmount,
-                      transaction.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed
+                      transaction.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed,
+                      { color: transaction.type === 'earned' ? '#10B981' : '#EF4444' }
                     ]}>
                       {transaction.type === 'earned' ? '+' : '-'}{transaction.amount}
                     </Text>
-                    <FontAwesome5 name="coins" size={12} color="#F5B800" />
+                    <FontAwesome5 name="coins" size={12} color={colors.yellow} />
                   </View>
                 </View>
               ))}
@@ -567,11 +575,11 @@ export default CoinsScreen;
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#090407', // deep dark brown/black
+    backgroundColor: '#090407', // Will be overridden by dynamic styles
   },
   container: {
     flex: 1,
-    backgroundColor: '#090407',
+    backgroundColor: '#090407', // Will be overridden by dynamic styles
     paddingHorizontal: 16,
   },
 
@@ -653,7 +661,7 @@ const styles = StyleSheet.create({
      position: 'relative',
    },
    dayItemActive: {
-     borderColor: '#F5B800',
+     borderColor: '#FFA500',
      backgroundColor: '#1d1b10',
      borderWidth: 2,
    },
@@ -696,7 +704,7 @@ const styles = StyleSheet.create({
      fontWeight: '600',
    },
    dayLabelActive: {
-     color: '#F5B800',
+     color: '#FFA500',
      fontWeight: '700',
    },
    dayLabelCompleted: {
@@ -705,7 +713,7 @@ const styles = StyleSheet.create({
    },
   claimButton: {
     marginTop: 10,
-    backgroundColor: '#FFD54A',
+    backgroundColor: '#FFA500',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
@@ -714,7 +722,7 @@ const styles = StyleSheet.create({
   claimButtonText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   claimButtonDisabled: {
     opacity: 0.6,

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../context/ThemeContext';
 
 type TabAnim = {
   scale: Animated.Value;
@@ -25,6 +26,7 @@ type TabAnim = {
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   // 🔴 IMPORTANT: hide tab bar completely on Reels
   const focusedRoute = state.routes[state.index];
@@ -32,7 +34,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   if (
     focusedRoute.name === 'Reels' ||
-    focusedOptions?.tabBarStyle?.display === 'none'
+    (focusedOptions?.tabBarStyle as any)?.display === 'none'
   ) {
     return null;
   }
@@ -213,9 +215,13 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   return (
     <View 
-      style={[styles.wrapper, { paddingBottom: bottomInset }]}
+      style={[styles.wrapper, { 
+        paddingBottom: bottomInset,
+        backgroundColor: colors.background,
+        borderTopColor: colors.borderLight,
+      }]}
     >
-      <View style={[styles.tabBar, { height: tabBarHeight }]}> 
+      <View style={[styles.tabBar, { height: tabBarHeight, backgroundColor: colors.surface }]}> 
         {/* Custom order: Home, Search, Reels (center), Rewards, Profile */}
         {[0, 1, 2, 3, 4].map((customIndex) => {
           // Map custom order: 0=Home, 1=Search, 2=Reels, 3=Rewards, 4=Profile
@@ -231,11 +237,11 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           // Highlight and bulge the Reels icon (improved, no gold shadow/border)
           const isReels = route.name === 'Reels';
           const iconSize = isReels ? 38 : 28;
-          const iconColor = isReels && isFocused ? '#FFD54A' : isFocused ? '#FFD54A' : '#FFFFFF';
+          const iconColor = isFocused ? colors.yellow : colors.textPrimary;
           const iconWrapperStyle = [
             styles.iconWrapper,
             isReels && {
-              backgroundColor: '#181820',
+              backgroundColor: 'transparent',
               borderWidth: 0,
               borderColor: 'transparent',
               shadowColor: 'transparent',
@@ -295,9 +301,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 1000,
-    backgroundColor: '#050509',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
     ...Platform.select({
       android: { 
         elevation: 10,
@@ -312,7 +316,6 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#0A0A0A',
     paddingHorizontal: 16,
     justifyContent: 'space-between',
     alignItems: 'center',

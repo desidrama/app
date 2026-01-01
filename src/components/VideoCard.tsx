@@ -2,17 +2,13 @@
 
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
-
-const colors = {
-  surface: '#14141F',
-  textPrimary: '#F5F5FA',
-  textSecondary: '#A5A5C0',
-};
+import { useTheme } from '../context/ThemeContext';
 
 interface VideoCardProps {
   title: string;
   imageUrl: string;
   episodeNumber?: number;
+  seriesName?: string;
   genre?: string;
   onPress: () => void;
 }
@@ -21,12 +17,39 @@ export default function VideoCard({
   title,
   imageUrl,
   episodeNumber,
+  seriesName,
   genre,
   onPress,
 }: VideoCardProps) {
+  const { colors } = useTheme();
+
+  const dynamicStyles = StyleSheet.create({
+    container: {
+      width: 140,
+      height: 200,
+      borderRadius: 12,
+      overflow: 'hidden',
+      backgroundColor: colors.surface,
+      position: 'relative',
+      elevation: 0,
+      shadowOpacity: 0,
+    },
+    title: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    meta: {
+      fontSize: 11,
+      fontWeight: '400',
+      color: colors.textSecondary,
+    },
+  });
+
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={dynamicStyles.container}
       onPress={onPress}
       activeOpacity={0.85}
     >
@@ -40,13 +63,13 @@ export default function VideoCard({
       
       {/* Text Overlay */}
       <View style={styles.textOverlay}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={dynamicStyles.title} numberOfLines={1}>
           {title}
         </Text>
-        {(episodeNumber || genre) && (
-          <Text style={styles.meta} numberOfLines={1}>
-            {episodeNumber ? `Episode ${episodeNumber}` : ''}
-            {episodeNumber && genre ? ' · ' : ''}
+        {(seriesName || genre) && (
+          <Text style={dynamicStyles.meta} numberOfLines={1}>
+            {seriesName || ''}
+            {seriesName && genre ? ' · ' : ''}
             {genre || ''}
           </Text>
         )}
@@ -56,16 +79,6 @@ export default function VideoCard({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    width: 140,
-    height: 200,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    position: 'relative',
-    elevation: 0,
-    shadowOpacity: 0,
-  },
   image: {
     width: '100%',
     height: '100%',
@@ -77,16 +90,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 8,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  meta: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: colors.textSecondary,
   },
 });
