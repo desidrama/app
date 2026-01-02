@@ -721,7 +721,7 @@ export default function HomeScreen() {
       end={{ x: 0.5, y: 1 }}
       style={{ flex: 1 }}
     >
-      <SafeAreaView style={dynamicStyles.safeAreaInner} edges={['top', 'bottom', 'left', 'right']}>
+      <SafeAreaView style={dynamicStyles.safeAreaInner} edges={['bottom', 'left', 'right']}>
         <View style={dynamicStyles.container}>
           <Animated.View style={[
             styles.header, 
@@ -737,7 +737,7 @@ export default function HomeScreen() {
                 paddingBottom: 12,
               }}
             >
-              <Text style={dynamicStyles.logoText}>Micro <Text style={dynamicStyles.logoAccent}>कहानी</Text></Text>
+              <Text style={dynamicStyles.logoText}>Micro <Text style={dynamicStyles.logoAccent}>Kahani</Text></Text>
             </View>
           </Animated.View>
 
@@ -752,6 +752,7 @@ export default function HomeScreen() {
 
           <ScrollView
             style={dynamicStyles.content}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
             onScroll={handleMainScroll}
