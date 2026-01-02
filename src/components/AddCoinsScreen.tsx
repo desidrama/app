@@ -17,10 +17,6 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
 import { useTheme } from '../context/ThemeContext';
 import {
-  CFPaymentGatewayService,
-  CFErrorResponse,
-} from 'react-native-cashfree-pg-sdk';
-import {
   CFSession,
   CFEnvironment,
   CFDropCheckoutPayment,
@@ -28,6 +24,21 @@ import {
 } from 'cashfree-pg-api-contract';
 import { createCoinPurchaseOrder, verifyCoinPayment } from '../services/api';
 import { useNavigation } from '@react-navigation/native';
+
+// Conditionally import Cashfree SDK - it's a native module that requires a development build
+let CFPaymentGatewayService: any = null;
+let CFErrorResponse: any = null;
+let isCashfreeAvailable = false;
+
+try {
+  const cashfreeModule = require('react-native-cashfree-pg-sdk');
+  CFPaymentGatewayService = cashfreeModule.CFPaymentGatewayService;
+  CFErrorResponse = cashfreeModule.CFErrorResponse;
+  isCashfreeAvailable = true;
+} catch (error) {
+  console.warn('Cashfree SDK not available - requires development build:', error);
+  isCashfreeAvailable = false;
+}
 
 type CoinPackage = {
   id: string;
@@ -77,22 +88,34 @@ const AddCoinsScreen: React.FC = () => {
   const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
 
   React.useEffect(() => {
-    // Set up Cashfree callback
-    CFPaymentGatewayService.setCallback({
-      onVerify(orderID: string): void {
-        console.log('✅ Payment verification started:', orderID);
-        handleVerifyPayment(orderID);
-      },
-      onError(error: CFErrorResponse, orderID: string): void {
-        console.error('❌ Payment error:', error, orderID);
-        Alert.alert('Payment Failed', error?.message || 'Please try again');
-        setLoading(false);
-      },
-    });
+    // Set up Cashfree callback only if available
+    if (isCashfreeAvailable && CFPaymentGatewayService) {
+      try {
+        CFPaymentGatewayService.setCallback({
+          onVerify(orderID: string): void {
+            console.log('✅ Payment verification started:', orderID);
+            handleVerifyPayment(orderID);
+          },
+          onError(error: any, orderID: string): void {
+            console.error('❌ Payment error:', error, orderID);
+            Alert.alert('Payment Failed', error?.message || 'Please try again');
+            setLoading(false);
+          },
+        });
+      } catch (error) {
+        console.warn('Failed to set Cashfree callback:', error);
+      }
 
-    return () => {
-      CFPaymentGatewayService.removeCallback();
-    };
+      return () => {
+        try {
+          if (CFPaymentGatewayService && CFPaymentGatewayService.removeCallback) {
+            CFPaymentGatewayService.removeCallback();
+          }
+        } catch (error) {
+          console.warn('Failed to remove Cashfree callback:', error);
+        }
+      };
+    }
   }, []);
 
   const handleVerifyPayment = async (orderID: string) => {
@@ -123,6 +146,15 @@ const AddCoinsScreen: React.FC = () => {
   const handlePurchase = async () => {
     if (!selectedPackage) {
       Alert.alert('Select Package', 'Please select a coin package');
+      return;
+    }
+
+    // Check if Cashfree SDK is available
+    if (!isCashfreeAvailable || !CFPaymentGatewayService) {
+      Alert.alert(
+        'Payment Not Available',
+        'Payment functionality requires a development build. Please rebuild the app with: npx expo run:ios or npx expo run:android'
+      );
       return;
     }
 

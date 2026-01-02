@@ -126,4 +126,24 @@ export const videoService = {
     const response = await api.get(`/api/content/search?q=${encodeURIComponent(query)}&page=${page}`);
     return response.data;
   },
+
+  // ========== Comment Methods ==========
+  async postComment(postId: string, commentText: string) {
+    try {
+      const response = await api.post('/api/comments', {
+        postId,
+        commentText,
+      });
+      return response.data;
+    } catch (error: any) {
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required');
+      }
+      if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || 'Invalid comment');
+      }
+      throw error;
+    }
+  },
 };

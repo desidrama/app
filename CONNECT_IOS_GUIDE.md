@@ -127,3 +127,4 @@ npx expo start -c
 4. Restart both devices
 5. Clear Expo Go cache (shake device → Settings → Clear cache)
 
+
