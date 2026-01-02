@@ -625,28 +625,22 @@ setShouldPlayAd(false);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      {/* Back Button */}
-      {(() => {
-        const backButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
-        const backButtonLeft = insets.left + 16;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:backButton',message:'Back button alignment values',data:{platform:Platform.OS,insets:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right},backButtonTop,backButtonLeft},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'alignment'})}).catch(()=>{});
-        // #endregion
-        return null;
-      })()}
-      <TouchableOpacity
-        style={[
-          backButtonStyles.backButton,
-          {
-            top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-            left: insets.left + 16,
-          },
-        ]}
-        onPress={handleBackPress}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="chevron-back" size={31} color="#fff" />
-      </TouchableOpacity>
+      {/* Top Header Container - Back & Share Alignment */}
+      <View style={[backButtonStyles.topHeader, {
+        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
+        left: insets.left + 16,
+        right: insets.right + 16,
+      }]}>
+        <TouchableOpacity
+          onPress={handleBackPress}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        {/* Share button is handled in ReelItem component */}
+        <View style={{ width: 44 }} />
+      </View>
 
       <FlatList
         ref={flatListRef}
@@ -907,17 +901,13 @@ setShouldPlayAd(false);
 };
 
 const backButtonStyles = StyleSheet.create({
-  backButton: {
+  topHeader: {
     position: 'absolute',
-    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
-    width: 47,
-    height: 47,
-    borderRadius: 23.5,
-    backgroundColor: 'transparent',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    // Ensure back button is always clickable, even during ads
-    pointerEvents: 'auto',
+    justifyContent: 'space-between',
+    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
+    pointerEvents: 'box-none', // Allow touches to pass through to children
     elevation: 1000, // Android elevation (equivalent to zIndex)
   },
 });
