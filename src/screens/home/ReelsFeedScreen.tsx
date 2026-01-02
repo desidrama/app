@@ -617,7 +617,7 @@ setShouldPlayAd(false);
   if (loading && reels.length === 0) {
     return (
       <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
-        <ActivityIndicator size="large" color="#FFD54A" />
+        <ActivityIndicator size="large" color={colors.yellow} />
         <Text style={styles.loadingText}>Loading reels…</Text>
       </SafeAreaView>
     );
@@ -645,7 +645,7 @@ setShouldPlayAd(false);
         onPress={handleBackPress}
         activeOpacity={0.7}
       >
-        <Ionicons name="chevron-back" size={31} color="#fff" />
+        <Ionicons name="chevron-back" size={31} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
       </TouchableOpacity>
 
       <FlatList
@@ -680,7 +680,7 @@ setShouldPlayAd(false);
         ) : null}
         ListFooterComponent={loading ? (
             <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
+              <ActivityIndicator size="small" color={colors.yellow} />
             </View>
         ) : null}
       />

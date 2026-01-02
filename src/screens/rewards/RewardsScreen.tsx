@@ -4,13 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Platform,
   StatusBar,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { useFocusEffect } from '@react-navigation/native';
@@ -295,32 +295,32 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
       case 'instagram':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#F56040' }]}>
-            <FontAwesome name="instagram" size={18} color="#fff" />
+            <FontAwesome name="instagram" size={18} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
           </View>
         );
       case 'youtube':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#FF0000' }]}>
-            <FontAwesome name="youtube-play" size={18} color="#fff" />
+            <FontAwesome name="youtube-play" size={18} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
           </View>
         );
       case 'x':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#111827' }]}>
-            <FontAwesome5 name="x-twitter" size={16} color="#fff" />
+            <FontAwesome5 name="x-twitter" size={16} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
           </View>
         );
       case 'game':
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#2563EB' }]}>
-            <FontAwesome5 name="gamepad" size={16} color="#fff" />
+            <FontAwesome5 name="gamepad" size={16} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
           </View>
         );
       case 'ad':
       default:
         return (
           <View style={[styles.missionIconCircle, { backgroundColor: '#10B981' }]}>
-            <Ionicons name="play-outline" size={16} color="#fff" />
+            <Ionicons name="play-outline" size={16} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
           </View>
         );
     }

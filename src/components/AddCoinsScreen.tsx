@@ -4,14 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  Platform,
-  StatusBar,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
@@ -81,6 +80,7 @@ const COIN_PACKAGES: CoinPackage[] = [
 const AddCoinsScreen: React.FC = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const user = useSelector((state: RootState) => state.user.profile);
   const [selectedPackage, setSelectedPackage] = useState<CoinPackage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,24 +98,24 @@ const AddCoinsScreen: React.FC = () => {
           },
           onError(error: any, orderID: string): void {
             console.error('❌ Payment error:', error, orderID);
-            Alert.alert('Payment Failed', error?.message || 'Please try again');
+            Alert.alert('Payment Failed', error?.toString?.() || 'Please try again');
             setLoading(false);
           },
         });
       } catch (error) {
         console.warn('Failed to set Cashfree callback:', error);
       }
-
-      return () => {
-        try {
-          if (CFPaymentGatewayService && CFPaymentGatewayService.removeCallback) {
-            CFPaymentGatewayService.removeCallback();
-          }
-        } catch (error) {
-          console.warn('Failed to remove Cashfree callback:', error);
-        }
-      };
     }
+
+    return () => {
+      try {
+        if (CFPaymentGatewayService && CFPaymentGatewayService.removeCallback) {
+          CFPaymentGatewayService.removeCallback();
+        }
+      } catch (error) {
+        console.warn('Failed to remove Cashfree callback:', error);
+      }
+    };
   }, []);
 
   const handleVerifyPayment = async (orderID: string) => {
@@ -265,10 +265,8 @@ const AddCoinsScreen: React.FC = () => {
     );
   };
 
-  const topOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
-
   return (
-    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset, backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top', 'bottom', 'left', 'right']}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={styles.headerRow}>
@@ -292,7 +290,7 @@ const AddCoinsScreen: React.FC = () => {
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Info Card */}
@@ -331,7 +329,7 @@ const AddCoinsScreen: React.FC = () => {
             </View>
 
             <View style={styles.benefitItem}>
-              <Ionicons name="unlock" size={20} color="#3B82F6" />
+            <Ionicons name="lock-open" size={20} color="#3B82F6" />
               <Text style={[styles.benefitText, { color: colors.textSecondary }]}>
                 Unlock exclusive content
               </Text>
@@ -354,7 +352,7 @@ const AddCoinsScreen: React.FC = () => {
         </ScrollView>
 
         {/* Purchase Button */}
-        <View style={[styles.footer, { backgroundColor: colors.background }]}>
+        <View style={[styles.footer, { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
           <TouchableOpacity
             style={[
               styles.purchaseButton,
@@ -574,7 +572,6 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
   },
   purchaseButton: {
     flexDirection: 'row',

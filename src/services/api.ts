@@ -352,6 +352,44 @@ export const updateFcmToken = async (fcmToken: string) => {
 };
 
 /**
+ * Create coin purchase order
+ */
+export const createCoinPurchaseOrder = async (data: {
+  amount: number;
+  coins: number;
+  packageId: string;
+}) => {
+  try {
+    const response = await api.post('/api/reward/create-coin-purchase', data);
+    return response.data;
+  } catch (error: any) {
+    console.error('Create Coin Purchase Order Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Verify coin payment
+ */
+export const verifyCoinPayment = async (orderID: string) => {
+  try {
+    const response = await api.post(`/api/reward/verify-coin-payment/${orderID}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Verify Coin Payment Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
  * Logout function - clears all stored tokens and cookies
  * Note: Logout always succeeds locally even if API call fails
  */

@@ -49,6 +49,8 @@
     "vector-icons": "^0.1.0"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^20.0.2",
+    "@react-native/metro-config": "^0.83.1",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.7",
