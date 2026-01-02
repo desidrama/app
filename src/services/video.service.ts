@@ -155,15 +155,15 @@ export const videoService = {
       // Graceful fallback: if 404, treat as not liked
       if (error.response?.status === 404) {
         console.warn('Like status endpoint not found, treating as not liked');
-        return { success: true, data: { likedByUser: false, likes: 0 } };
+        return { success: true, data: { liked: false, likeCount: 0 } };
       }
       if (error.response?.status === 401) {
         // Not authenticated - treat as not liked
-        return { success: true, data: { likedByUser: false, likes: 0 } };
+        return { success: true, data: { liked: false, likeCount: 0 } };
       }
       console.error('Error getting like status:', error);
       // Return safe default on any error
-      return { success: true, data: { likedByUser: false, likes: 0 } };
+      return { success: true, data: { liked: false, likeCount: 0 } };
     }
   },
 
