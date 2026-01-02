@@ -7,7 +7,7 @@ export async function collectClientMetadata() {
   const scale = PixelRatio.get();
 
   // App info
-  const appVersion = Application.nativeApplicationVersion || Application.applicationVersion || undefined;
+  const appVersion = Application.nativeApplicationVersion || undefined;
   const buildNumber = Application.nativeBuildVersion || undefined;
 
   // Device info

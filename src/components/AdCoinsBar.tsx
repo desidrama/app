@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
+
+// Props for AdCoinsBar component
 type Props = {
   coins: number;
   skipCost: number;
@@ -8,18 +10,19 @@ type Props = {
   onWatchAd: () => void;
 };
 
-export default function AdCoinsBar({
-  coins,
-  skipCost,
-  onSkipWithCoins,
-  onWatchAd,
-}: Props) {
+
+/**
+ * AdCoinsBar: Shows user's coin balance and options to skip with coins or watch an ad.
+ */
+export default function AdCoinsBar({ coins, skipCost, onSkipWithCoins, onWatchAd }: Props) {
   const canSkip = coins >= skipCost;
 
   return (
     <View style={styles.container}>
+      {/* Display coin balance */}
       <Text style={styles.coins}>💰 Coins: {coins}</Text>
 
+      {/* Action buttons for skip and watch ad */}
       <View style={styles.actions}>
         <TouchableOpacity
           disabled={!canSkip}

@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import styles from '../styles/ReelPlayerStyles';
+import styles from '../screens/home/styles/ReelPlayerStyles';
 
 const SettingsPopup: React.FC<{ onCycleSpeed: () => void; onCycleQuality: () => void; speed: number; quality: string }> = ({ onCycleSpeed, onCycleQuality, speed, quality }) => {
   return (

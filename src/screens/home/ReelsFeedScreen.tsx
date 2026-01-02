@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../redux/store';
 import { setUser } from '../../redux/slices/userSlice';
+import { useTheme } from '../../context/ThemeContext';
 
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { videoService } from '../../services/video.service';
@@ -33,7 +34,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type Reel = {
   id: string;
@@ -59,11 +60,16 @@ type ReelsScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Reels'>;
 
 const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
   const navigation = useNavigation<ReelsScreenNavigationProp>();
+  const { colors } = useTheme();
   const route = useRoute<ReelsScreenRouteProp>();
   const routeParams = route.params;
   const insets = useSafeAreaInsets();
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
+
+  // Calculate available viewport height accounting for safe areas
+  // This ensures consistent item height across all devices
+  const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
 
 
 // =========================
@@ -276,10 +282,14 @@ useEffect(() => {
       console.log('✅ Found video at index:', index);
       setCurrentIndex(index);
       setTargetVideoFound(true);
-      // Scroll immediately
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToIndex({ index, animated: false });
-      });
+      // Scroll immediately - but guard against empty array
+      if (reels.length > 0) {
+        requestAnimationFrame(() => {
+          if (flatListRef.current && reels.length > 0) {
+            flatListRef.current.scrollToIndex({ index, animated: false });
+          }
+        });
+      }
       return;
     }
     
@@ -295,7 +305,9 @@ useEffect(() => {
           setCurrentIndex(0);
           setTargetVideoFound(true);
           setTimeout(() => {
-            flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+            if (flatListRef.current && reels.length > 0) {
+              flatListRef.current.scrollToIndex({ index: 0, animated: false });
+            }
           }, 100);
         }
       } catch (error) {
@@ -315,6 +327,12 @@ useEffect(() => {
       setTargetVideoId(videoId);
       setResumeTime(resume);
       setTargetVideoFound(false);
+      // Clear reels so the targetVideoId effect will reload with the new video
+      setReels([]);
+      setCurrentIndex(0);
+      setPage(1);
+      setHasMore(true);
+      // Don't scroll here - let the targetVideoId effect handle it after loading
     }
   }, [routeParams]);
 
@@ -343,10 +361,12 @@ useEffect(() => {
             setCurrentIndex(0);
             setTargetVideoFound(true);
             
-            // Scroll to index 0 immediately
-            requestAnimationFrame(() => {
-              flatListRef.current?.scrollToIndex({ index: 0, animated: false });
-            });
+            // Scroll to index 0 - but only after reels are definitely in state
+            setTimeout(() => {
+              if (flatListRef.current && reels.length > 0) {
+                flatListRef.current.scrollToIndex({ index: 0, animated: false });
+              }
+            }, 100);
             
             // Then load the feed in the background (after a short delay to ensure scroll happens)
             setTimeout(() => {
@@ -354,10 +374,11 @@ useEffect(() => {
             }, 300);
           } else {
             // If target video not found, just load normal feed
+            console.warn('❌ Target video not found:', targetVideoId);
             loadPage(1, { replace: true });
           }
         } catch (error) {
-          console.error('Error loading target video:', error);
+          console.error('❌ Error loading target video:', error);
           // Fallback to normal feed load
           loadPage(1, { replace: true });
         }
@@ -369,7 +390,7 @@ useEffect(() => {
       loadPage(1, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetVideoId]); // Only run when targetVideoId changes or on mount
+  }, [targetVideoId]); // Only run when targetVideoId changes
 
   // Load a page (forward or initial)
   const loadPage = useCallback(
@@ -395,7 +416,9 @@ useEffect(() => {
               setTargetVideoFound(true);
               
               setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+                if (flatListRef.current && reels.length > 0) {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                }
               }, 50);
             } else {
               // Target not in feed, append normally
@@ -444,7 +467,7 @@ useEffect(() => {
         const transformed = res.data.map(transformVideoToReel);
         setReels((prev) => [...transformed, ...prev]);
 
-        const offsetDelta = transformed.length * SCREEN_HEIGHT;
+        const offsetDelta = transformed.length * ITEM_HEIGHT;
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToOffset({
             offset: scrollOffsetRef.current + offsetDelta,
@@ -568,10 +591,10 @@ console.log('[AD DEBUG] Popup state set', {
   const handleScroll = useCallback((evt: any) => {
     const offsetY = evt.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
-    if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
+    if (offsetY < ITEM_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
       loadPrevious();
     }
-  }, [hasPrevious, loadingPrevious, loadPrevious, page]);
+  }, [hasPrevious, loadingPrevious, loadPrevious, page, ITEM_HEIGHT]);
 
   // Handle scroll to index failed
   const onScrollToIndexFailed = useCallback((info: any) => {
@@ -619,51 +642,54 @@ console.log('[AD DEBUG] Popup state set', {
     }
   }, [currentIndex, hasPrevious, page, loadPrevious]);
 
+  // Get item layout for FlatList - ensures consistent item sizing
+  const getItemLayout = useCallback(
+    (_data: any, index: number) => ({
+      length: ITEM_HEIGHT,
+      offset: ITEM_HEIGHT * index,
+      index,
+    }),
+    [ITEM_HEIGHT]
+  );
+
   // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:372',message:'renderItem called',data:{itemId:item.id,index,currentIndex,targetVideoId,resumeTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
-    // Check if this is the target video and pass resumeTime
+    // Always use resumeTime only for the current target video
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     return (
-      <ReelItem
-        key={item.id}
-        reel={item}
-        isActive={index === currentIndex}
-        initialTime={initialTime}
-        screenFocused={isScreenFocused}
-        shouldPause={showAdPopup}
-        onVideoEnd={handleEpisodeEnd}
-        onEpisodeSelect={(episodeId) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-          // #endregion
-          // Find the episode in the reels list
-          const episodeIndex = reels.findIndex(r => r.id === episodeId);
-          if (episodeIndex !== -1) {
-            setCurrentIndex(episodeIndex);
-            setTargetVideoId(episodeId);
-            setResumeTime(0);
-            // Scroll to the episode
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: true });
-            }, 100);
-          } else {
-            // Episode not in current feed, fetch it
-            setTargetVideoId(episodeId);
-            setResumeTime(0);
-            // The existing logic will handle fetching and scrolling
-          }
-        }}
-        // Swipe gestures removed - only vertical scrolling for navigation
-      />
+<View style={{ height: ITEM_HEIGHT }}>
+        <ReelItem
+          key={item.id}
+          reel={item}
+          isActive={index === currentIndex}
+          initialTime={initialTime}
+          screenFocused={isScreenFocused}
+          shouldPause={showAdPopup}
+          onVideoEnd={handleEpisodeEnd}
+          onEpisodeSelect={(episodeId) => {
+            // Find the episode in the reels list
+            const episodeIndex = reels.findIndex(r => r.id === episodeId);
+            if (episodeIndex !== -1) {
+              setCurrentIndex(episodeIndex);
+              setTargetVideoId(episodeId);
+              setResumeTime(0);
+              setTargetVideoFound(false);
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: false });
+              }, 100);
+            }
+          }}
+        />
+      </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
 
   // #region agent log
   // Log safe area insets for debugging
@@ -695,14 +721,14 @@ console.log('[AD DEBUG] Popup state set', {
   if (loading && reels.length === 0) {
     return (
       <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
-        <ActivityIndicator size="large" color="#FFD54A" />
+        <ActivityIndicator size="large" color={colors.yellow} />
         <Text style={styles.loadingText}>Loading reels…</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={[]}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Back Button */}
       {(() => {
         const backButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
@@ -723,7 +749,7 @@ console.log('[AD DEBUG] Popup state set', {
         onPress={handleBackPress}
         activeOpacity={0.7}
       >
-        <Ionicons name="chevron-back" size={31} color="#fff" />
+        <Ionicons name="chevron-back" size={31} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
       </TouchableOpacity>
 
       <FlatList
@@ -731,9 +757,11 @@ console.log('[AD DEBUG] Popup state set', {
         data={reels}
         keyExtractor={(it) => it.id}
         renderItem={renderItem}
+        getItemLayout={getItemLayout}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={SCREEN_HEIGHT}
+        snapToInterval={ITEM_HEIGHT}
+        snapToAlignment="start"
         decelerationRate="fast"
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -756,7 +784,7 @@ console.log('[AD DEBUG] Popup state set', {
         ) : null}
         ListFooterComponent={loading ? (
             <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
+              <ActivityIndicator size="small" color={colors.yellow} />
             </View>
         ) : null}
       />

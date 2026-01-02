@@ -1,33 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
-// Safely import ads module - handle case when native module is not available
-let mobileAds: any = null;
-let RewardedAd: any = null;
-let RewardedAdEventType: any = null;
-let AdEventType: any = null;
-let TestIds: any = null;
-let adsAvailable = false;
-
-try {
-  const adsModule = require("react-native-google-mobile-ads");
-  mobileAds = adsModule.default;
-  RewardedAd = adsModule.RewardedAd;
-  RewardedAdEventType = adsModule.RewardedAdEventType;
-  AdEventType = adsModule.AdEventType;
-  TestIds = adsModule.TestIds;
-  adsAvailable = true;
-} catch (error) {
-  // Ads module not available - running in Expo Go or module not properly installed
-  console.warn('Google Mobile Ads module not available:', error);
-  adsAvailable = false;
-}
+// Lazy-load Google Mobile Ads module (only available in dev builds, not Expo Go)
+// Using function to delay module access until runtime to avoid native module errors
+const getAdsModule = () => {
+  try {
+    return require("react-native-google-mobile-ads");
+  } catch (error) {
+    // Module not available - return null gracefully
+    return null;
+  }
+};
 
 type Props = {
   show: boolean;          // 👈 controls when ad shows
   onAdFinished: () => void;
 };
-
 
 export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
   const [loaded, setLoaded] = useState(false);
@@ -40,13 +28,21 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
 
   useEffect(() => {
     console.log('[RewardedAd] 🔄 Initialization useEffect running...');
-    console.log('[RewardedAd] adsAvailable:', adsAvailable, 'mobileAds:', !!mobileAds, 'RewardedAd:', !!RewardedAd);
     
-    // If ads module is not available, skip initialization
-    if (!adsAvailable || !mobileAds || !RewardedAd) {
+    let isMounted = true;
+    let unsubscribeLoaded: (() => void) | null = null;
+    let unsubscribeError: (() => void) | null = null;
+    let unsubscribeClosed: (() => void) | null = null;
+
+    // Lazy-load module at runtime
+    const adsModule = getAdsModule();
+    if (!adsModule) {
       console.warn('[RewardedAd] ⚠️ Ads module not available, skipping ad initialization');
       return;
     }
+
+    const { default: mobileAds, RewardedAd, RewardedAdEventType, AdEventType, TestIds } = adsModule;
+    console.log('[RewardedAd] adsAvailable: true, mobileAds:', !!mobileAds, 'RewardedAd:', !!RewardedAd);
 
     // Prevent re-initialization if already initialized
     if (initializedRef.current) {
@@ -54,7 +50,6 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
       return;
     }
 
-    let isMounted = true;
     console.log('[RewardedAd] 🚀 Initializing ad...');
 
     const initAd = async () => {
@@ -73,140 +68,138 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
         // IMPORTANT: Set up event listeners BEFORE calling load()
         console.log('[RewardedAd] Setting up event listeners...');
         
-        const unsubscribeLoaded = rewardedAd.addAdEventListener(
-        RewardedAdEventType.LOADED,
-        () => {
-          if (isMounted) {
-            console.log('[RewardedAd] ✅ Ad loaded successfully');
-            setLoaded(true);
-            isLoadingRef.current = false; // Ad is now loaded, not loading anymore
-            // If we were waiting to show the ad, show it now (with a small delay to ensure native side is ready)
-            if (pendingShowRef.current && !hasShownRef.current) {
-              console.log('[RewardedAd] Showing pending ad...');
-              // Small delay to ensure native SDK is fully ready
-              setTimeout(() => {
-                if (!isMounted || hasShownRef.current) return;
-                
-                try {
-                  hasShownRef.current = true;
-                  pendingShowRef.current = false;
-                  console.log('[RewardedAd] Calling show()...');
-                  rewardedAd.show();
-                } catch (error: any) {
-                  console.error('[RewardedAd] Error showing ad after load:', error);
-                  hasShownRef.current = false;
-                  setLoaded(false);
-                  
-                  // If error says ad not loaded, try reloading and wait
-                  if (error?.message?.includes('not loaded')) {
-                    console.log('[RewardedAd] Ad not ready, reloading...');
-                    if (!isLoadingRef.current) {
-                      try {
-                        isLoadingRef.current = true;
-                        rewardedAd.load();
-                        // Reset pending so it will show when loaded
-                        pendingShowRef.current = true;
-                      } catch (e) {
-                        console.error('[RewardedAd] Error reloading:', e);
-                        isLoadingRef.current = false;
-                        onAdFinished();
-                      }
-                    }
-                  } else {
-                    // Other errors - try to reload
-                    if (!isLoadingRef.current) {
-                      try {
-                        isLoadingRef.current = true;
-                        rewardedAd.load();
-                      } catch (e) {
-                        console.error('[RewardedAd] Error reloading:', e);
-                        isLoadingRef.current = false;
-                      }
-                    }
-                    onAdFinished();
-                  }
-                }
-              }, 200); // 200ms delay to ensure native side is ready
-            }
-          }
-        }
-      );
-
-      const unsubscribeError = rewardedAd.addAdEventListener(
-        AdEventType.ERROR,
-        (error: any) => {
-          console.error('[RewardedAd] ❌ Ad error:', error);
-          if (isMounted) {
-            setLoaded(false);
-            isLoadingRef.current = false; // Reset loading state on error
-            
-            // Don't auto-retry on error - let the user trigger it again by clicking the button
-            // Auto-retries can cause internal errors with concurrent loads
-            console.log('[RewardedAd] Ad error occurred - user can retry by clicking Watch Ad again');
-          }
-        }
-      );
-
-      // Also listen for when ad starts loading (if available)
-      try {
-        const unsubscribeLoadedStart = rewardedAd.addAdEventListener?.(
-          AdEventType.LOAD,
+        unsubscribeLoaded = rewardedAd.addAdEventListener(
+          RewardedAdEventType.LOADED,
           () => {
-            console.log('[RewardedAd] 📥 Ad load started...');
+            if (isMounted) {
+              console.log('[RewardedAd] ✅ Ad loaded successfully');
+              setLoaded(true);
+              isLoadingRef.current = false; // Ad is now loaded, not loading anymore
+              // If we were waiting to show the ad, show it now (with a small delay to ensure native side is ready)
+              if (pendingShowRef.current && !hasShownRef.current) {
+                console.log('[RewardedAd] Showing pending ad...');
+                // Small delay to ensure native SDK is fully ready
+                setTimeout(() => {
+                  if (!isMounted || hasShownRef.current) return;
+                  
+                  try {
+                    hasShownRef.current = true;
+                    pendingShowRef.current = false;
+                    console.log('[RewardedAd] Calling show()...');
+                    rewardedAd.show();
+                  } catch (error: any) {
+                    console.error('[RewardedAd] Error showing ad after load:', error);
+                    hasShownRef.current = false;
+                    setLoaded(false);
+                    
+                    // If error says ad not loaded, try reloading and wait
+                    if (error?.message?.includes('not loaded')) {
+                      console.log('[RewardedAd] Ad not ready, reloading...');
+                      if (!isLoadingRef.current) {
+                        try {
+                          isLoadingRef.current = true;
+                          rewardedAd.load();
+                          // Reset pending so it will show when loaded
+                          pendingShowRef.current = true;
+                        } catch (e) {
+                          console.error('[RewardedAd] Error reloading:', e);
+                          isLoadingRef.current = false;
+                          onAdFinished();
+                        }
+                      }
+                    } else {
+                      // Other errors - try to reload
+                      if (!isLoadingRef.current) {
+                        try {
+                          isLoadingRef.current = true;
+                          rewardedAd.load();
+                        } catch (e) {
+                          console.error('[RewardedAd] Error reloading:', e);
+                          isLoadingRef.current = false;
+                        }
+                      }
+                      onAdFinished();
+                    }
+                  }
+                }, 200); // 200ms delay to ensure native side is ready
+              }
+            }
           }
         );
-        if (unsubscribeLoadedStart) {
-          // Store it for cleanup if needed
-        }
-      } catch (e) {
-        // LOAD event might not be available, that's okay
-        console.log('[RewardedAd] LOAD event not available (this is okay)');
-      }
 
-      console.log('[RewardedAd] ✅ All event listeners attached');
-      
-      // NOW set the ad in state and call load()
-      setRewarded(rewardedAd);
-      initializedRef.current = true;
-      
-      console.log('[RewardedAd] 🚀 Calling load()...');
-      isLoadingRef.current = true;
-      rewardedAd.load();
-      console.log('[RewardedAd] ⏳ load() called, waiting for LOADED event...');
-
-      const unsubscribeClosed = rewardedAd.addAdEventListener(
-        AdEventType.CLOSED,
-        () => {
-          if (!isMounted) return;
-
-          console.log('[RewardedAd] Ad closed');
-          hasShownRef.current = false;
-          pendingShowRef.current = false;
-          setLoaded(false);
-          isLoadingRef.current = false; // Reset loading state
-          // Reload the ad for next time (only if not already loading)
-          if (!isLoadingRef.current) {
-            try {
-              isLoadingRef.current = true;
-              rewardedAd.load();
-            } catch (error) {
-              console.error('[RewardedAd] Error reloading ad after close:', error);
-              isLoadingRef.current = false;
+        unsubscribeError = rewardedAd.addAdEventListener(
+          AdEventType.ERROR,
+          (error: any) => {
+            console.error('[RewardedAd] ❌ Ad error:', error);
+            if (isMounted) {
+              setLoaded(false);
+              isLoadingRef.current = false; // Reset loading state on error
+              
+              // Don't auto-retry on error - let the user trigger it again by clicking the button
+              // Auto-retries can cause internal errors with concurrent loads
+              console.log('[RewardedAd] Ad error occurred - user can retry by clicking Watch Ad again');
             }
           }
-          onAdFinished();
-        }
-      );
+        );
 
-        // Store cleanup functions
-        const cleanup = () => {
-          isMounted = false;
-          unsubscribeLoaded();
-          unsubscribeError();
-          unsubscribeClosed();
-        };
+        // Also listen for when ad starts loading (if available)
+        try {
+          const unsubscribeLoadStart = rewardedAd.addAdEventListener?.(
+            AdEventType.LOAD,
+            () => {
+              console.log('[RewardedAd] 📥 Ad load started...');
+            }
+          );
+          if (unsubscribeLoadStart) {
+            // Store it for cleanup if needed
+          }
+        } catch (e) {
+          // LOAD event might not be available, that's okay
+          console.log('[RewardedAd] LOAD event not available (this is okay)');
+        }
+
+        unsubscribeClosed = rewardedAd.addAdEventListener(
+          AdEventType.CLOSED,
+          () => {
+            if (!isMounted) return;
+
+            console.log('[RewardedAd] Ad closed');
+            hasShownRef.current = false;
+            pendingShowRef.current = false;
+            setLoaded(false);
+            isLoadingRef.current = false; // Reset loading state
+            // Reload the ad for next time (only if not already loading)
+            if (!isLoadingRef.current) {
+              try {
+                isLoadingRef.current = true;
+                rewardedAd.load();
+              } catch (error) {
+                console.error('[RewardedAd] Error reloading ad after close:', error);
+                isLoadingRef.current = false;
+              }
+            }
+            onAdFinished();
+          }
+        );
+
+        console.log('[RewardedAd] ✅ All event listeners attached');
         
-        return cleanup;
+        // NOW set the ad in state and call load()
+        setRewarded(rewardedAd);
+        initializedRef.current = true;
+        
+        console.log('[RewardedAd] 🚀 Calling load()...');
+        isLoadingRef.current = true;
+        rewardedAd.load();
+        console.log('[RewardedAd] ⏳ load() called, waiting for LOADED event...');
+
+        // Return cleanup function
+        return () => {
+          isMounted = false;
+          if (unsubscribeLoaded) unsubscribeLoaded();
+          if (unsubscribeError) unsubscribeError();
+          if (unsubscribeClosed) unsubscribeClosed();
+        };
       } catch (error) {
         console.error('[RewardedAd] Error initializing ads:', error);
         initializedRef.current = false;
@@ -233,19 +226,17 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
         cleanupFn();
       }
     };
-  }, []); // Empty deps - only run once on mount
+  }, [onAdFinished]); // Empty deps - only run once on mount
 
   useEffect(() => {
-    // If ads not available, call onAdFinished immediately when show is true
-    if (show && !adsAvailable) {
-      console.warn('Ads not available, calling onAdFinished immediately');
+    // If ads module not available, call onAdFinished immediately when show is true
+    if (show && !getAdsModule()) {
+      console.warn('[RewardedAd] Ads not available, calling onAdFinished immediately');
       onAdFinished();
       return;
     }
 
     // Reset state when show becomes false (allows showing again next time)
-    // Reset hasShownRef when show becomes false to allow showing again
-    // This handles cases where the ad didn't actually show (e.g., failed to load)
     if (!show) {
       pendingShowRef.current = false;
       hasShownRef.current = false; // Reset to allow showing again
@@ -280,7 +271,6 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
       } else {
         console.warn('[RewardedAd] ⚠️ Rewarded ad object is null, cannot load');
         console.warn('[RewardedAd] This means initialization did not complete. Check if ads module is available.');
-        console.warn('[RewardedAd] Check console for initialization logs above.');
       }
       return;
     }
@@ -334,7 +324,6 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
       }, 200); // 200ms delay to ensure native side is ready
     }
   }, [show, loaded, rewarded, onAdFinished]);
-
 
   return <View />;
 }

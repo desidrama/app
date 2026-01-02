@@ -36,3 +36,8 @@
 //   }
 // }
 
+// Fallback/mock function for when Firebase is not set up
+export async function getFcmToken(): Promise<string | undefined> {
+  return undefined;
+}
+

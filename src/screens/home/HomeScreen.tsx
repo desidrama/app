@@ -7,19 +7,18 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  StatusBar,
   TouchableOpacity,
   FlatList,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Dimensions,
-  SafeAreaView,
   Platform,
   RefreshControl,
   ActivityIndicator,
   Image,
   Animated,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -27,7 +26,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import VideoCard from '../../components/VideoCard';
 import ContinueWatching from '../../components/ContinueWatching';
-import { Video, ResizeMode } from 'expo-av';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import {
   setContinueWatching,
   setContinueWatchingLoading,
@@ -37,29 +36,13 @@ import { carouselService, CarouselItem } from '../../services/carousel.service';
 import { API_BASE_URL } from '../../utils/api';
 import { videoService } from '../../services/video.service';
 import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
+import { useTheme } from '../../context/ThemeContext';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
-import { Video as VideoType } from '../../types';
+import type { Video } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Premium Design System
-const colors = {
-  background: '#080812',
-  surface: '#14141F',
-  surfaceElevated: '#1A1A28',
-  borderSubtle: 'rgba(35, 35, 52, 0.35)',
-  borderLight: 'rgba(245, 245, 250, 0.24)',
-  gold: '#F6C453',
-  goldDim: 'rgba(246, 196, 83, 0.15)',
-  error: '#F25F5C',
-  textPrimary: '#F5F5FA',
-  textSecondary: '#A5A5C0',
-  textMuted: '#6A6A82',
-  textOnGold: '#050509',
-  progressTrack: 'rgba(255, 255, 255, 0.15)',
-  progressFill: '#F6C453',
-};
-
+// Spacing constants for layout
 const spacing = {
   screenPadding: 16,
   cardGap: 12,
@@ -111,7 +94,7 @@ function CarouselVideoPlayer({
   isMuted: boolean;
   isActive: boolean;
 }) {
-  const videoRef = useRef<Video>(null);
+  const videoRef = useRef<ExpoVideo>(null);
 
   useEffect(() => {
     if (isActive) {
@@ -158,7 +141,7 @@ function CarouselVideoPlayer({
   }, []);
 
   return (
-    <Video
+    <ExpoVideo
       ref={videoRef}
       source={{ uri: videoUrl }}
       style={style}
@@ -174,6 +157,8 @@ function CarouselVideoPlayer({
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const dispatch = useDispatch();
+  const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { continueWatching, continueWatchingLoading } = useSelector(
     (state: RootState) => state.video
   );
@@ -198,6 +183,113 @@ export default function HomeScreen() {
   const headerOpacity = useRef(new Animated.Value(1)).current;
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const mainScrollY = useRef(new Animated.Value(0)).current;
+
+  // Create dynamic styles based on theme
+  const dynamicStyles = StyleSheet.create({
+    safeArea: { flex: 1 },
+    safeAreaInner: { flex: 1 },
+    container: { flex: 1 },
+    header: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, borderRadius: 0 },
+    logoText: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, letterSpacing: 0.5 },
+    logoAccent: { color: colors.yellow },
+    content: { flex: 1 },
+    // Carousel and hero card styles
+    chip: {
+      backgroundColor: theme === 'dark' ? 'rgba(246, 196, 83, 0.25)' : 'rgba(255, 165, 0, 0.15)',
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: theme === 'dark' ? 'rgba(246, 196, 83, 0.4)' : 'rgba(255, 165, 0, 0.3)',
+    },
+    chipText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.yellow,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    heroTagline: {
+      fontSize: 13,
+      fontWeight: '400',
+      color: theme === 'dark' ? '#A5A5C0' : '#666666',
+      lineHeight: 18,
+      textShadowColor: theme === 'dark' ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.3)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    playingIndicator: {
+      position: 'absolute',
+      top: 12,
+      left: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme === 'dark' ? 'rgba(246, 196, 83, 0.95)' : 'rgba(255, 165, 0, 0.9)',
+      borderRadius: 16,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      gap: 6,
+    },
+    playingDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: theme === 'dark' ? '#050509' : '#FFFFFF',
+    },
+    playingText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: theme === 'dark' ? '#050509' : '#FFFFFF',
+      letterSpacing: 0.5,
+    },
+    bookmarkButton: {
+      position: 'absolute',
+      top: 12,
+      right: 12,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      borderRadius: 20,
+      padding: 8,
+      zIndex: 10,
+    },
+    muteButton: {
+      position: 'absolute',
+      top: 12,
+      right: 56,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      borderRadius: 20,
+      padding: 8,
+      zIndex: 10,
+    },
+    pageDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0, 0, 0, 0.2)',
+    },
+    pageDotActive: {
+      width: 20,
+      backgroundColor: colors.yellow,
+    },
+    errorText: {
+      marginTop: 8,
+      color: colors.error,
+      fontSize: 14,
+    },
+    emptyText: {
+      color: colors.textMuted,
+      fontSize: 14,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    seeAllText: {
+      fontSize: 13,
+      fontWeight: '400',
+      color: colors.textSecondary,
+    },
+  });
   
   const fetchVideoUrlForCarouselItem = useCallback(async (item: CarouselItem): Promise<string | null> => {
     try {
@@ -324,7 +416,7 @@ export default function HomeScreen() {
     try {
       const latestResponse = await videoService.getLatestVideos(10, 'episode');
       if (latestResponse.success && latestResponse.data) {
-        const transformed = latestResponse.data.map((video: VideoType) => ({
+        const transformed = latestResponse.data.map((video: Video) => ({
           _id: (video as any)._id || String(Date.now()),
           title: video.title || 'Untitled',
           imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/140/200?random=1',
@@ -620,10 +712,17 @@ export default function HomeScreen() {
   }, [isMuted]);
 
   return (
-    <View style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-      <SafeAreaView style={styles.safeAreaInner}>
-        <View style={styles.container}>
+    <LinearGradient
+      colors={theme === 'dark'
+        ? [colors.background, colors.backgroundGradient, colors.background]
+        : ['#FFFFFF', '#FFFFFF', '#FFFFFF']}
+      locations={[0, 0.5, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={dynamicStyles.safeAreaInner} edges={['top', 'bottom', 'left', 'right']}>
+        <View style={dynamicStyles.container}>
           <Animated.View style={[
             styles.header, 
             { 
@@ -631,7 +730,15 @@ export default function HomeScreen() {
               transform: [{ translateY: headerTranslateY }]
             }
           ]}>
-            <Text style={styles.logoText}>Digital <Text style={styles.logoAccent}>कलाकार</Text></Text>
+            <View
+              style={{
+                paddingHorizontal: spacing.screenPadding,
+                paddingTop: insets.top + spacing.headerMargin,
+                paddingBottom: 12,
+              }}
+            >
+              <Text style={dynamicStyles.logoText}>Micro <Text style={dynamicStyles.logoAccent}>कहानी</Text></Text>
+            </View>
           </Animated.View>
 
           {(pullDistance > 0 || refreshing) && (
@@ -639,12 +746,12 @@ export default function HomeScreen() {
               pullDistance={pullDistance}
               threshold={threshold}
               refreshing={refreshing}
-              topOffset={Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 50 : 50}
+              topOffset={insets.top + 50}
             />
           )}
 
           <ScrollView
-            style={styles.content}
+            style={dynamicStyles.content}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
             onScroll={handleMainScroll}
@@ -661,16 +768,16 @@ export default function HomeScreen() {
             <View style={styles.carouselWrapper}>
               {carouselLoading ? (
                 <View style={styles.carouselPlaceholder}>
-                  <ActivityIndicator size="large" color={colors.gold} />
+                  <ActivityIndicator size="large" color={colors.yellow} />
                 </View>
               ) : carouselError ? (
                 <View style={styles.carouselPlaceholder}>
                   <Ionicons name="alert-circle-outline" size={32} color={colors.error} />
-                  <Text style={styles.errorText}>{carouselError}</Text>
+                  <Text style={dynamicStyles.errorText}>{carouselError}</Text>
                 </View>
               ) : carouselItems.length === 0 ? (
                 <View style={styles.carouselPlaceholder}>
-                  <Text style={styles.emptyText}>No content available</Text>
+                  <Text style={dynamicStyles.emptyText}>No content available</Text>
                 </View>
               ) : (
                 <>
@@ -778,12 +885,12 @@ export default function HomeScreen() {
                             >
                               <View style={styles.heroMetaContainer}>
                                 <View style={styles.chipContainer}>
-                                  <View style={styles.chip}>
-                                    <Text style={styles.chipText}>{getContentTypeLabel()}</Text>
+                                  <View style={dynamicStyles.chip}>
+                                    <Text style={dynamicStyles.chipText}>{getContentTypeLabel()}</Text>
                                   </View>
                                   {item.genres && item.genres.length > 0 && (
-                                    <View style={styles.chip}>
-                                      <Text style={styles.chipText}>{item.genres[0]}</Text>
+                                    <View style={dynamicStyles.chip}>
+                                      <Text style={dynamicStyles.chipText}>{item.genres[0]}</Text>
                                     </View>
                                   )}
                                 </View>
@@ -792,7 +899,7 @@ export default function HomeScreen() {
                                   {item.title}
                                 </Text>
                                 {item.tagline && (
-                                  <Text style={styles.heroTagline} numberOfLines={2}>
+                                  <Text style={dynamicStyles.heroTagline} numberOfLines={2}>
                                     {item.tagline}
                                   </Text>
                                 )}
@@ -800,19 +907,19 @@ export default function HomeScreen() {
                             </LinearGradient>
 
                             {isVideoActive && (
-                              <View style={styles.playingIndicator}>
-                                <View style={styles.playingDot} />
-                                <Text style={styles.playingText}>Playing Preview</Text>
+                              <View style={dynamicStyles.playingIndicator}>
+                                <View style={dynamicStyles.playingDot} />
+                                <Text style={dynamicStyles.playingText}>Playing Preview</Text>
                               </View>
                             )}
 
-                            <TouchableOpacity style={styles.bookmarkButton}>
-                              <Ionicons name="bookmark-outline" size={22} color="#FFF" />
+                            <TouchableOpacity style={dynamicStyles.bookmarkButton}>
+                              <Ionicons name="bookmark-outline" size={22} color={colors.textPrimary === '#000000' ? '#000000' : '#FFF'} />
                             </TouchableOpacity>
 
                             {isVideoActive && (
                               <TouchableOpacity
-                                style={styles.muteButton}
+                                style={dynamicStyles.muteButton}
                                 onPress={handleMuteToggle}
                                 activeOpacity={0.7}
                                 accessibilityLabel="Toggle sound"
@@ -820,7 +927,7 @@ export default function HomeScreen() {
                                 <Ionicons
                                   name={isMuted ? 'volume-mute' : 'volume-high'}
                                   size={22}
-                                  color="#FFF"
+                                  color={colors.textPrimary === '#000000' ? '#000000' : '#FFF'}
                                 />
                               </TouchableOpacity>
                             )}
@@ -839,8 +946,8 @@ export default function HomeScreen() {
                           <Animated.View
                             key={index}
                             style={[
-                              styles.pageDot,
-                              index === actualIndex && styles.pageDotActive,
+                              dynamicStyles.pageDot,
+                              index === actualIndex && dynamicStyles.pageDotActive,
                             ]}
                           />
                         );
@@ -860,9 +967,9 @@ export default function HomeScreen() {
             {latestTrendingData.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Latest & Trending</Text>
+                  <Text style={dynamicStyles.sectionTitle}>Latest & Trending</Text>
                   <TouchableOpacity>
-                    <Text style={styles.seeAllText}> →</Text>
+                    <Text style={dynamicStyles.seeAllText}> →</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -884,41 +991,35 @@ export default function HomeScreen() {
               </View>
             )}
 
-            <View style={styles.bottomPadding} />
+            <View style={{ height: insets.bottom + 24 }} />
           </ScrollView>
         </View>
       </SafeAreaView>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   safeAreaInner: {
     flex: 1,
   },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: spacing.screenPadding,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + spacing.headerMargin : spacing.headerMargin,
+    paddingTop: spacing.headerMargin,
     paddingBottom: 12,
-    backgroundColor: colors.background,
   },
   logoText: {
     fontSize: 20,
     fontWeight: '700',
-    color: colors.textPrimary,
     letterSpacing: 0.5,
   },
-  logoAccent: {
-    color: colors.gold,
-  },
+  logoAccent: {},
   content: {
     flex: 1,
   },
@@ -934,7 +1035,6 @@ const styles = StyleSheet.create({
     height: CARD_HEIGHT,
     borderRadius: radius.heroCard,
     overflow: 'hidden',
-    backgroundColor: colors.surface,
     elevation: 0,
     shadowOpacity: 0,
   },
@@ -943,7 +1043,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   heroCardActive: {
-    shadowColor: colors.gold,
+    shadowColor: '#F6C453',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 12,
@@ -972,80 +1072,13 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 4,
   },
-  chip: {
-    backgroundColor: 'rgba(246, 196, 83, 0.25)',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(246, 196, 83, 0.4)',
-  },
-  chipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.gold,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
   heroTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.textPrimary,
     letterSpacing: 0.3,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
-  },
-  heroTagline: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: colors.textSecondary,
-    lineHeight: 18,
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  playingIndicator: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(246, 196, 83, 0.95)',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  playingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.background,
-  },
-  playingText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.background,
-    letterSpacing: 0.5,
-  },
-  bookmarkButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 8,
-    zIndex: 10,
-  },
-  muteButton: {
-    position: 'absolute',
-    top: 12,
-    right: 56,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 8,
-    zIndex: 10,
   },
   pageDotsRow: {
     flexDirection: 'row',
@@ -1054,30 +1087,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 6,
   },
-  pageDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  pageDotActive: {
-    width: 20,
-    backgroundColor: colors.gold,
-  },
   carouselPlaceholder: {
     height: CARD_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: spacing.screenPadding,
-  },
-  errorText: {
-    marginTop: 8,
-    color: colors.error,
-    fontSize: 14,
-  },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
   section: {
     marginTop: spacing.sectionGap,
@@ -1088,16 +1102,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  seeAllText: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: colors.textSecondary,
   },
   cardsContainer: {
     gap: spacing.cardGap,

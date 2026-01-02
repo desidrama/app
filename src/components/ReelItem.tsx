@@ -10,6 +10,7 @@ import {
   FlatList,
   TextInput,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   Image,
@@ -18,13 +19,15 @@ import {
   PanResponder,
   ScrollView,
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { useKeyboard } from '@react-native-community/hooks';
 import { videoService } from '../services/video.service';
 import InfoSheet from './InfoSheet';
+import { CommentInputOptimized } from './CommentInputOptimized';
 import type { Video as VideoType } from '../types';
 
 const { width, height } = Dimensions.get('window');
@@ -68,6 +71,13 @@ const formatCount = (count: number): string => {
     return formatted.replace(/\.0$/, '') + 'K';
   }
   return count.toString();
+};
+
+// Format time as M:SS or MM:SS (e.g., 92 seconds -> "1:32", 5 seconds -> "0:05")
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 // ActionButton Component - Professional press animation and haptic feedback
@@ -134,6 +144,7 @@ const ActionButton = React.memo(({
 
 export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
   const insets = useSafeAreaInsets();
+  const { keyboardHeight } = useKeyboard();
   
   // Swipe gestures removed - only vertical scrolling for reels navigation (YouTube Shorts-style)
   // #region agent log
@@ -160,6 +171,29 @@ export default function ReelItem({ reel, isActive, initialTime = 0, screenFocuse
   const isActiveRef = useRef(isActive);
   const isMountedRef = useRef(true);
   const userPausedRef = useRef(false); // Track if user intentionally paused
+  const playbackRetryCountRef = useRef(0); // Track retry attempts for audio focus
+  const wasPlayingBeforeScrub = useRef(false); // Track if video was playing before scrubbing
+  const [isScrubbing, setIsScrubbing] = useState(false); // Track if user is currently scrubbing (state for UI updates)
+  const isScrubbingRef = useRef(false); // Track if user is currently scrubbing (for onPlaybackStatusUpdate)
+
+  // Configure audio mode for video playback (once on mount)
+  useEffect(() => {
+    const configureAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true, // Let system duck other audio when video plays
+          interruptionModeAndroid: 1, // DO_NOT_DUCK
+          interruptionModeIOS: 1, // DO_NOT_MIX
+        });
+      } catch (error) {
+        console.warn('Error configuring audio mode:', error);
+      }
+    };
+    
+    configureAudio();
+  }, []);
 
   const episodeSheetY = useRef(new Animated.Value(height)).current;
 const moreSheetY = useRef(new Animated.Value(height)).current;
@@ -267,17 +301,65 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     })
   ).current;
 
-  // PanResponder for draggable progress bar
+  // PanResponder for swipe-down to close More sheet (Instagram-style)
+  const moreSheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to vertical swipes downward
+        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Only allow downward swipes
+        if (gestureState.dy > 0) {
+          moreSheetY.setValue(Math.max(0, gestureState.dy));
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // If swiped down enough, close sheet
+        if (gestureState.dy > 50) {
+          closeMore();
+        } else {
+          // Snap back to original position
+          Animated.spring(moreSheetY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 65,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  // PanResponder for draggable progress bar (time scrubbing)
   const progressBarWidth = useRef(new Animated.Value(0)).current;
   const progressBarPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to horizontal gestures on progress bar area
+        // Prevent conflict with vertical swipe for next reel
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) || Math.abs(gestureState.dx) > 5;
+      },
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond if horizontal movement is greater than vertical
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 5;
+      },
       onPanResponderGrant: async () => {
         if (!isActive || !videoRef.current) return;
+        isScrubbingRef.current = true;
+        setIsScrubbing(true);
         try {
           const status = await videoRef.current.getStatusAsync();
           if (status.isLoaded && status.durationMillis) {
+            // Store playing state before scrubbing
+            wasPlayingBeforeScrub.current = status.isPlaying || false;
+            
+            // Pause video while scrubbing for better UX
+            if (status.isPlaying) {
+              await videoRef.current.pauseAsync();
+            }
+            
             try {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             } catch {}
@@ -285,7 +367,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         } catch {}
       },
       onPanResponderMove: async (evt, gestureState) => {
-        if (!isActive || !videoRef.current) return;
+        if (!isActive || !videoRef.current || !isScrubbingRef.current) return;
         try {
           const status = await videoRef.current.getStatusAsync();
           if (!status.isLoaded || !status.durationMillis) return;
@@ -298,13 +380,21 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           const tapPercent = Math.max(0, Math.min(1, containerX / barWidth));
           const newTime = (status.durationMillis / 1000) * tapPercent;
           
+          // REAL-TIME SEEK: Call setPositionAsync during movement
+          await videoRef.current.setPositionAsync(newTime * 1000);
+          
           // Update visual progress immediately
           const progressPercent = (newTime / (status.durationMillis / 1000)) * 100;
           progressBarWidth.setValue(progressPercent);
+          
+          // Update timer instantly while scrubbing
+          setCurrentTime(newTime);
         } catch {}
       },
       onPanResponderRelease: async (evt, gestureState) => {
         if (!isActive || !videoRef.current) return;
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
         try {
           const status = await videoRef.current.getStatusAsync();
           if (!status.isLoaded || !status.durationMillis) return;
@@ -317,7 +407,17 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           const tapPercent = Math.max(0, Math.min(1, containerX / barWidth));
           const newTime = (status.durationMillis / 1000) * tapPercent;
           
+          // Seek to the exact timestamp
           await videoRef.current.setPositionAsync(newTime * 1000);
+          
+          // Update timer immediately
+          setCurrentTime(newTime);
+          
+          // Resume playback if it was playing before scrubbing
+          if (wasPlayingBeforeScrub.current) {
+            await videoRef.current.playAsync();
+          }
+          
           try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           } catch {}
@@ -332,6 +432,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const [progress, setProgress] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0); // Current playback time in seconds
+  const [totalDuration, setTotalDuration] = useState(0); // Total video duration in seconds
   // Removed showPlayPauseButton and playPauseButtonTimeoutRef - Instagram-style: no visible play/pause button
   
   // Premium UI auto-hide state
@@ -341,7 +443,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // Video quality removed - Auto quality only (handled by backend/CDN)
   const [audioTrack, setAudioTrack] = useState('Original');
   const [isInWatchlist, setIsInWatchlist] = useState(false);
-  const [comment, setComment] = useState('');
   const [comments, setComments] = useState<Array<{
     id: string;
     username: string;
@@ -487,6 +588,49 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   }, [screenFocused, reel.id]);
 
+  // Helper function to play video with retry logic for audio focus errors
+  const playVideoWithRetry = async (retryCount = 0): Promise<boolean> => {
+    if (!videoRef.current || !isMountedRef.current) return false;
+    
+    try {
+      const status = await videoRef.current.getStatusAsync();
+      if (!status.isLoaded) {
+        // Video not ready yet, retry after delay
+        if (retryCount < 3) {
+          await new Promise(resolve => setTimeout(resolve, 200 + retryCount * 100));
+          return playVideoWithRetry(retryCount + 1);
+        }
+        return false;
+      }
+      
+      // Unmute and play
+      await videoRef.current.setIsMutedAsync(false);
+      await videoRef.current.playAsync();
+      playbackRetryCountRef.current = 0;
+      return true;
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      
+      // Check if this is an audio focus error
+      if (errorMsg.includes('AudioFocusNotAcquiredException') || errorMsg.includes('audio focus')) {
+        // Audio focus error - retry with exponential backoff
+        if (retryCount < 5) {
+          const delayMs = Math.min(1000, 100 * Math.pow(2, retryCount)); // 100ms, 200ms, 400ms, 800ms, 1600ms
+          console.log(`🔊 Audio focus conflict, retrying in ${delayMs}ms (attempt ${retryCount + 1}/5) for ${reel.title}`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          return playVideoWithRetry(retryCount + 1);
+        } else {
+          console.error(`❌ Failed to acquire audio focus after 5 retries for ${reel.title}`);
+          return false;
+        }
+      } else {
+        // Other error
+        console.error(`Error playing video ${reel.title}:`, error);
+        return false;
+      }
+    }
+  };
+
   useEffect(() => {
     // If reel is locked, pause immediately and prevent auto-play
     if (reel.adStatus === 'locked' && isActive && videoRef.current) {
@@ -520,55 +664,23 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:isActive',message:'Video becoming active - attempting play',data:{reelId:reel.id,hasVideoRef:!!videoRef.current,screenFocused,videoUrl:reel.videoUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'video-play'})}).catch(()=>{});
           // #endregion
           
-          // Wait for video to be loaded
-          const status = await videoRef.current!.getStatusAsync();
-          
-          if (status.isLoaded) {
-            // Unmute and play video
-            await videoRef.current!.setIsMutedAsync(false);
-            await videoRef.current!.playAsync();
+          // Use retry function with exponential backoff for audio focus errors
+          const success = await playVideoWithRetry();
+          if (success) {
             setIsPlaying(true);
             userPausedRef.current = false; // Clear user pause flag when video auto-plays
             
-      // Removed play button - Instagram-style: no visible play/pause button
-      
-      // Auto-hide UI after 2.5 seconds when video starts
-      setTimeout(() => {
-        if (isMountedRef.current && isActive && screenFocused) {
-          hideUI();
-        }
-      }, 2500);
-          } else {
-            // Retry after a short delay if video is not loaded yet
-            setTimeout(async () => {
-              if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
-                try {
-                  const retryStatus = await videoRef.current.getStatusAsync();
-                  if (retryStatus.isLoaded) {
-                    await videoRef.current.setIsMutedAsync(false);
-                    await videoRef.current.playAsync();
-                    setIsPlaying(true);
-                  }
-                } catch (error) {
-                  console.error('Error retrying video play:', error);
-                }
+            // Auto-hide UI after 2.5 seconds when video starts
+            setTimeout(() => {
+              if (isMountedRef.current && isActive && screenFocused) {
+                hideUI();
               }
-            }, 300);
+            }, 2500);
+          } else {
+            console.warn(`Failed to play video ${reel.title} after retries`);
           }
         } catch (error) {
-          console.error('Error playing video:', error);
-          // Retry once more after delay
-          setTimeout(async () => {
-            if (isMountedRef.current && isActive && screenFocused && videoRef.current) {
-              try {
-                await videoRef.current.setIsMutedAsync(false);
-                await videoRef.current.playAsync();
-                setIsPlaying(true);
-              } catch (retryError) {
-                console.error('Error on retry play:', retryError);
-              }
-            }
-          }, 500);
+          console.error('Error in playVideo:', error);
         }
       };
       
@@ -803,16 +915,21 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     
     // Update duration
     if (status.durationMillis && status.durationMillis > 0) {
-      videoDurationRef.current = status.durationMillis / 1000;
+      const durationSeconds = status.durationMillis / 1000;
+      videoDurationRef.current = durationSeconds;
+      setTotalDuration(durationSeconds);
     }
     
-    // Update progress
-    const currentTime = (status.positionMillis || 0) / 1000;
-    if (videoDurationRef.current > 0) {
-      const progressPercent = (currentTime / videoDurationRef.current) * 100;
-      setProgress(progressPercent);
-      // Update animated progress bar width
-      progressBarWidth.setValue(progressPercent);
+    // Only update progress and current time if not actively scrubbing
+    if (!isScrubbingRef.current) {
+      const currentTimeSeconds = (status.positionMillis || 0) / 1000;
+      setCurrentTime(currentTimeSeconds);
+      if (videoDurationRef.current > 0) {
+        const progressPercent = (currentTimeSeconds / videoDurationRef.current) * 100;
+        setProgress(progressPercent);
+        // Update animated progress bar width
+        progressBarWidth.setValue(progressPercent);
+      }
     }
     
     // Update playing state
@@ -975,22 +1092,25 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       uiHideTimeoutRef.current = null;
     }
     
-    // Auto-hide after 2.5 seconds
-    uiHideTimeoutRef.current = setTimeout(() => {
-      if (isMountedRef.current && uiOpacity) {
-        Animated.timing(uiOpacity, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }).start(() => {
-          if (isMountedRef.current) {
-            setUiVisible(false);
-          }
-        });
-      }
-    }, 2500);
-  }, [uiOpacity]);
+    // Auto-hide after 2.5 seconds ONLY if video is playing (not paused)
+    // When paused, keep UI visible (YouTube Shorts-style)
+    if (isPlaying && !userPausedRef.current) {
+      uiHideTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current && uiOpacity && isPlaying && !userPausedRef.current) {
+          Animated.timing(uiOpacity, {
+            toValue: 0,
+            duration: 250,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true,
+          }).start(() => {
+            if (isMountedRef.current && isPlaying && !userPausedRef.current) {
+              setUiVisible(false);
+            }
+          });
+        }
+      }, 2500);
+    }
+  }, [uiOpacity, isPlaying]);
   
   // Hide UI immediately
   const hideUI = useCallback(() => {
@@ -1009,7 +1129,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   // Removed showPlayPauseButtonTemporarily - Instagram-style: no visible play/pause button
 
-  // Handle screen tap: Left = Seek back, Right = Seek forward, Center = Play/Pause
+  // Handle screen tap: Center = Play/Pause only (no seek zones)
   const handleScreenPress = async (event: any) => {
     if (!isActive || !videoRef.current) return;
     
@@ -1020,48 +1140,16 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       const status = await videoRef.current.getStatusAsync();
       if (!status.isLoaded) return;
       
-      // Get tap position
-      const { locationX } = event.nativeEvent;
-      const screenWidth = width;
-      const tapX = locationX;
-      
-      // Determine if tap is on left, center, or right third of screen
-      const leftThird = screenWidth / 3;
-      const rightThird = (screenWidth * 2) / 3;
-      
-      if (tapX < leftThird) {
-        // Tap left → seek backward 10 seconds
-        const currentTime = (status.positionMillis || 0) / 1000;
-        const newTime = Math.max(0, currentTime - 10);
-        await videoRef.current.setPositionAsync(newTime * 1000);
-        
-        try {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } catch {}
-      } else if (tapX > rightThird) {
-        // Tap right → seek forward 10 seconds
-        const currentTime = (status.positionMillis || 0) / 1000;
-        const duration = (status.durationMillis || 0) / 1000;
-        const newTime = Math.min(duration, currentTime + 10);
-        await videoRef.current.setPositionAsync(newTime * 1000);
-        
-        try {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } catch {}
+      // Center tap → toggle play/pause (Instagram-style: no visible button)
+      if (status.isPlaying) {
+        userPausedRef.current = true;
+        await videoRef.current.pauseAsync();
+        setIsPlaying(false);
       } else {
-        // Center tap → toggle play/pause (Instagram-style: no visible button)
-        if (status.isPlaying) {
-          userPausedRef.current = true;
-          await videoRef.current.pauseAsync();
-          setIsPlaying(false);
-        } else {
-          userPausedRef.current = false;
-          await videoRef.current.setIsMutedAsync(false);
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
-        }
-        
-        // No visible play/pause button - just toggle state (Instagram-style)
+        userPausedRef.current = false;
+        await videoRef.current.setIsMutedAsync(false);
+        await videoRef.current.playAsync();
+        setIsPlaying(true);
       }
     } catch {
       // Silently ignore ALL errors - player is disposed
@@ -1226,8 +1314,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             }
             // Only unmute and play if this video is active
             if (isActive && screenFocused && videoRef.current && status.isLoaded) {
-              videoRef.current.setIsMutedAsync(false).catch(() => {});
-              videoRef.current.playAsync().catch(() => {});
+              // Use retry function to handle audio focus conflicts
+              playVideoWithRetry().catch((error) => {
+                console.error(`Error playing video on load for ${reel.title}:`, error);
+              });
             }
           }}
           onError={(error) => {
@@ -1256,6 +1346,23 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         delayLongPress={300}
         // Do NOT capture touches meant for buttons - buttons will be on Control Layer with higher zIndex
       />
+
+      {/* CENTER PLAY ICON - YouTube Shorts Style (Only visible when paused) */}
+      {!isPlaying && (
+        <Animated.View
+          style={[
+            styles.centerPlayIcon,
+            {
+              opacity: uiOpacity,
+            }
+          ]}
+          pointerEvents="none"
+        >
+          <View style={styles.centerPlayIconBackground}>
+            <Ionicons name="play" size={48} color="#FFFFFF" />
+          </View>
+        </Animated.View>
+      )}
 
       {/* ========================================
           LAYER 3: CONTROL LAYER (Buttons)
@@ -1290,7 +1397,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             }
           }}
         >
-          <Ionicons name="share-outline" size={27} color="#fff" />
+          <Ionicons name="arrow-redo-outline" size={27} color="#fff" />
         </TouchableOpacity>
       </Animated.View>
 
@@ -1305,6 +1412,13 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
       >
+        {/* Real-time Playback Timer */}
+        {totalDuration > 0 && (
+          <Text style={styles.playbackTimer}>
+            {formatTime(currentTime)} / {formatTime(totalDuration)}
+          </Text>
+        )}
+        
         <View style={styles.progressBarBackground} {...progressBarPanResponder.panHandlers}>
           <Animated.View 
             style={[
@@ -1317,6 +1431,21 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
               }
             ]} 
           />
+          {/* Scrubber Thumb - Visible while dragging */}
+          {isScrubbing && (
+            <Animated.View
+              style={[
+                styles.scrubberThumb,
+                {
+                  left: progressBarWidth.interpolate({
+                    inputRange: [0, 100],
+                    outputRange: ['0%', '100%'],
+                    extrapolate: 'clamp',
+                  }),
+                }
+              ]}
+            />
+          )}
         </View>
       </Animated.View>
 
@@ -1385,24 +1514,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         />
       </Animated.View>
 
-      {/* EPISODE INDICATOR - OTT Style (Top-left, non-intrusive) */}
-      {reel.episodeNumber && (
-        <Animated.View 
-          style={[
-            styles.episodeIndicator,
-            {
-              top: insets.top + (Platform.OS === 'ios' ? 8 : 12) + 8, // Below progress bar
-              left: insets.left + 16,
-              opacity: uiOpacity,
-            }
-          ]}
-          pointerEvents="none"
-        >
-          <Text style={styles.episodeIndicatorText}>
-            Ep {reel.episodeNumber}
-          </Text>
-        </Animated.View>
-      )}
 
       {/* BOTTOM INFO - Title/Metadata (Control Layer - Blocks video tap) */}
       {!showMore && !showComments && !showEpisodes && (
@@ -1411,20 +1522,53 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             styles.bottomInfo,
             {
               opacity: uiOpacity,
-              bottom: Math.max(insets.bottom, 16),
+              bottom: Math.max(insets.bottom, 16) + 20, // Moved up by 20dp to avoid overlapping with progress bar
             }
           ]}
           pointerEvents={uiVisible ? 'auto' : 'none'}
         >
-        {/* Tags */}
-        <View style={styles.tagsRow}>
-          <View style={styles.tagChip}>
-            <Text style={styles.tagText}>Romance</Text>
-          </View>
-          <View style={styles.tagChip}>
-            <Text style={styles.tagText}>Love Triangle</Text>
-          </View>
-        </View>
+        {/* Series Name with Info Icon */}
+        {(() => {
+          // Extract series name from seasonId (can be object with title or just ID)
+          const seriesName = typeof reel.seasonId === 'object' && reel.seasonId !== null 
+            ? (reel.seasonId as any).title 
+            : null;
+          
+          if (seriesName) {
+            return (
+              <View>
+                <View style={styles.seriesNameRow}>
+                  <Text style={styles.seriesNameText}>{seriesName}</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      openDesc();
+                    }}
+                    style={styles.seriesInfoIcon}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons name="information-circle" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+                
+                {/* Season & Episode Label */}
+                {(() => {
+                  const seasonNumber = typeof reel.seasonId === 'object' && reel.seasonId !== null 
+                    ? (reel.seasonId as any).seasonNumber || 1
+                    : 1;
+                  const episodeNumber = reel.episodeNumber || activeEpisode || 1;
+                  
+                  return (
+                    <Text style={styles.seasonEpisodeLabel}>
+                      Season {seasonNumber} · Eps {episodeNumber}
+                    </Text>
+                  );
+                })()}
+              </View>
+            );
+          }
+          return null;
+        })()}
         
         {/* Description with More button */}
         {(() => {
@@ -1460,26 +1604,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           );
         })()}
         
-        {/* Episode and Duration */}
-        {(() => {
-          const currentEpisode = reel.episodeNumber || activeEpisode || 1;
-          const totalEpisodes = episodesSheetEpisodes.length > 0 
-            ? episodesSheetEpisodes.length 
-            : seasonEpisodes.length > 0 
-            ? seasonEpisodes.length 
-            : currentEpisode > 1 ? currentEpisode : 1;
-          
-          // Ensure we show the correct format: episode/total
-          // If total is less than current, use current as total
-          const displayEpisode = currentEpisode;
-          const displayTotal = totalEpisodes >= currentEpisode ? totalEpisodes : currentEpisode;
-          
-          return (
-            <Text style={styles.meta}>
-              {String(displayEpisode)}/{String(displayTotal)} · {reel.duration || '2m'}
-            </Text>
-          );
-        })()}
         </Animated.View>
       )}
 
@@ -1638,46 +1762,51 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         <View style={styles.overlayLayer} pointerEvents="box-none">
           <Pressable
             style={styles.sheetBackdrop}
-            onPress={() => setShowComments(false)}
+            onPress={() => {
+              Keyboard.dismiss();
+              setShowComments(false);
+            }}
             pointerEvents="auto"
           />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.commentSheetContainer}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+          <Animated.View
+            style={[
+              styles.commentSheetContainer,
+              { 
+                transform: [{ translateY: commentSheetY }],
+              },
+            ]}
+            pointerEvents="auto"
+            {...commentSheetPanResponder.panHandlers}
           >
-            <Animated.View
-              style={[
-                styles.commentSheet,
-                { 
-                  paddingBottom: Math.max(insets.bottom, 20),
-                  transform: [{ translateY: commentSheetY }],
-                },
-              ]}
-              pointerEvents="auto"
-              {...commentSheetPanResponder.panHandlers}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={{ flex: 1 }}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+              enabled
             >
-              {/* Handle Bar */}
-              <View style={styles.commentHandleBar} />
-              
-              {/* Header */}
-              <View style={styles.commentHeader}>
-                <Text style={styles.commentHeaderTitle}>Comments</Text>
-                <TouchableOpacity
-                  onPress={() => setShowComments(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
+              <View style={styles.commentSheet}>
+                {/* Handle Bar */}
+                <View style={styles.commentHandleBar} />
+                
+                {/* Header */}
+                <View style={styles.commentHeader}>
+                  <Text style={styles.commentHeaderTitle}>Comments</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowComments(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
 
-              {/* Comments List - Scrollable */}
-              <FlatList
-                data={comments}
-                keyExtractor={(item) => item.id}
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingBottom: 16 }}
-                renderItem={({ item }) => (
+                {/* Comments List - Scrollable */}
+                <FlatList
+                  data={comments}
+                  keyExtractor={(item) => item.id}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 16 }}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
                   <View style={styles.commentItem}>
                     {/* Avatar */}
                     <View style={styles.commentAvatar}>
@@ -1758,65 +1887,34 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 }
               />
 
-              {/* Input Section */}
-              <View style={styles.commentInputSection}>
-                <View style={styles.commentInputAvatar}>
-                  <View style={styles.commentInputAvatarPlaceholder}>
-                    <Text style={styles.commentInputAvatarText}>Y</Text>
+                {/* Input Section - Optimized with API integration */}
+                <View style={[styles.commentInputSection, { paddingBottom: keyboardHeight ? keyboardHeight + 12 : Math.max(insets.bottom, 12) }]}>
+                  <View style={styles.commentInputAvatar}>
+                    <View style={styles.commentInputAvatarPlaceholder}>
+                      <Text style={styles.commentInputAvatarText}>Y</Text>
+                    </View>
                   </View>
+                  <CommentInputOptimized
+                    postId={reel.id}
+                    visible={showComments}
+                    onCommentAdded={(newComment) => {
+                      setComments(prev => [...prev, newComment]);
+                    }}
+                    inputStyle={styles.commentInput}
+                    sendButtonStyle={styles.commentSendBtn}
+                    sendButtonDisabledStyle={styles.commentSendBtnDisabled}
+                    sendButtonTextStyle={styles.commentSendText}
+                    sendButtonTextDisabledStyle={styles.commentSendTextDisabled}
+                    placeholder="Join the conversation..."
+                  />
                 </View>
-                <TextInput
-                  value={comment}
-                  onChangeText={setComment}
-                  placeholder="Add a comment..."
-                  placeholderTextColor="#888"
-                  style={styles.commentInput}
-                  multiline
-                  maxLength={2200}
-                  onSubmitEditing={() => {
-                    if (comment.trim()) {
-                      const newComment = {
-                        id: Date.now().toString(),
-                        username: 'You',
-                        text: comment.trim(),
-                        likes: 0,
-                        timeAgo: 'now',
-                        isLiked: false,
-                      };
-                      setComments([...comments, newComment]);
-                      setComment('');
-                    }
-                  }}
-                />
-                <TouchableOpacity
-                  onPress={() => {
-                    if (comment.trim()) {
-                      const newComment = {
-                        id: Date.now().toString(),
-                        username: 'You',
-                        text: comment.trim(),
-                        likes: 0,
-                        timeAgo: 'now',
-                        isLiked: false,
-                      };
-                      setComments([...comments, newComment]);
-                      setComment('');
-                    }
-                  }}
-                  disabled={!comment.trim()}
-                  style={[styles.commentSendBtn, !comment.trim() && styles.commentSendBtnDisabled]}
-                >
-                  <Text style={[styles.commentSendText, !comment.trim() && styles.commentSendTextDisabled]}>
-                    Post
-                  </Text>
-                </TouchableOpacity>
               </View>
-            </Animated.View>
-          </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+          </Animated.View>
         </View>
       )}
 
-      {/* MORE SHEET - Same pattern as Comment Sheet (WORKING REFERENCE) */}
+      {/* MORE SHEET - Same pattern as Comment Sheet (Instagram-style, no close button) */}
       {showMore && (
         <View style={styles.overlayLayer} pointerEvents="box-none">
           <Pressable
@@ -1838,13 +1936,14 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 },
               ]}
               pointerEvents="auto"
+              {...moreSheetPanResponder.panHandlers}
             >
-            {/* Header */}
+            {/* Handle Bar */}
+            <View style={styles.moreHandleBar} />
+            
+            {/* Header - No close button, Instagram-style */}
             <View style={styles.moreSheetHeader}>
               <Text style={styles.moreSheetTitle}>More Options</Text>
-              <TouchableOpacity onPress={closeMore} style={styles.moreSheetCloseBtn}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
             </View>
 
             <ScrollView 
@@ -1977,13 +2076,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 </TouchableOpacity>
               </View>
             </ScrollView>
-
-            {/* Cancel Button */}
-            <View style={[styles.moreCancelContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-              <TouchableOpacity style={styles.moreCancel} onPress={closeMore}>
-                <Text style={styles.moreCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
             </Animated.View>
           </KeyboardAvoidingView>
         </View>
@@ -1994,8 +2086,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
 const styles = StyleSheet.create({
   container: { 
-    width, 
-    height, 
+    width: '100%', 
+    flex: 1,
     backgroundColor: '#0E0E0E',
     overflow: 'hidden',
   },
@@ -2320,6 +2412,25 @@ infoValue: {
     textShadowRadius: 1,
     letterSpacing: 0.1,
   },
+  seriesNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 0,
+    marginBottom: 6, // 6dp gap before description
+  },
+  seriesNameText: {
+    color: '#FFFFFF',
+    fontSize: 18, // Slightly larger than description
+    fontWeight: '700', // Bold
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    letterSpacing: 0.2,
+  },
+  seriesInfoIcon: {
+    marginLeft: 7, // 7dp gap from title (slight horizontal spacing)
+    alignSelf: 'center', // Align with text baseline
+  },
   descriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2328,14 +2439,14 @@ infoValue: {
   },
   descriptionText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14, // Decreased from 16
     flex: 1,
-    lineHeight: 22,
-    fontWeight: '600',
+    lineHeight: 18, // Reduced from 22 for compact look
+    fontWeight: '500', // Reduced from 600 to make it secondary
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   moreButton: {
     marginLeft: 6,
@@ -2373,21 +2484,57 @@ infoValue: {
     position: 'absolute',
     left: 16,
     right: 16,
-    height: 3,
     zIndex: 4000, // Control Layer
-    justifyContent: 'center',
+    alignItems: 'flex-start', // Align timer to left
   },
   progressBarBackground: {
     width: '100%',
     height: 3,
     backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 1.5,
-    overflow: 'hidden',
+    overflow: 'visible', // Allow thumb to be visible
+    position: 'relative',
   },
   progressBarFill: { 
     height: 3,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFD54A', // Yellow color for progress bar
     borderRadius: 1.5,
+  },
+  scrubberThumb: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFD54A',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    top: -4.5, // Center on the 3px bar
+    marginLeft: -6, // Center the thumb
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  playbackTimer: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  seasonEpisodeLabel: {
+    color: '#FFD54A', // Golden color (OTT/web-series style)
+    fontSize: 14, // Slightly larger than description (14 vs 13)
+    fontWeight: '700', // Bold
+    marginTop: 5, // 5dp gap after series name (tight spacing)
+    marginBottom: 6, // 6dp gap before description
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
   },
   
   // Legacy progress bar styles (deprecated - removed duplicate progressBarBackground)
@@ -2464,13 +2611,14 @@ infoValue: {
       },
     }),
   },
-  // MORE SHEET - Same pattern as Comment Sheet
+  // MORE SHEET - Same pattern as Comment Sheet (Instagram-style, 65% height)
   moreSheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: height * 0.4, // 40% of screen height
+    height: height * 0.65, // 65% of screen height (increased from 40%)
+    maxHeight: height * 0.65,
     width: '100%',
     backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
@@ -2635,10 +2783,6 @@ infoValue: {
 
   // COMMENT SHEET - Full Bottom Sheet (Overlay Layer) - REFERENCE IMPLEMENTATION
   commentSheetContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  commentSheet: {
     position: 'absolute',
     left: 0,
     right: 0,
@@ -2646,12 +2790,16 @@ infoValue: {
     height: height * 0.85, // 85% height (full bottom sheet)
     maxHeight: height * 0.85,
     width: '100%',
+    zIndex: 10001, // Above backdrop
+  },
+  commentSheet: {
+    flex: 1,
     backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
     paddingHorizontal: 20,
-    zIndex: 10001, // Above backdrop
+    paddingBottom: 0, // Remove bottom padding - let KeyboardAvoidingView handle it
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.6,
@@ -2830,10 +2978,11 @@ infoValue: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 0, // Already handled by parent paddingHorizontal: 20
     borderTopWidth: 0.5,
     borderTopColor: 'rgba(255,255,255,0.1)',
     backgroundColor: '#0E0E0E', // Solid background so it stays visible
+    // paddingBottom handled dynamically: keyboardHeight + 12 when open, Math.max(insets.bottom, 12) when closed
   },
   commentInputAvatar: {
     marginRight: 12,
@@ -2865,8 +3014,10 @@ infoValue: {
   },
   commentSendBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 12,
+    marginLeft: 8,
     marginBottom: 4,
+    alignSelf: 'flex-end',
   },
   commentSendBtnDisabled: {
     opacity: 0.5,
@@ -2886,9 +3037,17 @@ infoValue: {
   moreSheetScrollContent: {
     paddingBottom: 12,
   },
+  moreHandleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
   moreSheetHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
     paddingBottom: 16,
@@ -2900,9 +3059,6 @@ infoValue: {
     fontSize: 20,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  moreSheetCloseBtn: {
-    padding: 4,
   },
   moreSection: {
     marginBottom: 32,
@@ -2971,26 +3127,31 @@ infoValue: {
     fontWeight: '500',
     marginLeft: 16,
   },
-  moreCancelContainer: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  moreCancel: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  moreCancelText: {
-    color: '#FFD54A',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   moreItem: { paddingVertical: 14 },
   moreText: { color: '#fff', fontSize: 16 },
   moreClose: { paddingVertical: 14, alignItems: 'center' },
   moreCloseText: { color: '#FFD54A', fontSize: 16 },
+  centerPlayIcon: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginTop: -40, // Half of background size (80/2)
+    marginLeft: -40, // Half of background size (80/2)
+    zIndex: 50,
+  },
+  centerPlayIconBackground: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
 
 
 });

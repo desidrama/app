@@ -14,6 +14,7 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout as logoutAPI, getUserProfile, updateProfile } from '../../services/api';
@@ -24,22 +25,9 @@ import { getToken } from '../../utils/storage';
 import { COLORS, TAB_COLORS } from '../../utils/constants';
 import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { useTheme } from '../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
-
-const PROFILE_COLORS = {
-  background: '#050509', // Match app theme
-  cardBg: '#15151C', // Dark card background
-  cardBgSecondary: '#221107', // Secondary card background
-  cardText: '#FFFFFF',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#9CA3AF', // Match app theme
-  textTertiary: '#666666',
-  accentGold: '#FFD54A', // Match app gold theme
-  accentGoldDark: '#FFD700',
-  accentRed: '#EF4444', // Match app danger color
-  border: '#1F2933', // Match app border color
-};
 
 // Generate a random username
 const generateRandomUsername = (): string => {
@@ -53,6 +41,7 @@ const generateRandomUsername = (): string => {
 
 export default function ProfileScreen({ navigation }: any) {
   const dispatch = useDispatch();
+  const { theme, toggleTheme, colors } = useTheme();
   const user = useSelector((state: RootState) => state.user.profile);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [autoPlay, setAutoPlay] = useState(true);
@@ -76,6 +65,34 @@ export default function ProfileScreen({ navigation }: any) {
 
   // Initialize with blue emoji as default
   const [selectedAvatar, setSelectedAvatar] = useState<string>('🔵');
+
+  // Create dynamic styles based on theme
+  const dynamicStyles = StyleSheet.create({
+    background: {
+      backgroundColor: colors.background,
+    },
+    cardBg: {
+      backgroundColor: colors.surface,
+    },
+    cardText: {
+      color: colors.textPrimary,
+    },
+    textPrimary: {
+      color: colors.textPrimary,
+    },
+    textSecondary: {
+      color: colors.textSecondary,
+    },
+    accentGold: {
+      color: colors.yellow,
+    },
+    accentRed: {
+      color: colors.error,
+    },
+    border: {
+      borderColor: colors.borderLight,
+    },
+  });
 
   const handleAvatarPress = () => {
     setAvatarModalVisible(true);
@@ -226,8 +243,8 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={PROFILE_COLORS.background} />
+    <SafeAreaView style={[styles.container, dynamicStyles.background]} edges={['top', 'bottom', 'left', 'right']}>
+      <StatusBar barStyle={theme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
 
       {/* Pull-to-Refresh Indicator */}
       {(pullDistance > 0 || refreshing) && (
@@ -249,8 +266,8 @@ export default function ProfileScreen({ navigation }: any) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#050509"
-            colors={['#050509']}
+            tintColor={theme === 'dark' ? '#050509' : '#000000'}
+            colors={[theme === 'dark' ? '#050509' : '#000000']}
             progressViewOffset={-1000}
           />
         }
@@ -258,13 +275,13 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Avatar Section */}
         <View style={styles.avatarSection}>
           <TouchableOpacity 
-            style={styles.avatarContainer}
+            style={[styles.avatarContainer, { backgroundColor: colors.surface, borderColor: colors.yellow }]}
             onPress={handleAvatarPress}
             activeOpacity={0.8}
           >
             <Text style={styles.avatarEmoji}>{selectedAvatar}</Text>
-            <View style={styles.avatarEditIndicator}>
-              <Ionicons name="camera" size={16} color={PROFILE_COLORS.textPrimary} />
+            <View style={[styles.avatarEditIndicator, { backgroundColor: colors.yellow, borderColor: colors.background }]}>
+              <Ionicons name="camera" size={16} color={colors.textPrimary} />
             </View>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -272,59 +289,77 @@ export default function ProfileScreen({ navigation }: any) {
             activeOpacity={0.7}
           >
             <View style={styles.usernameContainer}>
-              <Text style={styles.usernameText}>{username || 'Loading...'}</Text>
-              <Ionicons name="create-outline" size={18} color={PROFILE_COLORS.accentGold} style={styles.editIcon} />
+              <Text style={[styles.usernameText, { color: colors.textPrimary }]}>{username || 'Loading...'}</Text>
+              <Ionicons name="create-outline" size={18} color={colors.yellow} style={styles.editIcon} />
             </View>
           </TouchableOpacity>
         </View>
         
         {/* Settings Card */}
-        <View style={styles.settingsCard}>
+        <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
           {/* Phone Number Row */}
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
-              <Ionicons name="call-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
-              <Text style={styles.settingLabel}>Phone Number</Text>
+              <Ionicons name="call-outline" size={20} color={colors.yellow} style={styles.settingIcon} />
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>Phone Number</Text>
             </View>
             {loading ? (
-              <Text style={styles.settingValue}>Loading...</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Loading...</Text>
             ) : (
-              <Text style={styles.settingValue}>{profileData.phone || 'N/A'}</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{profileData.phone || 'N/A'}</Text>
             )}
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
 
           {/* AutoPlay Toggle */}
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
-              <Ionicons name="play-circle-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
-              <Text style={styles.settingLabel}>AutoPlay</Text>
+              <Ionicons name="play-circle-outline" size={20} color={colors.yellow} style={styles.settingIcon} />
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>AutoPlay</Text>
             </View>
             <Switch
               value={autoPlay}
               onValueChange={setAutoPlay}
-              trackColor={{ false: '#333333', true: PROFILE_COLORS.accentGold }}
-              thumbColor={autoPlay ? '#FFFFFF' : '#f4f3f4'}
-              ios_backgroundColor="#333333"
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={autoPlay ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
               style={styles.toggle}
             />
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
 
           {/* Notifications Toggle */}
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
-              <Ionicons name="notifications-outline" size={20} color={PROFILE_COLORS.accentGold} style={styles.settingIcon} />
-              <Text style={styles.settingLabel}>Notifications</Text>
+              <Ionicons name="notifications-outline" size={20} color={colors.yellow} style={styles.settingIcon} />
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>Notifications</Text>
             </View>
             <Switch
               value={notifications}
               onValueChange={setNotifications}
-              trackColor={{ false: '#333333', true: PROFILE_COLORS.accentGold }}
-              thumbColor={notifications ? '#FFFFFF' : '#f4f3f4'}
-              ios_backgroundColor="#333333"
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={notifications ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
+              style={styles.toggle}
+            />
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+
+          {/* Theme Toggle */}
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <Ionicons name={theme === 'dark' ? 'moon-outline' : 'sunny-outline'} size={20} color={colors.yellow} style={styles.settingIcon} />
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{theme === 'dark' ? 'Dark' : 'Light'} Theme</Text>
+            </View>
+            <Switch
+              value={theme === 'light'}
+              onValueChange={toggleTheme}
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={theme === 'light' ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
               style={styles.toggle}
             />
           </View>
@@ -336,23 +371,25 @@ export default function ProfileScreen({ navigation }: any) {
             icon="help-circle-outline"
             title="Help & Support"
             onPress={() => {}}
+            colors={colors}
           />
           <MenuItem
             icon="information-circle-outline"
             title="About"
             onPress={() => {}}
+            colors={colors}
           />
         </View>
 
         {/* Logout */}
         <View style={styles.logoutSection}>
           <TouchableOpacity
-            style={styles.logoutButton}
+            style={[styles.logoutButton, { backgroundColor: colors.surface, borderColor: colors.error + '40' }]}
             onPress={handleLogout}
             activeOpacity={0.8}
           >
-            <Ionicons name="log-out-outline" size={20} color={PROFILE_COLORS.accentRed} />
-            <Text style={styles.logoutText}>Logout</Text>
+            <Ionicons name="log-out-outline" size={20} color={colors.error} />
+            <Text style={[styles.logoutText, { color: colors.error }]}>Logout</Text>
           </TouchableOpacity>
         </View>
 
@@ -367,14 +404,14 @@ export default function ProfileScreen({ navigation }: any) {
         onRequestClose={() => setAvatarModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Choose Your Avatar</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.borderLight }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Choose Your Avatar</Text>
               <TouchableOpacity
                 onPress={() => setAvatarModalVisible(false)}
-                style={styles.closeButton}
+                style={[styles.closeButton, { backgroundColor: colors.background }]}
               >
-                <Ionicons name="close" size={24} color={PROFILE_COLORS.textPrimary} />
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <ScrollView 
@@ -386,15 +423,16 @@ export default function ProfileScreen({ navigation }: any) {
                   key={index}
                   style={[
                     styles.avatarGridOption,
-                    selectedAvatar === avatar && styles.avatarGridOptionSelected
+                    { backgroundColor: colors.background, borderColor: colors.borderLight },
+                    selectedAvatar === avatar && { ...styles.avatarGridOptionSelected, backgroundColor: colors.surface, borderColor: colors.yellow }
                   ]}
                   onPress={() => handleSelectAvatar(avatar)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.avatarGridEmoji}>{avatar}</Text>
                   {selectedAvatar === avatar && (
-                    <View style={styles.selectedCheckmark}>
-                      <Ionicons name="checkmark-circle" size={24} color={PROFILE_COLORS.accentGold} />
+                    <View style={[styles.selectedCheckmark, { backgroundColor: colors.background }]}>
+                      <Ionicons name="checkmark-circle" size={24} color={colors.yellow} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -412,56 +450,65 @@ export default function ProfileScreen({ navigation }: any) {
         onRequestClose={() => setUsernameModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Username</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.borderLight }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Edit Username</Text>
               <TouchableOpacity
                 onPress={() => setUsernameModalVisible(false)}
-                style={styles.closeButton}
+                style={[styles.closeButton, { backgroundColor: colors.background }]}
               >
-                <Ionicons name="close" size={24} color={PROFILE_COLORS.textPrimary} />
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <View style={styles.usernameInputContainer}>
               <TextInput
-                style={styles.usernameInput}
+                style={[styles.usernameInput, { backgroundColor: colors.background, color: colors.textPrimary, borderColor: colors.borderLight }]}
                 value={editingUsername}
                 onChangeText={setEditingUsername}
                 placeholder="Enter username"
-                placeholderTextColor={PROFILE_COLORS.textSecondary}
+                placeholderTextColor={colors.textSecondary}
                 maxLength={30}
                 autoFocus={true}
               />
               <TouchableOpacity
-                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                style={[styles.saveButton, { backgroundColor: colors.yellow }, saving && styles.saveButtonDisabled]}
                 onPress={handleSaveUsername}
                 activeOpacity={0.8}
                 disabled={saving}
               >
-                <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
+                <Text style={[styles.saveButtonText, { color: colors.background }]}>{saving ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const MenuItem = ({ icon, title, onPress }: any) => (
-  <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
+const MenuItem = ({ icon, title, onPress, colors }: any) => (
+  <TouchableOpacity 
+    style={[
+      styles.menuItem, 
+      { 
+        backgroundColor: colors.surface, 
+        borderColor: colors.borderLight
+      }
+    ]} 
+    onPress={onPress} 
+    activeOpacity={0.7}
+  >
     <View style={styles.menuItemLeft}>
-      <Ionicons name={icon} size={20} color={PROFILE_COLORS.accentGold} />
-      <Text style={styles.menuItemText}>{title}</Text>
+      <Ionicons name={icon} size={20} color={colors.yellow} />
+      <Text style={[styles.menuItemText, { color: colors.textPrimary }]}>{title}</Text>
     </View>
-    <Ionicons name="chevron-forward" size={20} color={PROFILE_COLORS.textSecondary} />
+    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
   </TouchableOpacity>
 );
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: PROFILE_COLORS.background,
   },
   scrollView: {
     flex: 1,
@@ -482,9 +529,7 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: PROFILE_COLORS.cardBg,
     borderWidth: 3,
-    borderColor: PROFILE_COLORS.accentGold,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -500,11 +545,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: PROFILE_COLORS.accentGold,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: PROFILE_COLORS.background,
   },
   usernameContainer: {
     flexDirection: 'row',
@@ -516,7 +559,6 @@ const styles = StyleSheet.create({
   usernameText: {
     fontSize: 24,
     fontWeight: '700',
-    color: PROFILE_COLORS.textPrimary,
     marginRight: 10,
     letterSpacing: 0.3,
   },
@@ -529,7 +571,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: PROFILE_COLORS.cardBg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,
@@ -543,18 +584,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: PROFILE_COLORS.border,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: PROFILE_COLORS.textPrimary,
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: PROFILE_COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -569,17 +607,13 @@ const styles = StyleSheet.create({
     width: (width - 80) / 4,
     height: (width - 80) / 4,
     borderRadius: (width - 80) / 8,
-    backgroundColor: PROFILE_COLORS.background,
     borderWidth: 2,
-    borderColor: PROFILE_COLORS.border,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
   avatarGridOptionSelected: {
-    borderColor: PROFILE_COLORS.accentGold,
     borderWidth: 3,
-    backgroundColor: PROFILE_COLORS.cardBgSecondary,
   },
   avatarGridEmoji: {
     fontSize: 40,
@@ -588,35 +622,28 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: PROFILE_COLORS.background,
     borderRadius: 12,
   },
   usernameInputContainer: {
     padding: 20,
   },
   usernameInput: {
-    backgroundColor: PROFILE_COLORS.background,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: PROFILE_COLORS.textPrimary,
     borderWidth: 1,
-    borderColor: PROFILE_COLORS.border,
     marginBottom: 16,
   },
   saveButton: {
-    backgroundColor: PROFILE_COLORS.accentGold,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
   },
   saveButtonText: {
-    color: PROFILE_COLORS.background,
     fontSize: 16,
     fontWeight: '700',
   },
   settingsCard: {
-    backgroundColor: PROFILE_COLORS.cardBg,
     width: width - 40,
     maxWidth: 400,
     alignSelf: 'center',
@@ -625,7 +652,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: PROFILE_COLORS.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -651,19 +677,16 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: PROFILE_COLORS.textPrimary,
     flex: 1,
     letterSpacing: 0.2,
   },
   settingValue: {
     fontSize: 15,
-    color: PROFILE_COLORS.textSecondary,
     fontWeight: '500',
     marginLeft: 8,
   },
   divider: {
     height: 1,
-    backgroundColor: PROFILE_COLORS.border,
     marginHorizontal: 20,
     width: '100%',
   },
@@ -683,10 +706,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 18,
     paddingHorizontal: 20,
-    backgroundColor: PROFILE_COLORS.cardBg,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: PROFILE_COLORS.border,
     minHeight: 56,
   },
   menuItemLeft: {
@@ -698,7 +719,6 @@ const styles = StyleSheet.create({
   menuItemText: {
     fontSize: 16,
     fontWeight: '500',
-    color: PROFILE_COLORS.textPrimary,
     letterSpacing: 0.2,
   },
   logoutSection: {
@@ -714,16 +734,13 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    backgroundColor: PROFILE_COLORS.cardBg,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: PROFILE_COLORS.accentRed + '40',
     minHeight: 56,
   },
   logoutText: {
     fontSize: 17,
     fontWeight: '600',
-    color: PROFILE_COLORS.accentRed,
     letterSpacing: 0.3,
   },
   saveButtonDisabled: {
