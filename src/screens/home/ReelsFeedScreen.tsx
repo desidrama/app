@@ -565,25 +565,27 @@ setShouldPlayAd(false);
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     return (
-      <ReelItem
-        key={item.id}
-        reel={item}
-        isActive={index === currentIndex}
-        initialTime={initialTime}
-        screenFocused={isScreenFocused}
-        onEpisodeSelect={(episodeId) => {
-          // Always reset resumeTime and targetVideoFound for new episode
-          setCurrentIndex(0);
-          setTargetVideoId(episodeId);
-          setResumeTime(0);
-          setTargetVideoFound(false);
-          setTimeout(() => {
-            flatListRef.current?.scrollToIndex({ index: 0, animated: false });
-          }, 100);
-        }}
-      />
+      <View style={{ height: ITEM_HEIGHT }}>
+        <ReelItem
+          key={item.id}
+          reel={item}
+          isActive={index === currentIndex}
+          initialTime={initialTime}
+          screenFocused={isScreenFocused}
+          onEpisodeSelect={(episodeId) => {
+            // Always reset resumeTime and targetVideoFound for new episode
+            setCurrentIndex(0);
+            setTargetVideoId(episodeId);
+            setResumeTime(0);
+            setTargetVideoFound(false);
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+            }, 100);
+          }}
+        />
+      </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
 
   // #region agent log
   // Log safe area insets for debugging

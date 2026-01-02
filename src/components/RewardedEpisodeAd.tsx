@@ -1,27 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
-// Safely import ads module - handle case when native module is not available
-let mobileAds: any = null;
-let RewardedAd: any = null;
-let RewardedAdEventType: any = null;
-let AdEventType: any = null;
-let TestIds: any = null;
-let adsAvailable = false;
-
-try {
-  const adsModule = require("react-native-google-mobile-ads");
-  mobileAds = adsModule.default;
-  RewardedAd = adsModule.RewardedAd;
-  RewardedAdEventType = adsModule.RewardedAdEventType;
-  AdEventType = adsModule.AdEventType;
-  TestIds = adsModule.TestIds;
-  adsAvailable = true;
-} catch (error) {
-  // Ads module not available - running in Expo Go or module not properly installed
-  console.warn('Google Mobile Ads module not available:', error);
-  adsAvailable = false;
-}
+// Lazy-load Google Mobile Ads module (only available in dev builds, not Expo Go)
+// Using function to delay module access until runtime to avoid native module errors
+const getAdsModule = () => {
+  try {
+    return require("react-native-google-mobile-ads");
+  } catch (error) {
+    // Module not available - return null gracefully
+    return null;
+  }
+};
 
 type Props = {
   show: boolean;          // 👈 controls when ad shows
@@ -35,30 +24,39 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
   const hasShownRef = useRef(false);
 
   useEffect(() => {
-    // If ads module is not available, skip initialization
-    if (!adsAvailable || !mobileAds || !RewardedAd) {
-      console.warn('Ads module not available, skipping ad initialization');
+    let isMounted = true;
+    let unsubscribeLoaded: (() => void) | null = null;
+    let unsubscribeClosed: (() => void) | null = null;
+
+    // Lazy-load module at runtime
+    const adsModule = getAdsModule();
+    if (!adsModule) {
+      // Module not available - skip silently (Expo Go or module not installed)
       return;
     }
 
-    let isMounted = true;
+    const { default: mobileAds, RewardedAd, RewardedAdEventType, AdEventType, TestIds } = adsModule;
 
     try {
       mobileAds().initialize();
+    } catch (error) {
+      console.warn('Google Mobile Ads initialization failed:', error);
+      return;
+    }
 
+    try {
       const rewardedAd = RewardedAd.createForAdRequest(TestIds.REWARDED);
       setRewarded(rewardedAd);
-
       rewardedAd.load();
 
-      const unsubscribeLoaded = rewardedAd.addAdEventListener(
+      unsubscribeLoaded = rewardedAd.addAdEventListener(
         RewardedAdEventType.LOADED,
         () => {
           if (isMounted) setLoaded(true);
         }
       );
 
-      const unsubscribeClosed = rewardedAd.addAdEventListener(
+      unsubscribeClosed = rewardedAd.addAdEventListener(
         AdEventType.CLOSED,
         () => {
           if (!isMounted) return;
@@ -72,33 +70,25 @@ export default function RewardedEpisodeAd({ show, onAdFinished }: Props) {
 
       return () => {
         isMounted = false;
-        unsubscribeLoaded();
-        unsubscribeClosed();
+        if (unsubscribeLoaded) unsubscribeLoaded();
+        if (unsubscribeClosed) unsubscribeClosed();
       };
     } catch (error) {
-      console.error('Error initializing ads:', error);
-      // Call onAdFinished immediately if ads fail to load (for development/testing)
-      if (isMounted) {
-        onAdFinished();
-      }
+      console.warn('RewardedAd creation failed:', error);
+      return () => {
+        isMounted = false;
+      };
     }
   }, [onAdFinished]);
 
   useEffect(() => {
-    // If ads not available or not loaded, call onAdFinished immediately when show is true
-    if (show && !adsAvailable) {
-      console.warn('Ads not available, calling onAdFinished immediately');
-      onAdFinished();
-      return;
-    }
-
     if (show && loaded && rewarded && !hasShownRef.current) {
+      hasShownRef.current = true;
       try {
-        hasShownRef.current = true;
         rewarded.show();
       } catch (error) {
-        console.error('Error showing ad:', error);
-        onAdFinished();
+        console.warn('RewardedAd show failed:', error);
+        onAdFinished(); // Call callback even if ad fails to show
       }
     }
   }, [show, loaded, rewarded, onAdFinished]);
