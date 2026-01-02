@@ -565,7 +565,6 @@ setShouldPlayAd(false);
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     return (
-<<<<<<< Updated upstream
       <ReelItem
         key={item.id}
         reel={item}
@@ -583,42 +582,8 @@ setShouldPlayAd(false);
           }, 100);
         }}
       />
-=======
-      <View style={{ height: ITEM_HEIGHT }}>
-        <ReelItem
-          key={item.id}
-          reel={item}
-          isActive={index === currentIndex}
-          initialTime={initialTime}
-          screenFocused={isScreenFocused}
-          onVideoEnd={handleEpisodeEnd}
-          onEpisodeSelect={(episodeId) => {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
-            // #endregion
-            // Find the episode in the reels list
-            const episodeIndex = reels.findIndex(r => r.id === episodeId);
-            if (episodeIndex !== -1) {
-              setCurrentIndex(episodeIndex);
-              setTargetVideoId(episodeId);
-              setResumeTime(0);
-              // Scroll to the episode
-              setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: true });
-              }, 100);
-            } else {
-              // Episode not in current feed, fetch it
-              setTargetVideoId(episodeId);
-              setResumeTime(0);
-              // The existing logic will handle fetching and scrolling
-            }
-          }}
-          // Swipe gestures removed - only vertical scrolling for navigation
-        />
-      </View>
->>>>>>> Stashed changes
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
 
   // #region agent log
   // Log safe area insets for debugging
