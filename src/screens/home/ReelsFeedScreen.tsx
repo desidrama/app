@@ -31,7 +31,7 @@ import type { Video as VideoType } from '../../types';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type Reel = {
   id: string;
@@ -63,6 +63,10 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const insets = useSafeAreaInsets();
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
+
+  // Calculate available viewport height accounting for safe areas
+  // This ensures consistent item height across all devices
+  const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
 
 
 // =========================
@@ -375,7 +379,7 @@ const deductCoins = (amount: number) => {
         const transformed = res.data.map(transformVideoToReel);
         setReels((prev) => [...transformed, ...prev]);
 
-        const offsetDelta = transformed.length * SCREEN_HEIGHT;
+        const offsetDelta = transformed.length * ITEM_HEIGHT;
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToOffset({
             offset: scrollOffsetRef.current + offsetDelta,
@@ -488,10 +492,10 @@ setShouldPlayAd(false);
   const handleScroll = useCallback((evt: any) => {
     const offsetY = evt.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
-    if (offsetY < SCREEN_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
+    if (offsetY < ITEM_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
       loadPrevious();
     }
-  }, [hasPrevious, loadingPrevious, loadPrevious, page]);
+  }, [hasPrevious, loadingPrevious, loadPrevious, page, ITEM_HEIGHT]);
 
   // Handle scroll to index failed
   const onScrollToIndexFailed = useCallback((info: any) => {
@@ -539,6 +543,16 @@ setShouldPlayAd(false);
     }
   }, [currentIndex, hasPrevious, page, loadPrevious]);
 
+  // Get item layout for FlatList - ensures consistent item sizing
+  const getItemLayout = useCallback(
+    (_data: any, index: number) => ({
+      length: ITEM_HEIGHT,
+      offset: ITEM_HEIGHT * index,
+      index,
+    }),
+    [ITEM_HEIGHT]
+  );
+
   // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
     // #region agent log
@@ -551,6 +565,7 @@ setShouldPlayAd(false);
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     return (
+<<<<<<< Updated upstream
       <ReelItem
         key={item.id}
         reel={item}
@@ -568,8 +583,42 @@ setShouldPlayAd(false);
           }, 100);
         }}
       />
+=======
+      <View style={{ height: ITEM_HEIGHT }}>
+        <ReelItem
+          key={item.id}
+          reel={item}
+          isActive={index === currentIndex}
+          initialTime={initialTime}
+          screenFocused={isScreenFocused}
+          onVideoEnd={handleEpisodeEnd}
+          onEpisodeSelect={(episodeId) => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:onEpisodeSelect',message:'Episode selected',data:{episodeId,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
+            // #endregion
+            // Find the episode in the reels list
+            const episodeIndex = reels.findIndex(r => r.id === episodeId);
+            if (episodeIndex !== -1) {
+              setCurrentIndex(episodeIndex);
+              setTargetVideoId(episodeId);
+              setResumeTime(0);
+              // Scroll to the episode
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: true });
+              }, 100);
+            } else {
+              // Episode not in current feed, fetch it
+              setTargetVideoId(episodeId);
+              setResumeTime(0);
+              // The existing logic will handle fetching and scrolling
+            }
+          }}
+          // Swipe gestures removed - only vertical scrolling for navigation
+        />
+      </View>
+>>>>>>> Stashed changes
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
 
   // #region agent log
   // Log safe area insets for debugging
@@ -608,7 +657,7 @@ setShouldPlayAd(false);
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={[]}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Back Button */}
       {(() => {
         const backButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
@@ -637,9 +686,11 @@ setShouldPlayAd(false);
         data={reels}
         keyExtractor={(it) => it.id}
         renderItem={renderItem}
+        getItemLayout={getItemLayout}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={SCREEN_HEIGHT}
+        snapToInterval={ITEM_HEIGHT}
+        snapToAlignment="start"
         decelerationRate="fast"
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}

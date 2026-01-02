@@ -1920,8 +1920,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
 const styles = StyleSheet.create({
   container: { 
-    width, 
-    height, 
+    width: '100%', 
+    flex: 1,
     backgroundColor: '#0E0E0E',
     overflow: 'hidden',
   },
