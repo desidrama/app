@@ -14,6 +14,7 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout as logoutAPI, getUserProfile, updateProfile } from '../../services/api';
@@ -242,7 +243,7 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, dynamicStyles.background]}>
+    <SafeAreaView style={[styles.container, dynamicStyles.background]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={theme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
 
       {/* Pull-to-Refresh Indicator */}
@@ -265,8 +266,8 @@ export default function ProfileScreen({ navigation }: any) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#050509"
-            colors={['#050509']}
+            tintColor={theme === 'dark' ? '#050509' : '#000000'}
+            colors={[theme === 'dark' ? '#050509' : '#000000']}
             progressViewOffset={-1000}
           />
         }
@@ -320,9 +321,9 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={autoPlay}
               onValueChange={setAutoPlay}
-              trackColor={{ false: '#333333', true: colors.yellow }}
-              thumbColor={autoPlay ? '#FFFFFF' : '#f4f3f4'}
-              ios_backgroundColor="#333333"
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={autoPlay ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
               style={styles.toggle}
             />
           </View>
@@ -338,9 +339,9 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={notifications}
               onValueChange={setNotifications}
-              trackColor={{ false: '#333333', true: colors.yellow }}
-              thumbColor={notifications ? '#FFFFFF' : '#f4f3f4'}
-              ios_backgroundColor="#333333"
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={notifications ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
               style={styles.toggle}
             />
           </View>
@@ -356,9 +357,9 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={theme === 'light'}
               onValueChange={toggleTheme}
-              trackColor={{ false: '#333333', true: colors.yellow }}
-              thumbColor={theme === 'light' ? '#FFFFFF' : '#f4f3f4'}
-              ios_backgroundColor="#333333"
+              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
+              thumbColor={theme === 'light' ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
+              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
               style={styles.toggle}
             />
           </View>
@@ -481,7 +482,7 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 

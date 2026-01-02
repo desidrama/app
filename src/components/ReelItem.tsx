@@ -47,11 +47,13 @@ type ReelItemProps = {
     thumbnailUrl?: string;
     initialLikes?: number;
     comments?: number;
+    adStatus?: 'locked' | 'unlocked'; // Ad lock status
   };
   isActive: boolean;
   initialTime?: number;
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
+  shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -141,7 +143,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -524,23 +526,41 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         try {
           const response = await videoService.getLikeStatus(reel.id);
           if (response?.success && response.data) {
-            setIsLiked(response.data.likedByUser || false);
-            setLikeCount(response.data.likes || reel.initialLikes || 0);
+            // Handle both old format (likedByUser, likes) and new format (liked, likeCount)
+            const liked = response.data.liked !== undefined ? response.data.liked : (response.data.likedByUser || false);
+            const likeCount = response.data.likeCount !== undefined ? response.data.likeCount : (response.data.likes || reel.initialLikes || 0);
+            setIsLiked(liked);
+            setLikeCount(likeCount);
           }
         } catch (error) {
           // Silently fail - user might not be authenticated
           console.log('Could not load like status:', error);
+          // Set default values on error
+          setIsLiked(false);
+          setLikeCount(reel.initialLikes || 0);
         }
       };
       loadLikeStatus();
     }
-  }, [isActive, reel.id]);
+  }, [isActive, reel.id, reel.initialLikes]);
 
   // Initialize video and seek to initial time when video becomes active
   useEffect(() => {
     if (isActive && videoRef.current && !hasSeekedRef.current) {
       const initializeVideo = async () => {
         try {
+            // If reel is locked, pause immediately and don't play
+          if (reel.adStatus === 'locked') {
+            console.log(`🔒 ReelItem: Reel ${reel.title} is locked during initialization, pausing`);
+            const status = await videoRef.current!.getStatusAsync();
+            if (status.isLoaded) {
+              await videoRef.current!.pauseAsync();
+              setIsPlaying(false);
+              isPausedByUserRef.current = true;
+            }
+            return;
+          }
+
           // Wait for video to be ready
           const status = await videoRef.current!.getStatusAsync();
           
@@ -551,8 +571,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
               console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
             }
             
-            // Ensure video is playing
-            if (isActive && screenFocused) {
+            // Ensure video is playing (only if not locked)
+            if (isActive && screenFocused && reel.adStatus === 'unlocked') {
               await videoRef.current!.setIsMutedAsync(false);
               await videoRef.current!.playAsync();
               setIsPlaying(true);
@@ -760,9 +780,28 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // Reset the pause flag when becoming active
     hasPausedForInactiveRef.current = false;
     
-    // Only play if: isActive AND screenFocused AND no sheets open AND user hasn't paused
-    // Use ref for immediate access (single source of truth)
-    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering) {
+    // If reel is locked, pause immediately and prevent auto-play
+    if (reel.adStatus === 'locked' && videoRef.current) {
+      console.log(`🔒 ReelItem: Reel ${reel.title} is locked, pausing video immediately`);
+      const pauseLockedVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            await videoRef.current!.pauseAsync();
+            setIsPlaying(false);
+            isPausedByUserRef.current = true;
+            console.log(`✅ ReelItem: Successfully paused locked video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error(`Error pausing locked video: ${reel.title}`, error);
+        }
+      };
+      pauseLockedVideo();
+      return;
+    }
+
+    // Only play if: isActive AND screenFocused AND no sheets open AND user hasn't paused AND not locked AND not shouldPause
+    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering && reel.adStatus !== 'locked' && !shouldPause) {
       const playVideo = async () => {
         try {
           // Use retry function with exponential backoff for audio focus errors
@@ -771,7 +810,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             actualPlayStateRef.current = 'playing';
             setIsPlaying(true);
             isPausedByUserRef.current = false;
-            setIsPausedByUser(false); // Clear user pause flag when video auto-plays
+            setIsPausedByUser(false);
             
             // Auto-hide UI after 2.5 seconds when video starts
             setTimeout(() => {
@@ -789,8 +828,134 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       
       playVideo();
     }
-    // Removed else block - duplicate pause logic is not needed here
-  }, [isActive, screenFocused, reel.title]); // Removed isPausedByUser and isBuffering from deps to prevent loops
+  }, [isActive, screenFocused, reel.title, reel.adStatus, shouldPause]);
+
+  // Pause video when shouldPause is true (e.g., when popup appears)
+  useEffect(() => {
+    if (shouldPause && videoRef.current && isActive) {
+      console.log(`⏸️ ReelItem: Pausing video for ${reel.title} (shouldPause=${shouldPause})`);
+      
+      // Set flags immediately to prevent play effect from resuming
+      isPausedByUserRef.current = true;
+      setIsPlaying(false);
+      
+      // Try to pause immediately without waiting
+      videoRef.current.pauseAsync().catch(() => {});
+      
+      // Also do the full pause check to ensure it worked
+      const pauseVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded && status.isPlaying) {
+            await videoRef.current!.pauseAsync();
+            console.log(`✅ ReelItem: Successfully paused video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error('Error pausing video:', error);
+        }
+      };
+      pauseVideo();
+    } else if (!shouldPause && videoRef.current && isActive && screenFocused && !isPausedByUserRef.current) {
+      // Resume video when shouldPause becomes false (popup closed, ad finished)
+      console.log(`▶️ ReelItem: Resuming video for ${reel.title} (shouldPause=false)`);
+      const resumeVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            isPausedByUserRef.current = false;
+            await videoRef.current!.setIsMutedAsync(false);
+            await videoRef.current!.playAsync();
+            setIsPlaying(true);
+            console.log(`✅ ReelItem: Successfully resumed video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error('Error resuming video:', error);
+        }
+      };
+      resumeVideo();
+    }
+  }, [shouldPause, isActive, screenFocused, reel.title]);
+
+
+  // Handle when reel becomes unlocked - allow video to play
+  useEffect(() => {
+    if (reel.adStatus === 'unlocked' && isActive && screenFocused && videoRef.current) {
+      // Reel was just unlocked, reset isPausedByUserRef to allow auto-play
+      console.log(`🔓 ReelItem: Reel ${reel.title} unlocked, allowing video to play`);
+      isPausedByUserRef.current = false;
+      
+      // Auto-play the video if it's active and screen is focused
+      const playUnlockedVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            // Force unmute the video first (even if already playing)
+            console.log(`🔊 ReelItem: Unmuting video for ${reel.title}`);
+            await videoRef.current!.setIsMutedAsync(false);
+            // Small delay to ensure unmute takes effect
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Verify unmute worked and retry if needed
+            const unmutedStatus = await videoRef.current!.getStatusAsync();
+            if (unmutedStatus.isLoaded && unmutedStatus.isMuted) {
+              // Still muted, try again with longer delay
+              console.log(`⚠️ ReelItem: Video still muted, retrying unmute for ${reel.title}`);
+              await videoRef.current!.setIsMutedAsync(false);
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Now play the video (or continue playing if already playing)
+            if (unmutedStatus.isLoaded && !unmutedStatus.isPlaying) {
+              await videoRef.current!.playAsync();
+            }
+            setIsPlaying(true);
+            
+            // Final check after a delay to ensure audio stays on
+            setTimeout(async () => {
+              if (videoRef.current && isActive && reel.adStatus === 'unlocked') {
+                try {
+                  const finalStatus = await videoRef.current.getStatusAsync();
+                  if (finalStatus.isLoaded) {
+                    if (finalStatus.isMuted) {
+                      console.log(`🔊 ReelItem: Video became muted, forcing unmute for ${reel.title}`);
+                      await videoRef.current.setIsMutedAsync(false);
+                    } else {
+                      console.log(`✅ ReelItem: Video confirmed playing with audio for ${reel.title}`);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error checking/ensuring audio:', error);
+                }
+              }
+            }, 200);
+            
+            console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio`);
+          } else {
+            // Video not loaded yet, wait a bit and retry
+            setTimeout(async () => {
+              if (videoRef.current && isActive && screenFocused && reel.adStatus === 'unlocked') {
+                try {
+                  const retryStatus = await videoRef.current.getStatusAsync();
+                  if (retryStatus.isLoaded) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    await videoRef.current.playAsync();
+                    setIsPlaying(true);
+                    console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio (retry)`);
+                  }
+                } catch (error) {
+                  console.error('Error playing unlocked video (retry):', error);
+                }
+              }
+            }, 300);
+          }
+        } catch (error) {
+          console.error('Error playing unlocked video:', error);
+        }
+      };
+      playUnlockedVideo();
+    }
+  }, [reel.adStatus, isActive, screenFocused, reel.title]);
 
   // Save progress function
   const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
@@ -1295,13 +1460,19 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const likeButtonRef = useRef(false); // Prevent double-tap spam
   const handleLike = async () => {
     if (likeButtonRef.current) return; // Prevent double-tap
+    if (!reel.id) {
+      console.error('Cannot like: reel.id is missing');
+      return;
+    }
     likeButtonRef.current = true;
 
     // Optimistic update - update UI immediately
     const previousLiked = isLiked;
     const previousCount = likeCount;
-    setIsLiked(!isLiked);
-    setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
+    const newLiked = !isLiked;
+    const newCount = newLiked ? likeCount + 1 : Math.max(0, likeCount - 1);
+    setIsLiked(newLiked);
+    setLikeCount(newCount);
 
     // Haptic feedback
     try {
@@ -1310,10 +1481,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
     try {
       const response = await videoService.toggleLike(reel.id);
-      if (response?.success) {
-        // Sync with server response
-        setIsLiked(response.data?.likedByUser ?? !previousLiked);
-        setLikeCount(response.data?.likes ?? previousCount);
+      if (response?.success && response.data) {
+        // Sync with server response - handle both formats for backward compatibility
+        const liked = response.data.liked !== undefined ? response.data.liked : (response.data.likedByUser ?? newLiked);
+        const likeCountValue = response.data.likeCount !== undefined ? response.data.likeCount : (response.data.likes ?? newCount);
+        setIsLiked(liked);
+        setLikeCount(likeCountValue);
       } else {
         // Revert on failure
         setIsLiked(previousLiked);
@@ -1325,7 +1498,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       setIsLiked(previousLiked);
       setLikeCount(previousCount);
       console.error('Error toggling like:', error);
-      if (error.message !== 'Authentication required') {
+      
+      // Only show alert for non-authentication errors
+      if (error.message !== 'Authentication required' && error.response?.status !== 401) {
         Alert.alert('Error', error.message || 'Failed to update like. Please try again.');
       }
     } finally {
@@ -1421,44 +1596,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           LAYER 3: CONTROL LAYER (Buttons)
           ======================================== */}
       
-      {/* TOP HEADER - Share Button (aligned with back button from ReelsFeedScreen) */}
-      <Animated.View 
-        style={[
-          styles.topHeader, 
-          {
-            top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-            left: insets.left + 16,
-            right: insets.right + 16,
-            opacity: uiOpacity,
-          }
-        ]}
-        pointerEvents={uiVisible ? 'box-none' : 'none'}
-      >
-        {/* Spacer to match back button position */}
-        <View style={{ width: 44 }} />
-        
-        {/* Share Button */}
-        <TouchableOpacity 
-          style={styles.topActionBtn}
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={async (e: any) => {
-            e.stopPropagation();
-            showUI();
-            try {
-              const shareMessage = `Check out "${reel.title}" on Digital Kalakar! 🎬\n\n${reel.description || 'Watch now!'}`;
-              await Share.share({
-                message: shareMessage,
-                title: reel.title,
-              });
-            } catch (error) {
-              console.error('Error sharing:', error);
-            }
-          }}
-        >
-          <Ionicons name="arrow-redo-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-      </Animated.View>
+      {/* Share button is now in ReelsFeedScreen topHeader container */}
 
       {/* PROGRESS BAR - Bottom edge, draggable (Control Layer) */}
       <Animated.View 
@@ -2002,9 +2140,17 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             {/* Handle Bar */}
             <View style={styles.moreHandleBar} />
             
-            {/* Header - No close button, Instagram-style */}
+            {/* Header - With close button */}
             <View style={styles.moreSheetHeader}>
               <Text style={styles.moreSheetTitle}>More Options</Text>
+              <TouchableOpacity
+                onPress={closeMore}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.moreSheetCloseBtn}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
             </View>
 
             <ScrollView 
@@ -3111,10 +3257,12 @@ infoValue: {
   },
   moreSheetHeader: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
     marginBottom: 24,
-    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
@@ -3123,6 +3271,11 @@ infoValue: {
     fontSize: 20,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  moreSheetCloseBtn: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   moreSection: {
     marginBottom: 32,
