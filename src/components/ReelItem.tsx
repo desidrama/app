@@ -46,11 +46,13 @@ type ReelItemProps = {
     thumbnailUrl?: string;
     initialLikes?: number;
     comments?: number;
+    adStatus?: 'locked' | 'unlocked'; // Ad lock status
   };
   isActive: boolean;
   initialTime?: number;
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
+  shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -140,7 +142,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -460,6 +462,19 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     if (isActive && videoRef.current && !hasSeekedRef.current) {
       const initializeVideo = async () => {
         try {
+          // If reel is locked, pause immediately and don't play
+          if (reel.adStatus === 'locked') {
+            console.log(`🔒 ReelItem: Reel ${reel.title} is locked during initialization, pausing`);
+            const status = await videoRef.current!.getStatusAsync();
+            if (status.isLoaded) {
+              await videoRef.current!.pauseAsync();
+              // Don't mute - allow audio to play even when paused
+              setIsPlaying(false);
+              userPausedRef.current = true;
+            }
+            return;
+          }
+
           // Wait for video to be ready
           const status = await videoRef.current!.getStatusAsync();
           
@@ -470,8 +485,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
               console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
             }
             
-            // Ensure video is playing
-            if (isActive && screenFocused) {
+            // Ensure video is playing (only if not locked)
+            if (isActive && screenFocused && reel.adStatus !== 'locked') {
               await videoRef.current!.setIsMutedAsync(false);
               await videoRef.current!.playAsync();
               setIsPlaying(true);
@@ -617,8 +632,32 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   };
 
   useEffect(() => {
-    // Only play if both isActive AND screenFocused AND user hasn't intentionally paused
-    if (isActive && screenFocused && videoRef.current && !userPausedRef.current) {
+    // If reel is locked, pause immediately and prevent auto-play
+    if (reel.adStatus === 'locked' && isActive && videoRef.current) {
+      console.log(`🔒 ReelItem: Reel ${reel.title} is locked, pausing video immediately`);
+      
+      const pauseLockedVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            // Force pause even if already paused
+            await videoRef.current!.pauseAsync();
+            // Don't mute - allow audio to play even when paused
+            setIsPlaying(false);
+            userPausedRef.current = true; // Prevent auto-play
+            console.log(`✅ ReelItem: Successfully paused locked video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error(`Error pausing locked video: ${reel.title}`, error);
+        }
+      };
+      
+      pauseLockedVideo();
+      return; // Don't proceed to play logic
+    }
+
+    // Only play if both isActive AND screenFocused AND user hasn't intentionally paused AND reel is unlocked AND popup is not showing
+    if (isActive && screenFocused && videoRef.current && !userPausedRef.current && reel.adStatus !== 'locked' && !shouldPause) {
       const playVideo = async () => {
         try {
           // #region agent log
@@ -693,7 +732,134 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         }
       }, 100);
     }
-  }, [isActive, screenFocused, reel.title]);
+  }, [isActive, screenFocused, reel.title, reel.adStatus, shouldPause]);
+
+  // Pause video when shouldPause is true (e.g., when popup appears)
+  useEffect(() => {
+    if (shouldPause && videoRef.current && isActive) {
+      console.log(`⏸️ ReelItem: Pausing video for ${reel.title} (shouldPause=${shouldPause})`);
+      
+      // Set flags immediately to prevent play effect from resuming
+      userPausedRef.current = true;
+      setIsPlaying(false);
+      
+      // Try to pause immediately without waiting
+      videoRef.current.pauseAsync().catch(() => {});
+      
+      // Also do the full pause check to ensure it worked
+      const pauseVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded && status.isPlaying) {
+            await videoRef.current!.pauseAsync();
+            console.log(`✅ ReelItem: Successfully paused video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error('Error pausing video:', error);
+        }
+      };
+      pauseVideo();
+    } else if (!shouldPause && videoRef.current && isActive && screenFocused) {
+      // Resume video when shouldPause becomes false (popup closed, ad finished)
+      console.log(`▶️ ReelItem: Resuming video for ${reel.title} (shouldPause=false)`);
+      const resumeVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            userPausedRef.current = false; // Clear pause flag to allow playback
+            await videoRef.current!.setIsMutedAsync(false);
+            await videoRef.current!.playAsync();
+            setIsPlaying(true);
+            console.log(`✅ ReelItem: Successfully resumed video ${reel.title}`);
+          }
+        } catch (error) {
+          console.error('Error resuming video:', error);
+        }
+      };
+      resumeVideo();
+    }
+  }, [shouldPause, isActive, screenFocused, reel.title]);
+
+
+  // Handle when reel becomes unlocked - allow video to play
+  useEffect(() => {
+    if (reel.adStatus === 'unlocked' && isActive && screenFocused && videoRef.current) {
+      // Reel was just unlocked, reset userPausedRef to allow auto-play
+      console.log(`🔓 ReelItem: Reel ${reel.title} unlocked, allowing video to play`);
+      userPausedRef.current = false;
+      
+      // Auto-play the video if it's active and screen is focused
+      const playUnlockedVideo = async () => {
+        try {
+          const status = await videoRef.current!.getStatusAsync();
+          if (status.isLoaded) {
+            // Force unmute the video first (even if already playing)
+            console.log(`🔊 ReelItem: Unmuting video for ${reel.title}`);
+            await videoRef.current!.setIsMutedAsync(false);
+            // Small delay to ensure unmute takes effect
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Verify unmute worked and retry if needed
+            const unmutedStatus = await videoRef.current!.getStatusAsync();
+            if (unmutedStatus.isLoaded && unmutedStatus.isMuted) {
+              // Still muted, try again with longer delay
+              console.log(`⚠️ ReelItem: Video still muted, retrying unmute for ${reel.title}`);
+              await videoRef.current!.setIsMutedAsync(false);
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Now play the video (or continue playing if already playing)
+            if (!unmutedStatus.isPlaying) {
+              await videoRef.current!.playAsync();
+            }
+            setIsPlaying(true);
+            
+            // Final check after a delay to ensure audio stays on
+            setTimeout(async () => {
+              if (videoRef.current && isActive && reel.adStatus === 'unlocked') {
+                try {
+                  const finalStatus = await videoRef.current.getStatusAsync();
+                  if (finalStatus.isLoaded) {
+                    if (finalStatus.isMuted) {
+                      console.log(`🔊 ReelItem: Video became muted, forcing unmute for ${reel.title}`);
+                      await videoRef.current.setIsMutedAsync(false);
+                    } else {
+                      console.log(`✅ ReelItem: Video confirmed playing with audio for ${reel.title}`);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error checking/ensuring audio:', error);
+                }
+              }
+            }, 200);
+            
+            console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio`);
+          } else {
+            // Video not loaded yet, wait a bit and retry
+            setTimeout(async () => {
+              if (videoRef.current && isActive && screenFocused && reel.adStatus === 'unlocked') {
+                try {
+                  const retryStatus = await videoRef.current.getStatusAsync();
+                  if (retryStatus.isLoaded) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    await videoRef.current.playAsync();
+                    setIsPlaying(true);
+                    console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio (retry)`);
+                  }
+                } catch (error) {
+                  console.error('Error playing unlocked video (retry):', error);
+                }
+              }
+            }, 300);
+          }
+        } catch (error) {
+          console.error('Error playing unlocked video:', error);
+        }
+      };
+      playUnlockedVideo();
+    }
+  }, [reel.adStatus, isActive, screenFocused, reel.title]);
 
   // Save progress function
   const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
