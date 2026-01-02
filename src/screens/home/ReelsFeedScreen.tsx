@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
   Pressable,
+  Alert,
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -29,6 +30,8 @@ import styles from './styles/ReelPlayerStyles';
 import type { Video as VideoType } from '../../types';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { skipAdWithCoins, getUserProfile } from '../../services/api';
+import { getToken } from '../../utils/storage';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -73,29 +76,85 @@ const coins = user?.coinsBalance ?? user?.coins ?? 0;
 
 const coinAnim = useRef(new Animated.Value(1)).current;
 
+// Fetch user profile to get latest coins
+const fetchUserProfile = useCallback(async () => {
+  try {
+    const token = await getToken();
+    if (!token) {
+      return;
+    }
+
+    const response = await getUserProfile();
+    if (response.success && response.data) {
+      dispatch(setUser(response.data));
+    }
+  } catch (error: any) {
+    // Silently fail - coins will show 0 if not available
+    console.error('Error fetching user profile:', error);
+  }
+}, [dispatch]);
+
+// Fetch user profile when screen is focused to get latest coins
+useFocusEffect(
+  useCallback(() => {
+    fetchUserProfile();
+  }, [fetchUserProfile])
+);
 
 
 
 
 
+const deductCoins = async (amount: number): Promise<boolean> => {
+  if (!user) return false;
 
+  try {
+    // Call backend API to deduct coins
+    const response = await skipAdWithCoins(amount);
+    
+    if (response.success && response.data) {
+      // Update Redux state with new balance from backend
+      const updatedBalance = response.data.coinsBalance;
+      dispatch(
+        setUser({
+          ...user,
+          coinsBalance: updatedBalance,
+          coins: updatedBalance,
+        })
+      );
 
+      // Animate coin deduction
+      Animated.sequence([
+        Animated.timing(coinAnim, {
+          toValue: 0.8,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(coinAnim, {
+          toValue: 1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start();
 
-const deductCoins = (amount: number) => {
-  if (!user) return;
-
-  const currentCoins = user.coinsBalance ?? user.coins ?? 0;
-  const updatedCoins = Math.max(currentCoins - amount, 0);
-
-  dispatch(
-    setUser({
-      ...user,
-      coinsBalance:
-        user.coinsBalance !== undefined ? updatedCoins : user.coinsBalance,
-      coins:
-        user.coinsBalance === undefined ? updatedCoins : user.coins,
-    })
-  );
+      return true;
+    } else {
+      Alert.alert('Error', response.message || 'Failed to deduct coins');
+      return false;
+    }
+  } catch (error: any) {
+    console.error('Error deducting coins:', error);
+    
+    // Handle specific error cases
+    if (error.response?.status === 400) {
+      const errorMessage = error.response.data?.message || 'Insufficient coins';
+      Alert.alert('Insufficient Coins', errorMessage);
+    } else {
+      Alert.alert('Error', 'Failed to deduct coins. Please try again.');
+    }
+    
+    return false;
+  }
 };
 
 
@@ -111,8 +170,37 @@ const deductCoins = (amount: number) => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   useEffect(() => {
-  adHandledRef.current = false;
+  // Reset adHandledRef when changing to a different reel
+  // But only if we're not currently on the same reel that was just unlocked
+  if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
+    adHandledRef.current = false;
+    adReelIndexRef.current = null;
+  }
 }, [currentIndex]);
+
+useEffect(() => {
+  const reel = reels[currentIndex];
+  if (!reel) return;
+
+  // Only show popup if reel is locked AND we haven't handled it yet
+  // AND we're not currently showing an ad
+  if (reel.adStatus === 'locked' && !adHandledRef.current && !isAdOpen) {
+    console.log('[AD DEBUG] Locked reel entered → opening popup', {
+      index: currentIndex,
+      title: reel.title,
+      adStatus: reel.adStatus,
+    });
+
+    adHandledRef.current = true;
+    adReelIndexRef.current = currentIndex;
+
+    setIsAdOpen(true);
+    setShowAd(true);
+    setShowAdPopup(true);
+    setShouldPlayAd(false);
+  }
+}, [currentIndex, reels, isAdOpen]);
+
 
   const [showAd, setShowAd] = useState(false);
   const [isAdOpen, setIsAdOpen] = useState(false);
@@ -417,6 +505,12 @@ const deductCoins = (amount: number) => {
   const reel = reels[indexToCheck];
 
 if (!reel || reel.adStatus !== 'locked') {
+  console.log('[AD DEBUG] Current reel:', {
+  index: currentIndex,
+  id: reel?.id,
+  adStatus: reel?.adStatus,
+});
+
   return;
 }
 
@@ -431,6 +525,11 @@ setShowAd(true);
 setShowAdPopup(true);
 setShouldPlayAd(false);
 
+console.log('[AD DEBUG] Popup state set', {
+  showAd: true,
+  showAdPopup: true,
+  preloadAd,
+});
 
 
 }, [currentIndex, reels]);
@@ -449,7 +548,7 @@ setShouldPlayAd(false);
       prevIndexRef.current !== null &&
       first.index !== prevIndexRef.current
     ) {
-      handleEpisodeEnd();
+      //handleEpisodeEnd();
     }
 
     prevIndexRef.current = first.index;
@@ -538,6 +637,7 @@ setShouldPlayAd(false);
         isActive={index === currentIndex}
         initialTime={initialTime}
         screenFocused={isScreenFocused}
+        shouldPause={showAdPopup}
         onVideoEnd={handleEpisodeEnd}
         onEpisodeSelect={(episodeId) => {
           // #region agent log
@@ -660,7 +760,34 @@ setShouldPlayAd(false);
             </View>
         ) : null}
       />
-      {preloadAd && showAd && (
+      
+      {/* RewardedEpisodeAd - Always mounted to allow preloading */}
+      <RewardedEpisodeAd
+        show={shouldPlayAd}
+        onAdFinished={() => {
+          console.log('[AD DEBUG] Ad finished, unlocking reel at index:', currentIndex);
+          
+          // First unlock the reel
+          setReels(prev =>
+            prev.map((r, i) =>
+              i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
+            )
+          );
+
+          // Then close all ad-related states
+          setShowAdPopup(false);
+          setIsAdOpen(false);
+          setShowAd(false);
+          setPreloadAd(false);
+          setShouldPlayAd(false);
+
+          // Keep adHandledRef as true for this reel to prevent popup from showing again
+          // It will be reset when user navigates to a different reel
+          // Don't reset adReelIndexRef here - let it stay so we know this reel was handled
+        }}
+      />
+
+      {showAd && (
   <View
     pointerEvents="box-none"
     style={{
@@ -774,23 +901,25 @@ setShouldPlayAd(false);
       {/* PRIMARY CTA — Skip using coins */}
       <Pressable
         disabled={coins < SKIP_COST}
-        onPress={() => {
-          deductCoins(SKIP_COST);
-
-          setReels(prev =>
-  prev.map((reel, index) =>
-    index === currentIndex
-      ? { ...reel, adStatus: 'unlocked' }
-      : reel
-  )
-);
-  
-          setShowAdPopup(false);
-          setShowAd(false);
-          setPreloadAd(false);
-          setShouldPlayAd(false);
-          adHandledRef.current = false;
-          adReelIndexRef.current = null;
+        onPress={async () => {
+          const success = await deductCoins(SKIP_COST);
+          
+          if (success) {
+            setReels(prev =>
+              prev.map((reel, index) =>
+                index === currentIndex
+                  ? { ...reel, adStatus: 'unlocked' }
+                  : reel
+              )
+            );
+    
+            setShowAdPopup(false);
+            setShowAd(false);
+            setPreloadAd(false);
+            setShouldPlayAd(false);
+            adHandledRef.current = false;
+            adReelIndexRef.current = null;
+          }
         }}
         style={{
           marginTop: 26,
@@ -842,36 +971,6 @@ setShouldPlayAd(false);
     </View>
   </View>
 </Modal>
-
-
-
-{/* Ad stays EXACTLY the same */}
-
-    {/* Ad stays EXACTLY the same */}
-    <View style={{ flex: 1 }}>
-  <RewardedEpisodeAd
-    show={shouldPlayAd}
-    onAdFinished={() => {
-      
-  setShowAdPopup(false);
-  setIsAdOpen(false);
-  setShowAd(false);
-  setPreloadAd(false);
-  setShouldPlayAd(false);
-
-  setReels(prev =>
-  prev.map((r, i) =>
-    i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
-  )
-);
-
-  adHandledRef.current = false;
-  adReelIndexRef.current = null;
-  // ✅ stay on Reel 2
-}}
-
-  />
-</View>
 
   </View>
 )}

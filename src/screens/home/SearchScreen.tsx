@@ -1,6 +1,6 @@
 // FILE: src/screens/home/SearchScreen.tsx
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const MOST_SEARCHED = [
   'Ghost',
   'Digilocker',
@@ -96,16 +97,44 @@ export default function SearchScreen() {
   }
 }, [loadTrendingVideos, hasSearched, searchResults.length]);
 
+  // Real-time search with debounce
+  useEffect(() => {
+    // Clear any existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
+    // If search query is empty, clear results immediately
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setHasSearched(false);
+      return;
+    }
 
+    // Debounce the search - wait 400ms after user stops typing
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(searchQuery);
+    }, 400);
+
+    // Cleanup function
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, performSearch]);
 
   const handleSearch = () => {
+    // Clear timeout and search immediately when Enter is pressed
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
     performSearch(searchQuery);
   };
 
   const handleMostSearchedPress = (term: string) => {
   setSearchQuery(term);
-  performSearch(term);
+  // The useEffect will handle the search automatically
 };
 
 
