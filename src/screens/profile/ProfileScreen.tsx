@@ -244,7 +244,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, dynamicStyles.background]} edges={['top', 'bottom', 'left', 'right']}>
-      <StatusBar barStyle={theme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       {/* Pull-to-Refresh Indicator */}
       {(pullDistance > 0 || refreshing) && (
@@ -266,8 +266,8 @@ export default function ProfileScreen({ navigation }: any) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme === 'dark' ? '#050509' : '#000000'}
-            colors={[theme === 'dark' ? '#050509' : '#000000']}
+            tintColor="#050509"
+            colors={["#050509"]}
             progressViewOffset={-1000}
           />
         }
@@ -321,9 +321,9 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={autoPlay}
               onValueChange={setAutoPlay}
-              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
-              thumbColor={autoPlay ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
-              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
+              trackColor={{ false: '#333333', true: colors.yellow }}
+              thumbColor={autoPlay ? colors.yellow : '#f4f3f4'}
+              ios_backgroundColor="#333333"
               style={styles.toggle}
             />
           </View>
@@ -339,16 +339,16 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={notifications}
               onValueChange={setNotifications}
-              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
-              thumbColor={notifications ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
-              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
+              trackColor={{ false: '#333333', true: colors.yellow }}
+              thumbColor={notifications ? colors.yellow : '#f4f3f4'}
+              ios_backgroundColor="#333333"
               style={styles.toggle}
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+          {/* THEME TOGGLE - COMMENTED OUT */}
+          {/* <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
 
-          {/* Theme Toggle */}
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
               <Ionicons name={theme === 'dark' ? 'moon-outline' : 'sunny-outline'} size={20} color={colors.yellow} style={styles.settingIcon} />
@@ -357,12 +357,12 @@ export default function ProfileScreen({ navigation }: any) {
             <Switch
               value={theme === 'light'}
               onValueChange={toggleTheme}
-              trackColor={{ false: theme === 'dark' ? '#333333' : '#CCCCCC', true: colors.yellow }}
-              thumbColor={theme === 'light' ? colors.yellow : theme === 'dark' ? '#f4f3f4' : '#FFFFFF'}
-              ios_backgroundColor={theme === 'dark' ? '#333333' : '#CCCCCC'}
+              trackColor={{ false: '#333333', true: colors.yellow }}
+              thumbColor={theme === 'light' ? colors.yellow : '#f4f3f4'}
+              ios_backgroundColor="#333333"
               style={styles.toggle}
             />
-          </View>
+          </View> */}
         </View>
 
         {/* Menu Items */}
@@ -514,15 +514,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 60,
-    paddingBottom: 32,
+    paddingTop: 20,
+    paddingBottom: 40,
     alignItems: 'center',
   },
   avatarSection: {
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 40,
-    marginBottom: 12,
+    paddingTop: 24,
+    paddingBottom: 32,
+    marginBottom: 24,
     width: '100%',
   },
   avatarContainer: {
@@ -534,6 +534,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   avatarEmoji: {
     fontSize: 70,
@@ -548,6 +553,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
   usernameContainer: {
     flexDirection: 'row',
@@ -557,10 +567,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   usernameText: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
     marginRight: 10,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
   },
   editIcon: {
     marginLeft: 4,
@@ -649,14 +659,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderRadius: 16,
     paddingVertical: 4,
-    marginBottom: 20,
+    marginBottom: 24,
     overflow: 'hidden',
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
   },
   settingRow: {
     flexDirection: 'row',
@@ -697,7 +707,7 @@ const styles = StyleSheet.create({
     width: width - 40,
     maxWidth: 400,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     gap: 12,
   },
   menuItem: {
@@ -709,6 +719,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     minHeight: 56,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -725,7 +740,7 @@ const styles = StyleSheet.create({
     width: width - 40,
     maxWidth: 400,
     alignSelf: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
   logoutButton: {
     flexDirection: 'row',
@@ -737,6 +752,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     minHeight: 56,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   logoutText: {
     fontSize: 17,
@@ -747,6 +767,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   bottomSpacer: {
-    height: 32,
+    height: 20,
   },
 });

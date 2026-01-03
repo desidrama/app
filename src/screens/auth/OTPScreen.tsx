@@ -311,11 +311,15 @@ const OTPScreen: React.FC = () => {
       style={styles.container}
       behavior={Platform.select({ ios: 'padding', android: undefined })}
     >
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.backButton}
         onPress={() => navigation.goBack()}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        accessibilityLabel="Go back"
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <View style={styles.backButtonInner}>
+          <Text style={styles.backIcon}>‹</Text>
+        </View>
       </TouchableOpacity>
 
       <View style={styles.brandWrapper}>
@@ -427,9 +431,14 @@ const styles = StyleSheet.create({
     left: 20,
     zIndex: 10,
   },
-  backButtonText: {
+  backButtonInner: {
+    padding: 10,
+    borderRadius: 15,
+    backgroundColor: 'rgba(22, 15, 15, 0)',
+  },
+  backIcon: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 30,
     fontWeight: '600',
   },
   brandWrapper: { 
