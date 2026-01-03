@@ -77,7 +77,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 // =========================
 const dispatch = useDispatch();
 const user = useSelector((state: RootState) => state.user.profile);
-const SKIP_COST = 30;
+const SKIP_COST = 10;
 const coins = user?.coinsBalance ?? user?.coins ?? 0;
 
 const coinAnim = useRef(new Animated.Value(1)).current;
@@ -930,6 +930,11 @@ console.log('[AD DEBUG] Popup state set', {
       <Pressable
         disabled={coins < SKIP_COST}
         onPress={async () => {
+          if (coins < SKIP_COST) {
+            Alert.alert('Insufficient Coins', `You need ${SKIP_COST} coins to skip. You have ${coins} coins.`);
+            return;
+          }
+          
           const success = await deductCoins(SKIP_COST);
           
           if (success) {
@@ -949,19 +954,21 @@ console.log('[AD DEBUG] Popup state set', {
             adReelIndexRef.current = null;
           }
         }}
-        style={{
+        style={({ pressed }) => ({
           marginTop: 26,
           paddingVertical: 16,
           borderRadius: 16,
           backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
-        }}
+          opacity: pressed ? 0.8 : 1,
+        })}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
         <Text
           style={{
             textAlign: 'center',
             fontWeight: '800',
             fontSize: 16,
-            color: '#000',
+            color: coins >= SKIP_COST ? '#000' : '#666',
           }}
         >
           Skip using {SKIP_COST} coins
