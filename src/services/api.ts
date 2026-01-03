@@ -237,6 +237,7 @@ export const sendOTP = async (phone: string) => {
   }
 };
 
+
 // Verify OTP function
 export const verifyOTP = async (
   phone: string,
@@ -335,23 +336,6 @@ export const claimDailyCheckIn = async () => {
 };
 
 /**
- * Skip ad using coins
- */
-export const skipAdWithCoins = async (amount: number) => {
-  try {
-    const response = await api.post('/api/reward/skip-ad', { amount });
-    return response.data;
-  } catch (error: any) {
-    console.error('Skip Ad With Coins Error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    throw error;
-  }
-};
-
-/**
  * Persist FCM token for authenticated user
  */
 export const updateFcmToken = async (fcmToken: string) => {
@@ -360,44 +344,6 @@ export const updateFcmToken = async (fcmToken: string) => {
     return response.data;
   } catch (error: any) {
     console.error('Update FCM Token Error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    throw error;
-  }
-};
-
-/**
- * Create coin purchase order
- */
-export const createCoinPurchaseOrder = async (data: {
-  amount: number;
-  coins: number;
-  packageId: string;
-}) => {
-  try {
-    const response = await api.post('/api/reward/create-coin-purchase', data);
-    return response.data;
-  } catch (error: any) {
-    console.error('Create Coin Purchase Order Error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    throw error;
-  }
-};
-
-/**
- * Verify coin payment
- */
-export const verifyCoinPayment = async (orderID: string) => {
-  try {
-    const response = await api.post(`/api/reward/verify-coin-payment/${orderID}`);
-    return response.data;
-  } catch (error: any) {
-    console.error('Verify Coin Payment Error:', {
       message: error.message,
       response: error.response?.data,
       status: error.response?.status,
@@ -424,6 +370,85 @@ export const logout = async () => {
   } finally {
     // Always clear all stored data regardless of API response
     await clearAll();
+  }
+};
+
+// ========================================
+// COIN PURCHASE API FUNCTIONS
+// ========================================
+
+export interface CreateCoinPurchaseParams {
+  amount: number;
+  coins: number;
+  packageId: string;
+}
+
+export interface CreateCoinPurchaseResponse {
+  success: boolean;
+  data: {
+    orderId: string;
+    paymentSessionId: string;
+  };
+  message?: string;
+}
+
+export interface VerifyCoinPaymentResponse {
+  success: boolean;
+  data: {
+    coinsAdded: number;
+    newBalance: number;
+  };
+  message?: string;
+}
+
+export interface CoinPurchaseHistoryResponse {
+  success: boolean;
+  data: Array<{
+    _id: string;
+    orderId: string;
+    packageId: string;
+    amount: number;
+    coins: number;
+    status: string;
+    completedAt: string;
+    createdAt: string;
+  }>;
+}
+
+// Create coin purchase order
+export const createCoinPurchaseOrder = async (
+  params: CreateCoinPurchaseParams
+): Promise<CreateCoinPurchaseResponse> => {
+  try {
+    const response = await api.post('/coins/purchase', params);
+    return response.data;
+  } catch (error: any) {
+    console.error('Create coin purchase order error:', error);
+    throw error;
+  }
+};
+
+// Verify coin payment
+export const verifyCoinPayment = async (
+  orderId: string
+): Promise<VerifyCoinPaymentResponse> => {
+  try {
+    const response = await api.post('/coins/verify-payment', { orderId });
+    return response.data;
+  } catch (error: any) {
+    console.error('Verify coin payment error:', error);
+    throw error;
+  }
+};
+
+// Get coin purchase history
+export const getCoinPurchaseHistory = async (): Promise<CoinPurchaseHistoryResponse> => {
+  try {
+    const response = await api.get('/coins/history');
+    return response.data;
+  } catch (error: any) {
+    console.error('Get coin purchase history error:', error);
+    throw error;
   }
 };
 
