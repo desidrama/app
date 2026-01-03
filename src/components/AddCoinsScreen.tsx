@@ -4,17 +4,22 @@ import {
   View,
   Text,
   StyleSheet,
+  SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  StatusBar,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
 import { useTheme } from '../context/ThemeContext';
+import {
+  CFPaymentGatewayService,
+  CFErrorResponse,
+} from 'react-native-cashfree-pg-sdk';
 import {
   CFSession,
   CFEnvironment,
@@ -23,21 +28,6 @@ import {
 } from 'cashfree-pg-api-contract';
 import { createCoinPurchaseOrder, verifyCoinPayment } from '../services/api';
 import { useNavigation } from '@react-navigation/native';
-
-// Conditionally import Cashfree SDK - it's a native module that requires a development build
-let CFPaymentGatewayService: any = null;
-let CFErrorResponse: any = null;
-let isCashfreeAvailable = false;
-
-try {
-  const cashfreeModule = require('react-native-cashfree-pg-sdk');
-  CFPaymentGatewayService = cashfreeModule.CFPaymentGatewayService;
-  CFErrorResponse = cashfreeModule.CFErrorResponse;
-  isCashfreeAvailable = true;
-} catch (error) {
-  console.warn('Cashfree SDK not available - requires development build:', error);
-  isCashfreeAvailable = false;
-}
 
 type CoinPackage = {
   id: string;
@@ -80,7 +70,6 @@ const COIN_PACKAGES: CoinPackage[] = [
 const AddCoinsScreen: React.FC = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const user = useSelector((state: RootState) => state.user.profile);
   const [selectedPackage, setSelectedPackage] = useState<CoinPackage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,33 +77,21 @@ const AddCoinsScreen: React.FC = () => {
   const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
 
   React.useEffect(() => {
-    // Set up Cashfree callback only if available
-    if (isCashfreeAvailable && CFPaymentGatewayService) {
-      try {
-        CFPaymentGatewayService.setCallback({
-          onVerify(orderID: string): void {
-            console.log('✅ Payment verification started:', orderID);
-            handleVerifyPayment(orderID);
-          },
-          onError(error: any, orderID: string): void {
-            console.error('❌ Payment error:', error, orderID);
-            Alert.alert('Payment Failed', error?.toString?.() || 'Please try again');
-            setLoading(false);
-          },
-        });
-      } catch (error) {
-        console.warn('Failed to set Cashfree callback:', error);
-      }
-    }
+    // Set up Cashfree callback
+    CFPaymentGatewayService.setCallback({
+      onVerify(orderID: string): void {
+        console.log('✅ Payment verification started:', orderID);
+        handleVerifyPayment(orderID);
+      },
+      onError(error: CFErrorResponse, orderID: string): void {
+        console.error('❌ Payment error:', error, orderID);
+        Alert.alert('Payment Failed', error?.message || 'Please try again');
+        setLoading(false);
+      },
+    });
 
     return () => {
-      try {
-        if (CFPaymentGatewayService && CFPaymentGatewayService.removeCallback) {
-          CFPaymentGatewayService.removeCallback();
-        }
-      } catch (error) {
-        console.warn('Failed to remove Cashfree callback:', error);
-      }
+      CFPaymentGatewayService.removeCallback();
     };
   }, []);
 
@@ -146,15 +123,6 @@ const AddCoinsScreen: React.FC = () => {
   const handlePurchase = async () => {
     if (!selectedPackage) {
       Alert.alert('Select Package', 'Please select a coin package');
-      return;
-    }
-
-    // Check if Cashfree SDK is available
-    if (!isCashfreeAvailable || !CFPaymentGatewayService) {
-      Alert.alert(
-        'Payment Not Available',
-        'Payment functionality requires a development build. Please rebuild the app with: npx expo run:ios or npx expo run:android'
-      );
       return;
     }
 
@@ -265,8 +233,10 @@ const AddCoinsScreen: React.FC = () => {
     );
   };
 
+  const topOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset, backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={styles.headerRow}>
@@ -290,7 +260,7 @@ const AddCoinsScreen: React.FC = () => {
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {/* Info Card */}
@@ -329,7 +299,7 @@ const AddCoinsScreen: React.FC = () => {
             </View>
 
             <View style={styles.benefitItem}>
-            <Ionicons name="lock-open" size={20} color="#3B82F6" />
+              <Ionicons name="unlock" size={20} color="#3B82F6" />
               <Text style={[styles.benefitText, { color: colors.textSecondary }]}>
                 Unlock exclusive content
               </Text>
@@ -352,7 +322,7 @@ const AddCoinsScreen: React.FC = () => {
         </ScrollView>
 
         {/* Purchase Button */}
-        <View style={[styles.footer, { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.footer, { backgroundColor: colors.background }]}>
           <TouchableOpacity
             style={[
               styles.purchaseButton,
@@ -572,6 +542,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 16,
     paddingVertical: 16,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
   },
   purchaseButton: {
     flexDirection: 'row',
