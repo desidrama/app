@@ -301,6 +301,7 @@ const styles = StyleSheet.create({
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
+      backgroundColor: 'rgba(37, 34, 34, 0.9)',  // 👈 grey
       borderRadius: 32,
       paddingHorizontal: 18,
       height: 48,
@@ -422,6 +423,7 @@ videoItemTrending: {
   marginTop: 6,
   fontSize: 20,
   fontWeight: '700',
+  color: '#FFFFFF',
 },
 
   emptySubtext: {
@@ -439,6 +441,7 @@ videoItemTrending: {
   mostSearchedTitle: {
     fontSize: 18,
     fontWeight: '700',
+    color: '#FFFFFF',   // 👈 white
     marginBottom: 8,
   },
 
@@ -451,7 +454,8 @@ videoItemTrending: {
   mostSearchedChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 12,
+    backgroundColor: '#221107',
     borderWidth: 1,
   },
 
