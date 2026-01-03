@@ -23,7 +23,7 @@ import { getFcmToken } from '../../utils/fcm';
 import { collectClientMetadata } from '../../utils/metadata';
 
 
-const logoImage = require('../../../assets/App Logo.png');
+const logoImage = require('../../../assets/LOGOLATE.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const OTP_BOX_WIDTH = Math.min(SCREEN_WIDTH * 0.12, 55);
 
@@ -321,8 +321,6 @@ const OTPScreen: React.FC = () => {
       <View style={styles.brandWrapper}>
         <Image source={logoImage} style={styles.logo} resizeMode="contain" />
         <View style={styles.textContainer}>
-          <Text style={styles.textDigital}>digital</Text>
-          <Text style={styles.textKalakar}>कलाकार</Text>
         </View>
       </View>
 
@@ -440,8 +438,8 @@ const styles = StyleSheet.create({
     marginBottom: SCREEN_HEIGHT * 0.04 
   },
   logo: { 
-    width: 80, 
-    height: 80, 
+    width: 115, 
+    height: 115, 
     marginBottom: 8 
   },
   textContainer: { 
