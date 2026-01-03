@@ -176,7 +176,6 @@ const deductCoins = async (amount: number): Promise<boolean> => {
   const [hasPrevious, setHasPrevious] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [showAd, setShowAd] = useState(false);
   const [isAdOpen, setIsAdOpen] = useState(false);
   const [showAdPopup, setShowAdPopup] = useState(false);
   const [shouldPlayAd, setShouldPlayAd] = useState(false);
@@ -187,37 +186,35 @@ const deductCoins = async (amount: number): Promise<boolean> => {
     if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
       adHandledRef.current = false;
       adReelIndexRef.current = null;
+      setIsAdOpen(false); // ✅ REQUIRED
+
     }
   }, [currentIndex]);
 
-  useEffect(() => {
-    const reel = reels[currentIndex];
-    if (!reel) return;
+useEffect(() => {
+  const reel = reels[currentIndex];
+  if (!reel) return;
 
-    // Only show popup if reel is locked AND we haven't handled it yet
-    // AND we're not currently showing an ad
-    if (reel.adStatus === 'locked' && !adHandledRef.current && !isAdOpen) {
-      console.log('[AD DEBUG] Locked reel entered → opening popup', {
-        index: currentIndex,
-        title: reel.title,
-        adStatus: reel.adStatus,
-      });
+  if (
+    reel.adStatus === 'locked' &&
+    !adHandledRef.current &&
+    !isAdOpen
+  ) {
+    adHandledRef.current = true;
+    adReelIndexRef.current = currentIndex;
 
-      adHandledRef.current = true;
-      adReelIndexRef.current = currentIndex;
-
-      setIsAdOpen(true);
-      setShowAd(true);
-      setShowAdPopup(true);
-      setShouldPlayAd(false);
-    }
-  }, [currentIndex, reels, isAdOpen]);
+    setIsAdOpen(true);
+    setShowAdPopup(true);
+    setShouldPlayAd(false); // ❗ never autoplay
+  }
+}, [currentIndex, reels, isAdOpen]);
 
 
 
 
 
-  const [preloadAd, setPreloadAd] = useState(false);
+
+
 
   const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
   const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
@@ -521,41 +518,6 @@ const deductCoins = async (amount: number): Promise<boolean> => {
   }, [loadPage]);
 
   // Viewability: determine active reel
-  const handleEpisodeEnd = useCallback(() => {
-  // 🔥 Decide based on the reel being LEFT
-  const indexToCheck = prevIndexRef.current ?? currentIndex;
-
-  const reel = reels[indexToCheck];
-
-if (!reel || reel.adStatus !== 'locked') {
-  console.log('[AD DEBUG] Current reel:', {
-  index: currentIndex,
-  id: reel?.id,
-  adStatus: reel?.adStatus,
-});
-
-  return;
-}
-
-
-
-  if (adHandledRef.current) return;
-
-  adHandledRef.current = true;
-adReelIndexRef.current = indexToCheck; // 👈 remember reel
-setIsAdOpen(true);
-setShowAd(true);
-setShowAdPopup(true);
-setShouldPlayAd(false);
-
-console.log('[AD DEBUG] Popup state set', {
-  showAd: true,
-  showAdPopup: true,
-  preloadAd,
-});
-
-
-}, [currentIndex, reels]);
 
 
 
@@ -577,7 +539,7 @@ console.log('[AD DEBUG] Popup state set', {
     prevIndexRef.current = first.index;
     setCurrentIndex(first.index);
   },
-  [handleEpisodeEnd]
+  []
 );
 
 
@@ -820,8 +782,6 @@ console.log('[AD DEBUG] Popup state set', {
           // Then close all ad-related states
           setShowAdPopup(false);
           setIsAdOpen(false);
-          setShowAd(false);
-          setPreloadAd(false);
           setShouldPlayAd(false);
 
           // Keep adHandledRef as true for this reel to prevent popup from showing again
@@ -830,7 +790,7 @@ console.log('[AD DEBUG] Popup state set', {
         }}
       />
 
-      {showAd && (
+      {showAdPopup && (
   <View
     pointerEvents="box-none"
     style={{
@@ -957,11 +917,10 @@ console.log('[AD DEBUG] Popup state set', {
             );
     
             setShowAdPopup(false);
-            setShowAd(false);
-            setPreloadAd(false);
+            setIsAdOpen(false);
             setShouldPlayAd(false);
-            adHandledRef.current = false;
-            adReelIndexRef.current = null;
+            // keep handled so popup NEVER comes back for this reel
+            adHandledRef.current = true;
           }
         }}
         style={{
@@ -985,12 +944,13 @@ console.log('[AD DEBUG] Popup state set', {
 
       {/* SECONDARY CTA — Watch ad */}
       <Pressable
-        onPress={() => {
-          setShowAdPopup(false);
-          setPreloadAd(true);
-          setShowAd(true);
-          setShouldPlayAd(true);
-        }}
+  onPress={() => {
+    setShowAdPopup(false);
+    setShouldPlayAd(true); // 🔥 ONLY trigger
+  }}
+
+
+        
         style={{
           marginTop: 14,
           paddingVertical: 14,
