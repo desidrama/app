@@ -39,6 +39,7 @@ import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
 import { useTheme } from '../../context/ThemeContext';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import type { Video } from '../../types';
+import { SPACING, TYPOGRAPHY, BORDER_RADIUS } from '../../utils/designSystem';
 
 const logoImage = require('../../../assets/LOGOLATE.png');
 
@@ -268,7 +269,7 @@ export default function HomeScreen() {
     muteButton: {
       position: 'absolute',
       top: 12,
-      right: 56,
+      right: 12,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
       borderRadius: 20,
       padding: 8,
@@ -294,14 +295,13 @@ export default function HomeScreen() {
       fontSize: 14,
     },
     sectionTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      ...TYPOGRAPHY.h3,
       color: colors.textPrimary,
     },
     seeAllText: {
-      fontSize: 13,
-      fontWeight: '400',
-      color: colors.textSecondary,
+      ...TYPOGRAPHY.bodySmall,
+      fontWeight: '500',
+      color: colors.yellow, // Yellow for "see all" arrows
     },
   });
 
@@ -895,54 +895,17 @@ export default function HomeScreen() {
                             )}
                           </Animated.View>
 
-                          <LinearGradient
-                            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-                            style={styles.heroGradientOverlay}
+                          <TouchableOpacity
+                            style={dynamicStyles.muteButton}
+                            onPress={handleMuteToggle}
+                            activeOpacity={0.8}
                           >
-                            <View style={styles.heroMetaContainer}>
-                              <View style={styles.chipContainer}>
-                                <View style={dynamicStyles.chip}>
-                                  <Text style={dynamicStyles.chipText}>{getContentTypeLabel()}</Text>
-                                </View>
-                                {item.genres && item.genres.length > 0 && (
-                                  <View style={dynamicStyles.chip}>
-                                    <Text style={dynamicStyles.chipText}>{item.genres[0]}</Text>
-                                  </View>
-                                )}
-                              </View>
-
-                              <Text style={styles.heroTitle} numberOfLines={2}>
-                                {item.title}
-                              </Text>
-
-                              {item.tagline && (
-                                <Text style={dynamicStyles.heroTagline} numberOfLines={2}>
-                                  {item.tagline}
-                                </Text>
-                              )}
-                            </View>
-                          </LinearGradient>
-
-                          {isVideoActive && (
-                            <View style={dynamicStyles.playingIndicator}>
-                              <View style={dynamicStyles.playingDot} />
-                              <Text style={dynamicStyles.playingText}>Playing Preview</Text>
-                            </View>
-                          )}
-
-                          {isVideoActive && (
-                            <TouchableOpacity
-                              style={dynamicStyles.muteButton}
-                              onPress={handleMuteToggle}
-                              activeOpacity={0.8}
-                            >
-                              <Ionicons
-                                name={isMuted ? 'volume-mute' : 'volume-high'}
-                                size={20}
-                                color="#FFFFFF"
-                              />
-                            </TouchableOpacity>
-                          )}
+                            <Ionicons
+                              name={isMuted ? 'volume-mute' : 'volume-high'}
+                              size={20}
+                              color="#FFFFFF"
+                            />
+                          </TouchableOpacity>
                         </Animated.View>
                       </TouchableOpacity>
                     );
@@ -978,7 +941,7 @@ export default function HomeScreen() {
             continueWatching.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={dynamicStyles.sectionTitle}>Continue Watching</Text>
+                  
                 </View>
                 <ContinueWatching
                   items={continueWatching}
@@ -1000,14 +963,20 @@ export default function HomeScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.cardsContainer}
               >
-                {latestTrendingData.map((item, i) => (
-                  <VideoCard
-                    key={`latest-${item._id}-${i}`}
-                    title={item.title}
-                    imageUrl={item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/140/200?random=1'}
-                    onPress={() => handleVideoPress(item)}
-                  />
-                ))}
+                {latestTrendingData.map((item, i) => {
+                  const seriesName = item.seasonId && typeof item.seasonId === 'object' 
+                    ? item.seasonId.title 
+                    : undefined;
+                  return (
+                    <VideoCard
+                      key={`latest-${item._id}-${i}`}
+                      title={item.title}
+                      seriesName={seriesName}
+                      imageUrl={item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/140/200?random=1'}
+                      onPress={() => handleVideoPress(item)}
+                    />
+                  );
+                })}
               </ScrollView>
             </View>
           )}

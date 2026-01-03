@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Image,
   Animated,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +39,11 @@ interface ContinueWatchingItem {
     episodeNumber?: number;
     duration?: number;
     genre?: string;
+    seasonId?: {
+      _id: string;
+      title: string;
+      seasonNumber?: number;
+    } | string;
   };
   currentTime: number;
   progress: number;
@@ -108,6 +114,10 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
   const videoData = item.videoId || {};
   const thumbnail = videoData.thumbnailUrl || videoData.thumbnail || 'https://picsum.photos/160/220';
   const episodeNumber = videoData.episodeNumber || item.episodeNumber;
+  // Extract series name from seasonId (can be object with title or just ID)
+  const seriesName = videoData.seasonId && typeof videoData.seasonId === 'object' 
+    ? videoData.seasonId.title 
+    : null;
   
   // Calculate progress for progress bar
   const progress = item.progress 
@@ -121,40 +131,54 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
     card: {
       width: 140,
       height: 200,
-      borderRadius: 12,
+      borderRadius: 16, // 16px radius for cards
       overflow: 'hidden',
       backgroundColor: colors.surface,
       position: 'relative',
-      borderWidth: 1,
-      borderColor: colors.borderLight,
+      ...(Platform.OS === 'ios' ? {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+      } : {
+        elevation: 8,
+      }),
     },
     episodeBadgeText: {
       fontSize: 10,
       fontWeight: '700',
-      color: colors.textPrimary,
+      color: colors.textOnYellow,
     },
     seriesName: {
-      fontSize: 11,
+      fontSize: 14,
       fontWeight: '700',
       color: colors.textPrimary,
-      lineHeight: 14,
+      lineHeight: 20,
     },
     progressTrack: {
-      height: 3,
+      height: 3, // Thin yellow progress bar
       backgroundColor: colors.progressTrack,
       overflow: 'hidden',
     },
     progressFillBar: {
       height: '100%',
-      backgroundColor: colors.yellow,
+      backgroundColor: colors.yellow, // Vibrant yellow
     },
     resumeButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: colors.yellow,
       justifyContent: 'center',
       alignItems: 'center',
+      ...(Platform.OS === 'ios' ? {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+      } : {
+        elevation: 4,
+      }),
     },
   });
 
@@ -201,7 +225,7 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
         {/* Content Overlay */}
         <View style={styles.contentOverlay}>
           <Text style={[dynamicStyles.seriesName, { color: '#FFFFFF' }]} numberOfLines={1}>
-            {videoData.title || 'Untitled'}
+            {seriesName || videoData.title || 'Untitled'}
           </Text>
         </View>
 
