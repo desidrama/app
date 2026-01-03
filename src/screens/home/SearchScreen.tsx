@@ -174,7 +174,7 @@ export default function SearchScreen() {
 
     <VideoCard
       title={item.title}
-      imageUrl={fullImageUrl}   // 👈 no title here
+      imageUrl={fullImageUrl}
       onPress={() => handleVideoPress(item)}
     />
   </View>

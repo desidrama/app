@@ -13,6 +13,7 @@ import {
   Modal,
   Pressable,
   Alert,
+  Share,
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -175,49 +176,45 @@ const deductCoins = async (amount: number): Promise<boolean> => {
   const [hasPrevious, setHasPrevious] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [isAdOpen, setIsAdOpen] = useState(false);
+  const [showAdPopup, setShowAdPopup] = useState(false);
+  const [shouldPlayAd, setShouldPlayAd] = useState(false);
+
   useEffect(() => {
-  // Reset adHandledRef when changing to a different reel
-  // But only if we're not currently on the same reel that was just unlocked
-  if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
-    adHandledRef.current = false;
-    adReelIndexRef.current = null;
-  }
-}, [currentIndex]);
+    // Reset adHandledRef when changing to a different reel
+    // But only if we're not currently on the same reel that was just unlocked
+    if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
+      adHandledRef.current = false;
+      adReelIndexRef.current = null;
+      setIsAdOpen(false); // ✅ REQUIRED
+
+    }
+  }, [currentIndex]);
 
 useEffect(() => {
   const reel = reels[currentIndex];
   if (!reel) return;
 
-  // Only show popup if reel is locked AND we haven't handled it yet
-  // AND we're not currently showing an ad
-  if (reel.adStatus === 'locked' && !adHandledRef.current && !isAdOpen) {
-    console.log('[AD DEBUG] Locked reel entered → opening popup', {
-      index: currentIndex,
-      title: reel.title,
-      adStatus: reel.adStatus,
-    });
-
+  if (
+    reel.adStatus === 'locked' &&
+    !adHandledRef.current &&
+    !isAdOpen
+  ) {
     adHandledRef.current = true;
     adReelIndexRef.current = currentIndex;
 
     setIsAdOpen(true);
-    setShowAd(true);
     setShowAdPopup(true);
-    setShouldPlayAd(false);
+    setShouldPlayAd(false); // ❗ never autoplay
   }
 }, [currentIndex, reels, isAdOpen]);
 
 
-  const [showAd, setShowAd] = useState(false);
-  const [isAdOpen, setIsAdOpen] = useState(false);
-  const [showAdPopup, setShowAdPopup] = useState(false);
-  const [shouldPlayAd, setShouldPlayAd] = useState(false);
 
 
 
 
 
-  const [preloadAd, setPreloadAd] = useState(false);
 
   const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
   const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
@@ -521,41 +518,6 @@ useEffect(() => {
   }, [loadPage]);
 
   // Viewability: determine active reel
-  const handleEpisodeEnd = useCallback(() => {
-  // 🔥 Decide based on the reel being LEFT
-  const indexToCheck = prevIndexRef.current ?? currentIndex;
-
-  const reel = reels[indexToCheck];
-
-if (!reel || reel.adStatus !== 'locked') {
-  console.log('[AD DEBUG] Current reel:', {
-  index: currentIndex,
-  id: reel?.id,
-  adStatus: reel?.adStatus,
-});
-
-  return;
-}
-
-
-
-  if (adHandledRef.current) return;
-
-  adHandledRef.current = true;
-adReelIndexRef.current = indexToCheck; // 👈 remember reel
-setIsAdOpen(true);
-setShowAd(true);
-setShowAdPopup(true);
-setShouldPlayAd(false);
-
-console.log('[AD DEBUG] Popup state set', {
-  showAd: true,
-  showAdPopup: true,
-  preloadAd,
-});
-
-
-}, [currentIndex, reels]);
 
 
 
@@ -577,7 +539,7 @@ console.log('[AD DEBUG] Popup state set', {
     prevIndexRef.current = first.index;
     setCurrentIndex(first.index);
   },
-  [handleEpisodeEnd]
+  []
 );
 
 
@@ -672,7 +634,6 @@ console.log('[AD DEBUG] Popup state set', {
           initialTime={initialTime}
           screenFocused={isScreenFocused}
           shouldPause={showAdPopup}
-          onVideoEnd={handleEpisodeEnd}
           onEpisodeSelect={(episodeId) => {
             // Find the episode in the reels list
             const episodeIndex = reels.findIndex(r => r.id === episodeId);
@@ -718,6 +679,21 @@ console.log('[AD DEBUG] Popup state set', {
     navigation.navigate('Home');
   };
 
+  const handleShare = useCallback(async () => {
+    const currentReel = reels[currentIndex];
+    if (!currentReel) return;
+    
+    try {
+      const shareMessage = `Check out "${currentReel.title}" on Digital Kalakar! 🎬\n\n${currentReel.description || 'Watch now!'}`;
+      await Share.share({
+        message: shareMessage,
+        title: currentReel.title,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  }, [reels, currentIndex]);
+
   if (loading && reels.length === 0) {
     return (
       <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
@@ -729,28 +705,29 @@ console.log('[AD DEBUG] Popup state set', {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      {/* Back Button */}
-      {(() => {
-        const backButtonTop = insets.top + (Platform.OS === 'ios' ? 8 : 12);
-        const backButtonLeft = insets.left + 16;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:backButton',message:'Back button alignment values',data:{platform:Platform.OS,insets:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right},backButtonTop,backButtonLeft},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'alignment'})}).catch(()=>{});
-        // #endregion
-        return null;
-      })()}
-      <TouchableOpacity
-        style={[
-          backButtonStyles.backButton,
-          {
-            top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-            left: insets.left + 16,
-          },
-        ]}
-        onPress={handleBackPress}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="chevron-back" size={31} color={colors.textPrimary === '#000000' ? '#000000' : '#fff'} />
-      </TouchableOpacity>
+      {/* Top Header Container - Back & Share Alignment */}
+      <View style={[backButtonStyles.topHeader, {
+        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
+        left: insets.left + 16,
+        right: insets.right + 16,
+      }]}>
+        <TouchableOpacity
+          onPress={handleBackPress}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        {/* Share Button */}
+        <TouchableOpacity
+          onPress={handleShare}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-redo-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
       <FlatList
         ref={flatListRef}
@@ -805,8 +782,6 @@ console.log('[AD DEBUG] Popup state set', {
           // Then close all ad-related states
           setShowAdPopup(false);
           setIsAdOpen(false);
-          setShowAd(false);
-          setPreloadAd(false);
           setShouldPlayAd(false);
 
           // Keep adHandledRef as true for this reel to prevent popup from showing again
@@ -815,7 +790,7 @@ console.log('[AD DEBUG] Popup state set', {
         }}
       />
 
-      {showAd && (
+      {showAdPopup && (
   <View
     pointerEvents="box-none"
     style={{
@@ -947,11 +922,10 @@ console.log('[AD DEBUG] Popup state set', {
             );
     
             setShowAdPopup(false);
-            setShowAd(false);
-            setPreloadAd(false);
+            setIsAdOpen(false);
             setShouldPlayAd(false);
-            adHandledRef.current = false;
-            adReelIndexRef.current = null;
+            // keep handled so popup NEVER comes back for this reel
+            adHandledRef.current = true;
           }
         }}
         style={({ pressed }) => ({
@@ -977,12 +951,13 @@ console.log('[AD DEBUG] Popup state set', {
 
       {/* SECONDARY CTA — Watch ad */}
       <Pressable
-        onPress={() => {
-          setShowAdPopup(false);
-          setPreloadAd(true);
-          setShowAd(true);
-          setShouldPlayAd(true);
-        }}
+  onPress={() => {
+    setShowAdPopup(false);
+    setShouldPlayAd(true); // 🔥 ONLY trigger
+  }}
+
+
+        
         style={{
           marginTop: 14,
           paddingVertical: 14,
@@ -1017,17 +992,13 @@ console.log('[AD DEBUG] Popup state set', {
 };
 
 const backButtonStyles = StyleSheet.create({
-  backButton: {
+  topHeader: {
     position: 'absolute',
-    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
-    width: 47,
-    height: 47,
-    borderRadius: 23.5,
-    backgroundColor: 'transparent',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    // Ensure back button is always clickable, even during ads
-    pointerEvents: 'auto',
+    justifyContent: 'space-between',
+    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
+    pointerEvents: 'box-none', // Allow touches to pass through to children
     elevation: 1000, // Android elevation (equivalent to zIndex)
   },
 });

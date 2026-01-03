@@ -109,15 +109,16 @@ export const CommentInputOptimized: React.FC<CommentInputProps> = ({
       
       // Check if API call was successful
       if (response?.success !== false) {
-        // Create comment object for local state
+        // Create comment object for local state from backend response
+        const commentData = response?.data;
         const newComment = {
-          id: response?.data?.id || Date.now().toString(),
-          username: response?.data?.username || 'You',
-          text: trimmedText,
-          likes: response?.data?.likes || 0,
+          id: commentData?.id || commentData?._id || Date.now().toString(),
+          username: commentData?.user?.username || commentData?.user?.name || 'You',
+          text: commentData?.text || trimmedText,
+          likes: 0, // Comment likes not implemented yet
           timeAgo: 'now',
-          isLiked: response?.data?.isLiked || false,
-          avatar: response?.data?.avatar,
+          isLiked: false,
+          avatar: commentData?.user?.avatar || commentData?.user?.profilePicture,
         };
 
         // Clear input
