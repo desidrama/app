@@ -40,6 +40,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import type { Video } from '../../types';
 
+const logoImage = require('../../../assets/LOGOLATE.png');
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Spacing constants for layout
@@ -83,14 +85,14 @@ type CarouselBannerItem = {
 
 type HomeScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Home'>;
 
-function CarouselVideoPlayer({ 
-  videoUrl, 
-  style, 
-  isMuted, 
-  isActive 
-}: { 
-  videoUrl: string; 
-  style: any; 
+function CarouselVideoPlayer({
+  videoUrl,
+  style,
+  isMuted,
+  isActive,
+}: {
+  videoUrl: string;
+  style: any;
   isMuted: boolean;
   isActive: boolean;
 }) {
@@ -146,7 +148,7 @@ function CarouselVideoPlayer({
       source={{ uri: videoUrl }}
       style={style}
       resizeMode={ResizeMode.COVER}
-      shouldPlay={isActive}
+      shouldPlay={false}
       isLooping
       isMuted={isMuted}
       useNativeControls={false}
@@ -159,6 +161,7 @@ export default function HomeScreen() {
   const dispatch = useDispatch();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+
   const { continueWatching, continueWatchingLoading } = useSelector(
     (state: RootState) => state.video
   );
@@ -174,9 +177,9 @@ export default function HomeScreen() {
   const [carouselError, setCarouselError] = useState<string | null>(null);
   const [isInitialMount, setIsInitialMount] = useState(true);
 
-  const [latestTrendingData, setLatestTrendingData] = useState<Array<any>>([]);
-  const [newTodayData, setNewTodayData] = useState<Array<any>>([]);
-  const [popularData, setPopularData] = useState<Array<any>>([]);
+  const [latestTrendingData, setLatestTrendingData] = useState<Video[]>([]);
+  const [newTodayData, setNewTodayData] = useState<Video[]>([]);
+  const [popularData, setPopularData] = useState<Video[]>([]);
 
   const scrollX = useRef(new Animated.Value(0)).current;
   const carouselRef = useRef<FlatList<CarouselBannerItem>>(null);
@@ -186,13 +189,24 @@ export default function HomeScreen() {
 
   // Create dynamic styles based on theme
   const dynamicStyles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    safeAreaInner: { flex: 1 },
-    container: { flex: 1 },
-    header: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, borderRadius: 0 },
-    logoText: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, letterSpacing: 0.5 },
-    logoAccent: { color: colors.yellow },
-    content: { flex: 1 },
+    safeArea: {
+      flex: 1
+    },
+    safeAreaInner: {
+      flex: 1
+    },
+    container: {
+      flex: 1
+    },
+    header: {
+      paddingHorizontal: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      borderRadius: 0
+    },
+    content: {
+      flex: 1
+    },
     // Carousel and hero card styles
     chip: {
       backgroundColor: theme === 'dark' ? 'rgba(246, 196, 83, 0.25)' : 'rgba(255, 165, 0, 0.15)',
@@ -290,13 +304,21 @@ export default function HomeScreen() {
       color: colors.textSecondary,
     },
   });
-  
+
   const fetchVideoUrlForCarouselItem = useCallback(async (item: CarouselItem): Promise<string | null> => {
     try {
       const possibleVideoFields = [
-        'videoUrl', 'video', 'trailerUrl', 'trailer', 
-        'previewUrl', 'preview', 'url', 'videoPath', 
-        'path', 'videoLink', 'link'
+        'videoUrl',
+        'video',
+        'trailerUrl',
+        'trailer',
+        'previewUrl',
+        'preview',
+        'url',
+        'videoPath',
+        'path',
+        'videoLink',
+        'link'
       ];
 
       for (const field of possibleVideoFields) {
@@ -320,15 +342,13 @@ export default function HomeScreen() {
       if (item.contentType === 'webseries') {
         console.log(`🔍 Fetching episodes for webseries: ${item.title}`);
         const episodesResponse = await videoService.getEpisodes(item.contentId);
-        
         if (episodesResponse.success && episodesResponse.data?.length > 0) {
           const sortedEpisodes = [...episodesResponse.data].sort(
             (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
           );
-          
           const firstEpisode = sortedEpisodes[0];
           console.log(`🔍 First episode data for ${item.title}:`, JSON.stringify(firstEpisode, null, 2));
-          
+
           if (firstEpisode.variants && Array.isArray(firstEpisode.variants) && firstEpisode.variants.length > 0) {
             const preferredResolutions = ['720p', '480p', '360p'];
             for (const resolution of preferredResolutions) {
@@ -343,7 +363,7 @@ export default function HomeScreen() {
               return firstEpisode.variants[0].url;
             }
           }
-          
+
           for (const field of possibleVideoFields) {
             if (firstEpisode[field]) {
               let videoUrl = firstEpisode[field];
@@ -356,7 +376,6 @@ export default function HomeScreen() {
               return videoUrl;
             }
           }
-          
           console.log(`⚠️ First episode has no video URL in any known field for ${item.title}`);
           console.log(`📋 Available fields in episode:`, Object.keys(firstEpisode));
         } else {
@@ -364,13 +383,11 @@ export default function HomeScreen() {
         }
       } else if (item.contentType === 'reels') {
         console.log(`🔍 Attempting to fetch reel video: ${item.title}`);
-        
         if (typeof videoService.getVideoById === 'function') {
           const videoResponse = await videoService.getVideoById(item.contentId);
-          
           if (videoResponse.success && videoResponse.data) {
             console.log(`🔍 Reel data:`, JSON.stringify(videoResponse.data, null, 2));
-            
+
             if (videoResponse.data.variants && Array.isArray(videoResponse.data.variants) && videoResponse.data.variants.length > 0) {
               const preferredResolutions = ['720p', '480p', '360p'];
               for (const resolution of preferredResolutions) {
@@ -385,7 +402,7 @@ export default function HomeScreen() {
                 return videoResponse.data.variants[0].url;
               }
             }
-            
+
             for (const field of possibleVideoFields) {
               if (videoResponse.data[field]) {
                 let videoUrl = videoResponse.data[field];
@@ -414,13 +431,44 @@ export default function HomeScreen() {
 
   const refreshHomeContent = useCallback(async () => {
     try {
-      const latestResponse = await videoService.getLatestVideos(10, 'episode');
+      const latestResponse = await videoService.getLatestVideos(50, 'episode'); // Get more to filter properly
       if (latestResponse.success && latestResponse.data) {
-        const transformed = latestResponse.data.map((video: Video) => ({
-          _id: (video as any)._id || String(Date.now()),
-          title: video.title || 'Untitled',
-          imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/140/200?random=1',
-        }));
+        // Group episodes by seasonId and keep only the first episode of each series
+        const seasonMap = new Map<string, Video>();
+        const standaloneEpisodes: Video[] = [];
+
+        latestResponse.data.forEach((video: Video) => {
+          const seasonId = video.seasonId 
+            ? (typeof video.seasonId === 'string' ? video.seasonId : (video.seasonId as any)._id)
+            : null;
+
+          if (seasonId) {
+            // This is part of a web series
+            const existing = seasonMap.get(seasonId);
+            const currentEpisodeNum = video.episodeNumber || 999;
+            
+            if (!existing) {
+              // First episode found for this season
+              seasonMap.set(seasonId, video);
+            } else {
+              // Check if this episode has a lower episode number
+              const existingEpisodeNum = existing.episodeNumber || 999;
+              if (currentEpisodeNum < existingEpisodeNum) {
+                seasonMap.set(seasonId, video);
+              }
+            }
+          } else {
+            // Standalone episode (no seasonId) - keep it
+            standaloneEpisodes.push(video);
+          }
+        });
+
+        // Combine first episodes of each series with standalone episodes
+        const firstEpisodesOnly = Array.from(seasonMap.values()).concat(standaloneEpisodes);
+
+        // Keep full Video objects, limit to 10 items
+        const transformed = firstEpisodesOnly.slice(0, 10);
+
         if (transformed.length > 0) {
           setLatestTrendingData(transformed);
           setNewTodayData(transformed.slice(0, 5));
@@ -449,7 +497,6 @@ export default function HomeScreen() {
       try {
         setCarouselLoading(true);
         setCarouselError(null);
-        
         const items = await carouselService.getActiveCarouselItems();
         console.log(`📦 Got ${items.length} carousel items`);
 
@@ -480,9 +527,8 @@ export default function HomeScreen() {
 
         const transformed = await Promise.all(transformedPromises);
         const itemsWithVideo = transformed.filter(item => item.videoUrl);
-        
         console.log(`✅ Processed: ${transformed.length} total, ${itemsWithVideo.length} with videos`);
-        
+
         if (itemsWithVideo.length > 0) {
           console.log(`🎥 Items with videos:`, itemsWithVideo.map(i => `${i.title} (${i.videoUrl?.substring(0, 50)}...)`));
         } else {
@@ -491,7 +537,6 @@ export default function HomeScreen() {
         }
 
         setCarouselItems(transformed);
-        
         if (transformed.length > 0) {
           const infiniteItems = [...transformed, ...transformed, ...transformed];
           setInfiniteCarouselItems(infiniteItems);
@@ -528,7 +573,6 @@ export default function HomeScreen() {
       clearTimeout(autoPlayTimerRef.current);
       autoPlayTimerRef.current = null;
     }
-
     setActiveVideoIndex(null);
 
     if (!carouselItems || carouselItems.length === 0) {
@@ -539,6 +583,7 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = carouselIndex % originalLength;
       const currentItem = carouselItems[actualIndex];
+
       if (currentItem && currentItem.videoUrl) {
         console.log(`🎬 Starting auto-play for: ${currentItem.title}`);
         setActiveVideoIndex(carouselIndex);
@@ -558,7 +603,7 @@ export default function HomeScreen() {
   // Stop video when scrolling main content
   const handleMainScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const scrollY = event.nativeEvent.contentOffset.y;
-    
+
     // Stop video if user scrolls down more than 50 pixels
     if (scrollY > 50 && activeVideoIndex !== null) {
       console.log('📜 Main scroll detected - stopping video');
@@ -568,7 +613,7 @@ export default function HomeScreen() {
         autoPlayTimerRef.current = null;
       }
     }
-    
+
     // Call the pull-to-refresh scroll handler
     handlePullScroll(event);
   }, [activeVideoIndex, handlePullScroll]);
@@ -625,8 +670,8 @@ export default function HomeScreen() {
       }
     };
     load();
-    return () => { 
-      isMounted = false; 
+    return () => {
+      isMounted = false;
     };
   }, [dispatch]);
 
@@ -639,7 +684,7 @@ export default function HomeScreen() {
 
   const onCarouselScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (carouselItems.length === 0) return;
-    
+
     const originalLength = carouselItems.length;
     const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
     console.log('🎯 Scrolled to index:', index);
@@ -669,7 +714,7 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = displayIndex % originalLength;
       const actualItem = carouselItems[actualIndex];
-      
+
       if (actualItem.contentType === 'webseries' && actualItem.contentId) {
         const episodesResponse = await videoService.getEpisodes(actualItem.contentId);
         if (episodesResponse.success && episodesResponse.data?.length > 0) {
@@ -691,6 +736,7 @@ export default function HomeScreen() {
   const handleContinueWatchingPress = (videoData: any) => {
     const targetVideoId = videoData.videoId?._id || videoData.videoId;
     if (!targetVideoId) return;
+
     navigation.navigate('Reels', {
       targetVideoId: String(targetVideoId).trim(),
       resumeTime: videoData.currentTime || 0,
@@ -700,6 +746,7 @@ export default function HomeScreen() {
 
   const handleVideoPress = (videoItem: { _id: string }) => {
     if (!videoItem._id) return;
+
     navigation.navigate('Reels', {
       targetVideoId: String(videoItem._id).trim(),
       resumeTime: 0,
@@ -713,288 +760,262 @@ export default function HomeScreen() {
 
   return (
     <LinearGradient
-      colors={theme === 'dark'
-        ? [colors.background, colors.backgroundGradient, colors.background]
-        : ['#FFFFFF', '#FFFFFF', '#FFFFFF']}
-      locations={[0, 0.5, 1]}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={{ flex: 1 }}
+      colors={
+        theme === 'dark'
+          ? ['#050509', '#0a0a12', '#121218']
+          : ['#f5f5f7', '#ffffff', '#f0f0f2']
+      }
+      style={dynamicStyles.safeArea}
     >
-      <SafeAreaView style={dynamicStyles.safeAreaInner} edges={['bottom', 'left', 'right']}>
-        <View style={dynamicStyles.container}>
-          <Animated.View style={[
-            styles.header, 
-            { 
-              opacity: headerOpacity,
-              transform: [{ translateY: headerTranslateY }]
-            }
-          ]}>
-            <View
-              style={{
-                paddingHorizontal: spacing.screenPadding,
-                paddingTop: insets.top + spacing.headerMargin,
-                paddingBottom: 12,
-              }}
-            >
-              <Text style={dynamicStyles.logoText}>Micro <Text style={dynamicStyles.logoAccent}>Kahani</Text></Text>
+      <SafeAreaView style={dynamicStyles.safeAreaInner} edges={['top']}>
+        <View style={[styles.header, { paddingTop: insets.top > 0 ? 8 : spacing.headerMargin }]}>
+          <Image source={logoImage} style={styles.logo} resizeMode="contain" />
+        </View>
+
+        {(pullDistance > 0 || refreshing) && (
+          <PullToRefreshIndicator
+            pullDistance={pullDistance}
+            threshold={threshold}
+            refreshing={refreshing}
+          />
+        )}
+
+        <ScrollView
+          style={dynamicStyles.container}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={handleMainScroll}
+          bounces={true}
+        >
+          {carouselLoading ? (
+            <View style={styles.carouselPlaceholder}>
+              <ActivityIndicator size="large" color={colors.yellow} />
             </View>
-          </Animated.View>
+          ) : carouselError ? (
+            <View style={styles.carouselPlaceholder}>
+              <Text style={dynamicStyles.errorText}>{carouselError}</Text>
+            </View>
+          ) : carouselItems.length === 0 ? (
+            <View style={styles.carouselPlaceholder}>
+              <Text style={dynamicStyles.emptyText}>No content available</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.carouselWrapper}>
+                <Animated.FlatList
+                  ref={carouselRef}
+                  data={infiniteCarouselItems}
+                  keyExtractor={(item, index) => `${item.id}-${index}`}
+                  horizontal
+                  pagingEnabled={false}
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={CARD_WIDTH}
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.carouselContent}
+                  onScroll={onCarouselScroll}
+                  onMomentumScrollEnd={onCarouselScrollEnd}
+                  onScrollBeginDrag={onCarouselScrollBegin}
+                  onMomentumScrollBegin={onCarouselScrollBegin}
+                  scrollEventThrottle={16}
+                  renderItem={({ item, index }) => {
+                    const originalLength = carouselItems.length;
+                    const actualIndex = index % originalLength;
 
-          {(pullDistance > 0 || refreshing) && (
-            <PullToRefreshIndicator
-              pullDistance={pullDistance}
-              threshold={threshold}
-              refreshing={refreshing}
-              topOffset={insets.top + 50}
-            />
-          )}
+                    const inputRange = [
+                      (index - 1) * CARD_WIDTH,
+                      index * CARD_WIDTH,
+                      (index + 1) * CARD_WIDTH,
+                    ];
 
-          <ScrollView
-            style={dynamicStyles.content}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={handleMainScroll}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor="transparent"
-                colors={['transparent']}
-                progressViewOffset={-1000}
-              />
-            }
-          >
-            <View style={styles.carouselWrapper}>
-              {carouselLoading ? (
-                <View style={styles.carouselPlaceholder}>
-                  <ActivityIndicator size="large" color={colors.yellow} />
-                </View>
-              ) : carouselError ? (
-                <View style={styles.carouselPlaceholder}>
-                  <Ionicons name="alert-circle-outline" size={32} color={colors.error} />
-                  <Text style={dynamicStyles.errorText}>{carouselError}</Text>
-                </View>
-              ) : carouselItems.length === 0 ? (
-                <View style={styles.carouselPlaceholder}>
-                  <Text style={dynamicStyles.emptyText}>No content available</Text>
-                </View>
-              ) : (
-                <>
-                  <Animated.FlatList
-                    ref={carouselRef}
-                    data={infiniteCarouselItems}
-                    keyExtractor={(item, index) => `${item.id}-${index}`}
-                    horizontal
-                    pagingEnabled={false}
-                    showsHorizontalScrollIndicator={false}
-                    snapToInterval={CARD_WIDTH}
-                    decelerationRate="fast"
-                    contentContainerStyle={styles.carouselContent}
-                    onScroll={onCarouselScroll}
-                    onMomentumScrollEnd={onCarouselScrollEnd}
-                    onScrollBeginDrag={onCarouselScrollBegin}
-                    onMomentumScrollBegin={onCarouselScrollBegin}
-                    scrollEventThrottle={16}
-                    renderItem={({ item, index }) => {
-                      const originalLength = carouselItems.length;
-                      const actualIndex = index % originalLength;
-                      
-                      const inputRange = [
-                        (index - 1) * CARD_WIDTH,
-                        index * CARD_WIDTH,
-                        (index + 1) * CARD_WIDTH,
-                      ];
+                    const scale = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.85, 1, 0.85],
+                      extrapolate: 'clamp',
+                    });
 
-                      const scale = scrollX.interpolate({
-                        inputRange,
-                        outputRange: [0.85, 1, 0.85],
-                        extrapolate: 'clamp',
-                      });
+                    const opacity = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.5, 1, 0.5],
+                      extrapolate: 'clamp',
+                    });
 
-                      const opacity = scrollX.interpolate({
-                        inputRange,
-                        outputRange: [0.5, 1, 0.5],
-                        extrapolate: 'clamp',
-                      });
+                    const translateY = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [30, 0, 30],
+                      extrapolate: 'clamp',
+                    });
 
-                      const translateY = scrollX.interpolate({
-                        inputRange,
-                        outputRange: [30, 0, 30],
-                        extrapolate: 'clamp',
-                      });
+                    const imageTranslateX = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [12, 0, -12],
+                      extrapolate: 'clamp',
+                    });
 
-                      const imageTranslateX = scrollX.interpolate({
-                        inputRange,
-                        outputRange: [12, 0, -12],
-                        extrapolate: 'clamp',
-                      });
+                    const isVideoActive = activeVideoIndex === index && !!item.videoUrl;
 
-                      const isVideoActive = activeVideoIndex === index && !!item.videoUrl;
+                    const getContentTypeLabel = () => {
+                      if (item.contentType === 'webseries') {
+                        return item.episodeCount ? `Series · ${item.episodeCount} eps` : 'Series';
+                      } else if (item.contentType === 'reels') {
+                        return item.duration || 'Short';
+                      }
+                      return 'Featured';
+                    };
 
-                      const getContentTypeLabel = () => {
-                        if (item.contentType === 'webseries') {
-                          return item.episodeCount ? `Series · ${item.episodeCount} eps` : 'Series';
-                        } else if (item.contentType === 'reels') {
-                          return item.duration || 'Short';
-                        }
-                        return 'Featured';
-                      };
-
-                      return (
-                        <TouchableOpacity
-                          activeOpacity={0.9}
-                          onPress={() => handleCarouselPress(item, index)}
+                    return (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => handleCarouselPress(item, index)}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.heroCard,
+                            {
+                              transform: [{ scale }, { translateY }],
+                              opacity,
+                            },
+                            isVideoActive && styles.heroCardActive,
+                          ]}
                         >
-                          <Animated.View
-                            style={[
-                              styles.heroCard,
-                              {
-                                transform: [{ scale }, { translateY }],
-                                opacity,
-                              },
-                              isVideoActive && styles.heroCardActive,
-                            ]}
-                          >
-                            <Animated.View 
-                              style={[
-                                styles.heroMediaContainer,
-                                { transform: [{ translateX: imageTranslateX }] }
-                              ]}
-                            >
-                              {isVideoActive ? (
-                                <CarouselVideoPlayer
-                                  videoUrl={item.videoUrl!}
-                                  style={styles.heroCardImage}
-                                  isMuted={isMuted}
-                                  isActive={isVideoActive}
-                                />
-                              ) : (
-                                <Image
-                                  source={{ uri: item.imageUrl }}
-                                  style={styles.heroCardImage}
-                                  resizeMode="cover"
-                                />
-                              )}
-                            </Animated.View>
-
-                            <LinearGradient
-                              colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.75)']}
-                              locations={[0.4, 0.7, 1]}
-                              style={styles.heroGradientOverlay}
-                            >
-                              <View style={styles.heroMetaContainer}>
-                                <View style={styles.chipContainer}>
-                                  <View style={dynamicStyles.chip}>
-                                    <Text style={dynamicStyles.chipText}>{getContentTypeLabel()}</Text>
-                                  </View>
-                                  {item.genres && item.genres.length > 0 && (
-                                    <View style={dynamicStyles.chip}>
-                                      <Text style={dynamicStyles.chipText}>{item.genres[0]}</Text>
-                                    </View>
-                                  )}
-                                </View>
-
-                                <Text style={styles.heroTitle} numberOfLines={2}>
-                                  {item.title}
-                                </Text>
-                                {item.tagline && (
-                                  <Text style={dynamicStyles.heroTagline} numberOfLines={2}>
-                                    {item.tagline}
-                                  </Text>
-                                )}
-                              </View>
-                            </LinearGradient>
-
-                            {isVideoActive && (
-                              <View style={dynamicStyles.playingIndicator}>
-                                <View style={dynamicStyles.playingDot} />
-                                <Text style={dynamicStyles.playingText}>Playing Preview</Text>
-                              </View>
-                            )}
-
-                            <TouchableOpacity style={dynamicStyles.bookmarkButton}>
-                              <Ionicons name="bookmark-outline" size={22} color={colors.textPrimary === '#000000' ? '#000000' : '#FFF'} />
-                            </TouchableOpacity>
-
-                            {isVideoActive && (
-                              <TouchableOpacity
-                                style={dynamicStyles.muteButton}
-                                onPress={handleMuteToggle}
-                                activeOpacity={0.7}
-                                accessibilityLabel="Toggle sound"
-                              >
-                                <Ionicons
-                                  name={isMuted ? 'volume-mute' : 'volume-high'}
-                                  size={22}
-                                  color={colors.textPrimary === '#000000' ? '#000000' : '#FFF'}
-                                />
-                              </TouchableOpacity>
+                          <Animated.View style={[styles.heroMediaContainer, { transform: [{ translateX: imageTranslateX }] }]}>
+                            {isVideoActive ? (
+                              <CarouselVideoPlayer
+                                videoUrl={item.videoUrl!}
+                                style={styles.heroCardImage}
+                                isMuted={isMuted}
+                                isActive={isVideoActive}
+                              />
+                            ) : (
+                              <Image
+                                source={{ uri: item.imageUrl }}
+                                style={styles.heroCardImage}
+                                resizeMode="cover"
+                              />
                             )}
                           </Animated.View>
-                        </TouchableOpacity>
-                      );
-                    }}
-                  />
 
-                  {carouselItems.length > 1 && (
-                    <View style={styles.pageDotsRow}>
-                      {carouselItems.map((_, index) => {
-                        const originalLength = carouselItems.length;
-                        const actualIndex = carouselIndex % originalLength;
-                        return (
-                          <Animated.View
-                            key={index}
-                            style={[
-                              dynamicStyles.pageDot,
-                              index === actualIndex && dynamicStyles.pageDotActive,
-                            ]}
-                          />
-                        );
-                      })}
-                    </View>
-                  )}
-                </>
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+                            style={styles.heroGradientOverlay}
+                          >
+                            <View style={styles.heroMetaContainer}>
+                              <View style={styles.chipContainer}>
+                                <View style={dynamicStyles.chip}>
+                                  <Text style={dynamicStyles.chipText}>{getContentTypeLabel()}</Text>
+                                </View>
+                                {item.genres && item.genres.length > 0 && (
+                                  <View style={dynamicStyles.chip}>
+                                    <Text style={dynamicStyles.chipText}>{item.genres[0]}</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              <Text style={styles.heroTitle} numberOfLines={2}>
+                                {item.title}
+                              </Text>
+
+                              {item.tagline && (
+                                <Text style={dynamicStyles.heroTagline} numberOfLines={2}>
+                                  {item.tagline}
+                                </Text>
+                              )}
+                            </View>
+                          </LinearGradient>
+
+                          {isVideoActive && (
+                            <View style={dynamicStyles.playingIndicator}>
+                              <View style={dynamicStyles.playingDot} />
+                              <Text style={dynamicStyles.playingText}>Playing Preview</Text>
+                            </View>
+                          )}
+
+                          {isVideoActive && (
+                            <TouchableOpacity
+                              style={dynamicStyles.muteButton}
+                              onPress={handleMuteToggle}
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons
+                                name={isMuted ? 'volume-mute' : 'volume-high'}
+                                size={20}
+                                color="#FFFFFF"
+                              />
+                            </TouchableOpacity>
+                          )}
+                        </Animated.View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              </View>
+
+              {carouselItems.length > 1 && (
+                <View style={styles.pageDotsRow}>
+                  {carouselItems.map((_, index) => {
+                    const originalLength = carouselItems.length;
+                    const actualIndex = carouselIndex % originalLength;
+                    return (
+                      <View
+                        key={index}
+                        style={[
+                          dynamicStyles.pageDot,
+                          actualIndex === index && dynamicStyles.pageDotActive,
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
               )}
+            </>
+          )}
+
+          {continueWatchingLoading ? (
+            <View style={styles.section}>
+              <ActivityIndicator size="small" color={colors.yellow} />
             </View>
-
-            <ContinueWatching
-              items={continueWatching}
-              loading={continueWatchingLoading}
-              onItemPress={handleContinueWatchingPress}
-            />
-
-            {latestTrendingData.length > 0 && (
+          ) : (
+            continueWatching.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={dynamicStyles.sectionTitle}>Latest & Trending</Text>
-                  <TouchableOpacity>
-                    <Text style={dynamicStyles.seeAllText}> →</Text>
-                  </TouchableOpacity>
+                  <Text style={dynamicStyles.sectionTitle}>Continue Watching</Text>
                 </View>
-
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.cardsContainer}
-                  decelerationRate="fast"
-                >
-                  {latestTrendingData.map((item, i) => (
-                    <VideoCard
-                      key={item._id || i}
-                      title={item.title}
-                      imageUrl={item.imageUrl}
-                      onPress={() => handleVideoPress(item)}
-                    />
-                  ))}
-                </ScrollView>
+                <ContinueWatching
+                  items={continueWatching}
+                  loading={continueWatchingLoading}
+                  onItemPress={handleContinueWatchingPress}
+                />
               </View>
-            )}
+            )
+          )}
 
-            <View style={{ height: insets.bottom + 24 }} />
-          </ScrollView>
-        </View>
+          {latestTrendingData.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={dynamicStyles.sectionTitle}>Latest & Trending</Text>
+                <Text style={dynamicStyles.seeAllText}>→</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.cardsContainer}
+              >
+                {latestTrendingData.map((item, i) => (
+                  <VideoCard
+                    key={`latest-${item._id}-${i}`}
+                    title={item.title}
+                    imageUrl={item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/140/200?random=1'}
+                    onPress={() => handleVideoPress(item)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          <View style={styles.bottomPadding} />
+          {Platform.OS === 'ios' && <View style={{ height: insets.bottom + 20 }} />}
+          {Platform.OS === 'android' && <View style={{ height: 40 }} />}
+        </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -1012,8 +1033,14 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: spacing.screenPadding,
-    paddingTop: spacing.headerMargin,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  logo: {
+    width: 42,
+    height: 42,
   },
   logoText: {
     fontSize: 20,
@@ -1022,7 +1049,7 @@ const styles = StyleSheet.create({
   },
   logoAccent: {},
   content: {
-    flex: 1,
+    paddingBottom: 20,
   },
   carouselWrapper: {
     marginTop: 8,
@@ -1077,6 +1104,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: 0.3,
+    color: '#FFFFFF',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
@@ -1108,6 +1136,6 @@ const styles = StyleSheet.create({
     gap: spacing.cardGap,
   },
   bottomPadding: {
-    height: 100,
+    height: 60,
   },
 });
