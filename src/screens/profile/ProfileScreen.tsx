@@ -14,8 +14,9 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout as logoutAPI, getUserProfile, updateProfile } from '../../services/api';
 import { RootState } from '../../redux/store';
@@ -42,8 +43,10 @@ const generateRandomUsername = (): string => {
 export default function ProfileScreen({ navigation }: any) {
   const dispatch = useDispatch();
   const { theme, toggleTheme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const user = useSelector((state: RootState) => state.user.profile);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
+  const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
   const [autoPlay, setAutoPlay] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [username, setUsername] = useState<string>('');
@@ -244,7 +247,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, dynamicStyles.background]} edges={['top', 'bottom', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+ 
 
       {/* Pull-to-Refresh Indicator */}
       {(pullDistance > 0 || refreshing) && (
@@ -255,6 +258,9 @@ export default function ProfileScreen({ navigation }: any) {
           topOffset={60}
         />
       )}
+
+      {/* Header with Search and Coin Balance */}
+      
 
       <ScrollView
         style={styles.scrollView}
@@ -293,6 +299,22 @@ export default function ProfileScreen({ navigation }: any) {
               <Ionicons name="create-outline" size={18} color={colors.yellow} style={styles.editIcon} />
             </View>
           </TouchableOpacity>
+        </View>
+       
+        {/* Wallet Card */}
+        <View style={styles.walletCard}>
+          <LinearGradient
+            colors={['#F4D03F', '#F7DC6F', ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.walletGradient}
+          >
+            <Text style={styles.walletTitle}>Your wallet</Text>
+            <View style={styles.walletBadge}>
+              <Ionicons name="logo-bitcoin" size={18} color="#3E2723" />
+              <Text style={styles.walletBadgeText}>{userCoins}</Text>
+            </View>
+          </LinearGradient>
         </View>
         
         {/* Settings Card */}
@@ -368,29 +390,51 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Menu Items */}
         <View style={styles.menuSection}>
           <MenuItem
-            icon="help-circle-outline"
-            title="Help & Support"
+            icon="gift-outline"
+            title="Earn Rewards"
             onPress={() => {}}
             colors={colors}
           />
           <MenuItem
-            icon="information-circle-outline"
-            title="About"
+            icon="list-outline"
+            title="My Watchlist"
             onPress={() => {}}
             colors={colors}
           />
+          <MenuItem
+            icon="settings-outline"
+            title="App Settings"
+            onPress={() => {}}
+            colors={colors}
+          />
+          <MenuItem
+            icon="language-outline"
+            title="Language Preferences"
+            onPress={() => {}}
+            colors={colors}
+          />
+          <MenuItem
+            icon="help-circle-outline"
+            title="Help Centre"
+            onPress={() => {}}
+            colors={colors}
+          />
+          <MenuItem
+            icon="log-out-outline"
+            title="Log out"
+            onPress={handleLogout}
+            colors={colors}
+            isLogout={true}
+          />
         </View>
 
-        {/* Logout */}
-        <View style={styles.logoutSection}>
-          <TouchableOpacity
-            style={[styles.logoutButton, { backgroundColor: colors.surface, borderColor: colors.error + '40' }]}
-            onPress={handleLogout}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="log-out-outline" size={20} color={colors.error} />
-            <Text style={[styles.logoutText, { color: colors.error }]}>Logout</Text>
+        {/* Footer Section */}
+        <View style={styles.footerSection}>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>Terms & Conditions</Text>
           </TouchableOpacity>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}> | </Text>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Version: 1.3.4 (159)</Text>
         </View>
 
         <View style={styles.bottomSpacer} />
@@ -486,29 +530,63 @@ export default function ProfileScreen({ navigation }: any) {
   );
 }
 
-const MenuItem = ({ icon, title, onPress, colors }: any) => (
+const MenuItem = ({ icon, title, onPress, colors, isLogout = false }: any) => (
   <TouchableOpacity 
     style={[
       styles.menuItem, 
       { 
         backgroundColor: colors.surface, 
-        borderColor: colors.borderLight
+        borderColor: isLogout ? colors.error + '40' : colors.borderLight
       }
     ]} 
     onPress={onPress} 
     activeOpacity={0.7}
   >
     <View style={styles.menuItemLeft}>
-      <Ionicons name={icon} size={20} color={colors.yellow} />
-      <Text style={[styles.menuItemText, { color: colors.textPrimary }]}>{title}</Text>
+      <Ionicons name={icon} size={20} color={isLogout ? colors.error : colors.yellow} />
+      <Text style={[styles.menuItemText, { color: isLogout ? colors.error : colors.textPrimary }]}>{title}</Text>
     </View>
-    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+    {!isLogout && <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />}
   </TouchableOpacity>
 );
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    zIndex: 10,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerIconButton: {
+    padding: 8,
+  },
+  coinBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  coinBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
@@ -517,6 +595,130 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 40,
     alignItems: 'center',
+  },
+  subscriptionCard: {
+    width: width - 40,
+    maxWidth: 400,
+    alignSelf: 'center',
+    borderRadius: 16,
+    marginBottom: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  subscriptionGradient: {
+    padding: 20,
+  },
+  subscriptionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3E2723',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  subscriptionFeatures: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  subscriptionFeature: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  featureIconContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  hdBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: '#3E2723',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  hdBadgeText: {
+    color: '#F4D03F',
+    fontSize: 8,
+    fontWeight: '700',
+  },
+  featureLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3E2723',
+    textAlign: 'center',
+  },
+  subscriptionButton: {
+    backgroundColor: '#6D4C41',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  subscriptionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  walletCard: {
+    width: width - 40,
+    maxWidth: 400,
+    alignSelf: 'center',
+    borderRadius: 16,
+    marginBottom: 24,
+    overflow: 'hidden',
+    height: 90,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  walletGradient: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+  },
+  walletTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  walletBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  walletBadgeText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3E2723',
+    marginLeft: 6,
+  },
+  footerSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 24,
+    marginBottom: 20,
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 13,
   },
   avatarSection: {
     alignItems: 'center',
