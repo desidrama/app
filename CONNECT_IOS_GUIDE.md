@@ -128,3 +128,4 @@ npx expo start -c
 5. Clear Expo Go cache (shake device → Settings → Clear cache)
 
 
+

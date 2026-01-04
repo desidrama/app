@@ -14,6 +14,7 @@ import {
   Pressable,
   Alert,
   Share,
+  StatusBar,
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -68,8 +69,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  // Calculate available viewport height accounting for safe areas
-  // This ensures consistent item height across all devices
+  // HARD RULE: Each reel must occupy exactly one full screen height
+  // Formula: screenHeight - safeAreaTop - safeAreaBottom
+  // This ensures NO overlap, NO next reel visible, exact snap-to behavior
   const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
 
 
@@ -664,10 +666,11 @@ console.log('[AD DEBUG] Popup state set', {
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     return (
-<View style={{ height: ITEM_HEIGHT }}>
+      <View style={{ height: ITEM_HEIGHT }}>
         <ReelItem
           key={item.id}
           reel={item}
+          containerHeight={ITEM_HEIGHT}
           isActive={index === currentIndex}
           initialTime={initialTime}
           screenFocused={isScreenFocused}
@@ -741,13 +744,23 @@ console.log('[AD DEBUG] Popup state set', {
     );
   }
 
+  // Android StatusBar height for manual offset (REQUIRED for Android)
+  const ANDROID_TOP_OFFSET = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
       {/* Top Header Container - Back & Share Alignment */}
       <View style={[backButtonStyles.topHeader, {
-        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-        left: insets.left + 16,
-        right: insets.right + 16,
+        top: Platform.OS === 'android'
+          ? ANDROID_TOP_OFFSET + 12
+          : insets.top + 8,
+        left: 16,
+        right: 16,
       }]}>
         <TouchableOpacity
           onPress={handleBackPress}
@@ -778,6 +791,7 @@ console.log('[AD DEBUG] Popup state set', {
         snapToInterval={ITEM_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
+        disableIntervalMomentum={true}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
@@ -802,6 +816,7 @@ console.log('[AD DEBUG] Popup state set', {
               <ActivityIndicator size="small" color={colors.yellow} />
             </View>
         ) : null}
+        contentContainerStyle={{}}
       />
       
       {/* RewardedEpisodeAd - Always mounted to allow preloading */}
@@ -1020,20 +1035,29 @@ console.log('[AD DEBUG] Popup state set', {
 
 
 
-    </SafeAreaView>
+    </View>
   );
 };
 
-const backButtonStyles = StyleSheet.create({
-  topHeader: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
-    pointerEvents: 'box-none', // Allow touches to pass through to children
-    elevation: 1000, // Android elevation (equivalent to zIndex)
-  },
-});
+// Responsive styles - will be created in component to access responsive utilities
+const createBackButtonStyles = () => {
+  const touchTarget = Platform.OS === 'android' 
+    ? Math.max(44, StatusBar.currentHeight ?? 0) 
+    : 44;
+  
+  return StyleSheet.create({
+    topHeader: {
+      position: 'absolute',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      zIndex: 999,
+      pointerEvents: 'box-none',
+      elevation: 999,
+    },
+  });
+};
+
+const backButtonStyles = createBackButtonStyles();
 
 export default ReelPlayerScreen;

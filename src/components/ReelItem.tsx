@@ -19,6 +19,7 @@ import {
   PanResponder,
   ScrollView,
   AppState,
+  StatusBar,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,7 +55,7 @@ type ReelItemProps = {
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
   shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
-  // Swipe gestures removed - only vertical scrolling for navigation
+  containerHeight: number; // EXACT height for fullscreen reel (ITEM_HEIGHT from parent)
 };
 
 // RANGES and EMOJIS removed - using backend-driven episode grouping
@@ -143,7 +144,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, containerHeight }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -737,6 +738,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         if (videoRef.current) {
           videoRef.current.setIsMutedAsync(true).catch(() => {});
           videoRef.current.pauseAsync().catch(() => {});
+          // Reset position to 0 when inactive (prevents audio leak from previous position)
+          videoRef.current.setPositionAsync(0).catch(() => {});
           actualPlayStateRef.current = 'stopped';
           setIsPlaying(false);
           isPausedByUserRef.current = false;
@@ -1511,7 +1514,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // Episodes array is now loaded from API in openEpisodes
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: containerHeight }]}>
       {/* ========================================
           LAYER 1: VIDEO LAYER (No UI, No Touch)
           ======================================== */}
@@ -1582,6 +1585,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             styles.centerPlayIcon,
             {
               opacity: uiOpacity,
+              marginTop: -40, // Half of 80px background size
+              marginLeft: -40, // Half of 80px background size
             }
           ]}
           pointerEvents="none"
@@ -1599,12 +1604,15 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       {/* Share button is now in ReelsFeedScreen topHeader container */}
 
       {/* PROGRESS BAR - Bottom edge, draggable (Control Layer) */}
+      {/* HARD RULE: Progress bar sits EXACTLY at safeAreaBottom + 12dp */}
       <Animated.View 
         style={[
           styles.progressBarContainer,
           {
             opacity: uiOpacity,
-            bottom: Math.max(insets.bottom, 16),
+            bottom: insets.bottom + 8, // CRITICAL: 8dp above safe area (flush to bottom)
+            left: 16,
+            right: 16,
           }
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1653,7 +1661,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           styles.rightActions,
           {
             opacity: uiOpacity,
-            bottom: Math.max(insets.bottom, 80),
+            bottom: insets.bottom + 120, // CRITICAL: 120dp above safe area (above bottom metadata)
+            right: 16,
           }
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1719,7 +1728,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             styles.bottomInfo,
             {
               opacity: uiOpacity,
-              bottom: Math.max(insets.bottom, 16) + 20, // Moved up by 20dp to avoid overlapping with progress bar
+              bottom: insets.bottom + 48, // CRITICAL: 48dp above safe area (40dp above progress bar)
+              left: 16,
+              right: 100, // Fixed space for right action buttons
             }
           ]}
           pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1741,10 +1752,15 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                       openDesc();
                     }}
                     style={styles.seriesInfoIcon}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    hitSlop={{ 
+                      top: 10, // Fixed hitSlop
+                      bottom: 10, 
+                      left: 10, 
+                      right: 10 
+                    }}
                     activeOpacity={0.6}
                   >
-                    <Ionicons name="information-circle" size={20} color="#FFFFFF" />
+                    <Ionicons name="information-circle" size={18} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
                 
@@ -1781,7 +1797,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           
           return (
             <View style={styles.descriptionRow}>
-              <Text style={styles.descriptionText} numberOfLines={1}>
+              <Text style={styles.descriptionText} numberOfLines={2}>
                 {truncatedDescription}
               </Text>
               {isTruncated && (
@@ -2291,17 +2307,27 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   );
 }
 
-const styles = StyleSheet.create({
+// Create responsive styles function
+const createResponsiveStyles = () => {
+  // Fixed spacing and border radius values for fullscreen Reels
+  const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
+  const borderRadius = { sm: 4, md: 8, lg: 12, xl: 16, full: 999 };
+  const touchTargetSize = 44; // Fixed touch target size
+  
+  return StyleSheet.create({
   container: { 
     width: '100%', 
-    flex: 1,
     backgroundColor: '#0E0E0E',
     overflow: 'hidden',
   },
   
-  // LAYER 1: VIDEO LAYER (No UI, No Touch)
+  // LAYER 1: VIDEO LAYER (No UI, No Touch) - Full bleed, edge to edge
   videoLayer: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     zIndex: 1,
   },
   
@@ -2309,9 +2335,9 @@ const styles = StyleSheet.create({
   gestureLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    // Exclude right side (action buttons) and bottom (metadata) from gesture area
-    paddingRight: 80, // Exclude right action rail
-    paddingBottom: 120, // Exclude bottom metadata
+    // Exclude right side (action buttons) and bottom (metadata) from gesture area - Fixed
+    paddingRight: 70, // Fixed: Exclude right action rail
+    paddingBottom: 100, // Fixed: Exclude bottom metadata
   },
   
   // LAYER 3: CONTROL LAYER (Buttons - Highest Priority for Taps)
@@ -2355,10 +2381,10 @@ const styles = StyleSheet.create({
 
   rightActions: {
     position: 'absolute',
-    right: 16,
-    bottom: Math.max(80, 80), // Respect bottom safe area
+    right: 0, // Set dynamically in inline style
+    bottom: 0, // Set dynamically in inline style
     alignItems: 'center',
-    zIndex: 500, // High zIndex for action buttons
+    zIndex: 500,
   },
   
   // Episode button position for sheet alignment
@@ -2366,27 +2392,27 @@ const styles = StyleSheet.create({
     bottom: 80 + (20 * 2), // bottom of rightActions + spacing for two buttons (like + comments)
   },
   
-  // Premium Glassmorphism Action Buttons - Professional spacing (16dp between buttons)
+  // Premium Glassmorphism Action Buttons - Fixed spacing
   premiumActionBtn: {
     alignItems: 'center',
-    marginBottom: 16, // 16dp spacing (Instagram/YouTube Shorts standard)
-    minWidth: 44,
+    marginBottom: spacing.md, // Fixed spacing between buttons
+    minWidth: touchTargetSize, // Fixed minimum touch target size
   },
   premiumIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: touchTargetSize,
+    height: touchTargetSize,
+    borderRadius: touchTargetSize / 2,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
-    borderWidth: 1,
+    marginBottom: 4, // Fixed spacing
+    borderWidth: Platform.OS === 'ios' ? 1 : 1.5,
     borderColor: 'rgba(255, 255, 255, 0.18)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 2 }, // Fixed shadow offset
     shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowRadius: 6, // Fixed shadow radius
+    elevation: Platform.OS === 'android' ? 8 : 0, // Fixed elevation
     // Glassmorphism effect
     ...Platform.select({
       ios: {
@@ -2400,7 +2426,7 @@ const styles = StyleSheet.create({
   },
   premiumCountLabel: {
     color: '#E5E5E5',
-    fontSize: 11,
+    fontSize: 11, // Fixed font size
     fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
@@ -2589,9 +2615,9 @@ infoValue: {
   // BOTTOM INFO - Title/Metadata (Control Layer)
   bottomInfo: {
     position: 'absolute',
-    left: 16,
-    right: 100, // Leave space for right action rail
-    zIndex: 4000, // Control Layer - Above gesture, blocks video tap
+    left: 0, // Set dynamically in inline style
+    right: 0, // Set dynamically in inline style
+    zIndex: 4000,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -2626,36 +2652,36 @@ infoValue: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 0,
-    marginBottom: 6, // 6dp gap before description
+    marginBottom: spacing.xs, // Responsive gap before description
   },
   seriesNameText: {
     color: '#FFFFFF',
-    fontSize: 18, // Slightly larger than description
-    fontWeight: '700', // Bold
+    fontSize: 16, // Fixed font size
+    fontWeight: '700',
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 4, // Fixed shadow radius
     letterSpacing: 0.2,
   },
   seriesInfoIcon: {
-    marginLeft: 7, // 7dp gap from title (slight horizontal spacing)
-    alignSelf: 'center', // Align with text baseline
+    marginLeft: 6, // Fixed spacing
+    alignSelf: 'center',
   },
   descriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 0,
-    marginBottom: 6,
+    marginBottom: 0, // No extra spacing below description
   },
   descriptionText: {
     color: '#FFFFFF',
-    fontSize: 14, // Decreased from 16
+    fontSize: 14, // Fixed font size
     flex: 1,
-    lineHeight: 18, // Reduced from 22 for compact look
-    fontWeight: '500', // Reduced from 600 to make it secondary
+    lineHeight: 20, // Fixed line height
+    fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 4, // Fixed shadow radius
     letterSpacing: 0.15,
   },
   moreButton: {
@@ -2689,26 +2715,26 @@ infoValue: {
     marginTop: 6,
   },
 
-  // PROGRESS BAR - Bottom edge, draggable (no shadow/border)
+  // PROGRESS BAR - Bottom edge, draggable (Responsive)
   progressBarContainer: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 4000, // Control Layer
-    alignItems: 'flex-start', // Align timer to left
+    left: 0, // Set dynamically
+    right: 0, // Set dynamically
+    zIndex: 4000,
+    alignItems: 'flex-start',
   },
   progressBarBackground: {
     width: '100%',
-    height: 3,
+    height: 3, // Fixed height
     backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 1.5,
-    overflow: 'visible', // Allow thumb to be visible
+    borderRadius: 2, // Fixed border radius
+    overflow: 'visible',
     position: 'relative',
   },
   progressBarFill: { 
-    height: 3,
-    backgroundColor: '#FFD54A', // Yellow color for progress bar
-    borderRadius: 1.5,
+    height: 3, // Fixed height
+    backgroundColor: '#FFD54A',
+    borderRadius: 2, // Fixed border radius
   },
   scrubberThumb: {
     position: 'absolute',
@@ -2728,19 +2754,19 @@ infoValue: {
   },
   playbackTimer: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11, // Fixed font size
     fontWeight: '500',
-    marginBottom: 6,
+    marginBottom: spacing.xs,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   seasonEpisodeLabel: {
-    color: '#FFD54A', // Golden color (OTT/web-series style)
-    fontSize: 14, // Slightly larger than description (14 vs 13)
-    fontWeight: '700', // Bold
-    marginTop: 5, // 5dp gap after series name (tight spacing)
-    marginBottom: 6, // 6dp gap before description
+    color: '#FFD54A',
+    fontSize: 13, // Fixed font size
+    fontWeight: '700',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
@@ -2827,14 +2853,14 @@ infoValue: {
     left: 0,
     right: 0,
     bottom: 0,
-    height: height * 0.65, // 65% of screen height (increased from 40%)
+    height: height * 0.65, // Fixed height (65% of window height)
     maxHeight: height * 0.65,
     width: '100%',
     backgroundColor: '#0E0E0E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingHorizontal: 20,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingTop: spacing.md,
+    paddingHorizontal: 16, // Fixed padding
     zIndex: 10001, // Above backdrop (same as commentSheet)
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -2868,16 +2894,16 @@ infoValue: {
   },
   episodeSheetTitle: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 17, // Fixed font size
     fontWeight: '600',
     letterSpacing: 0.5,
     flex: 1,
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   episodeSheetCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: touchTargetSize,
+    height: touchTargetSize,
+    borderRadius: touchTargetSize / 2,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2928,25 +2954,26 @@ infoValue: {
   rangeText: { color: '#ccc', fontWeight: '700' },
   rangeTextActive: { color: '#000' },
 
-  // Netflix-style Episode Pills - Premium OTT Design
+  // Netflix-style Episode Pills - Premium OTT Design - Fixed values
   episodeScrollContainer: {
-    paddingLeft: 20,
-    paddingRight: 20, // Extra padding on right to prevent cut-off
-    paddingVertical: 8,
+    paddingLeft: 16, // Fixed padding
+    paddingRight: 16, // Fixed padding
+    paddingVertical: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
   },
   netflixEpisodePill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999, // Fully rounded
+    paddingHorizontal: 16, // Fixed padding
+    paddingVertical: spacing.sm,
+    borderRadius: 999,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 70,
-    marginRight: 12, // Spacing between pills
+    minWidth: 60, // Fixed min width
+    minHeight: touchTargetSize,
+    marginRight: spacing.md,
   },
   netflixEpisodePillActive: {
     backgroundColor: '#F5C451',
@@ -2954,14 +2981,14 @@ infoValue: {
   },
   netflixEpisodeText: {
     color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 13,
-    fontWeight: '500', // Regular weight for inactive
+    fontSize: 13, // Fixed font size
+    fontWeight: '500',
     letterSpacing: 0.2,
   },
   netflixEpisodeTextActive: {
     color: '#000000',
-    fontSize: 13,
-    fontWeight: '600', // SemiBold for active
+    fontSize: 13, // Fixed font size
+    fontWeight: '600',
     letterSpacing: 0.2,
   },
   
@@ -2981,14 +3008,14 @@ infoValue: {
   epTextActive: { color: '#000', fontWeight: '800' },
   episodesLoadingContainer: {
     width: '100%',
-    paddingVertical: 40,
+    paddingVertical: 40, // Fixed padding
     alignItems: 'center',
     justifyContent: 'center',
   },
   episodesLoadingText: {
     color: '#fff',
-    marginTop: 12,
-    fontSize: 14,
+    marginTop: spacing.md,
+    fontSize: 14, // Fixed font size
   },
 
   // COMMENT SHEET - Full Bottom Sheet (Overlay Layer) - REFERENCE IMPLEMENTATION
@@ -2997,18 +3024,18 @@ infoValue: {
     left: 0,
     right: 0,
     bottom: 0,
-    height: height * 0.85, // 85% height (full bottom sheet)
+    height: height * 0.85, // Fixed height (85% of window height)
     maxHeight: height * 0.85,
     width: '100%',
-    zIndex: 10001, // Above backdrop
+    zIndex: 10001,
   },
   commentSheet: {
     flex: 1,
     backgroundColor: '#0E0E0E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingHorizontal: 20,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingTop: spacing.md,
+    paddingHorizontal: 16, // Fixed padding
     paddingBottom: 0, // Remove bottom padding - let KeyboardAvoidingView handle it
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -3071,52 +3098,52 @@ infoValue: {
     }),
   },
   commentHandleBar: {
-    width: 36,
-    height: 4,
+    width: 36, // Fixed width
+    height: 4, // Fixed height
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
+    borderRadius: borderRadius.sm,
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   commentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 16,
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   commentHeaderTitle: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 20, // Fixed font size
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   commentItem: {
     flexDirection: 'row',
-    marginBottom: 16,
-    paddingRight: 8,
+    marginBottom: spacing.md,
+    paddingRight: spacing.xs,
   },
   commentAvatar: {
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   commentAvatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 32, // Fixed width
+    height: 32, // Fixed height
+    borderRadius: 16, // Fixed border radius
     backgroundColor: '#FFD54A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   commentAvatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 32, // Fixed width
+    height: 32, // Fixed height
+    borderRadius: 16, // Fixed border radius
   },
   commentAvatarText: {
     color: '#000',
-    fontSize: 14,
+    fontSize: 14, // Fixed font size
     fontWeight: '700',
   },
   commentContent: {
@@ -3127,31 +3154,31 @@ infoValue: {
   },
   commentUsername: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 14, // Fixed font size
     fontWeight: '700',
-    marginRight: 6,
+    marginRight: spacing.xs,
   },
   commentText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 15, // Fixed font size
+    lineHeight: 22, // Fixed line height
     fontWeight: '400',
     letterSpacing: 0.1,
   },
   commentActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   commentTime: {
     color: '#999',
-    fontSize: 12,
-    marginRight: 12,
+    fontSize: 12, // Fixed font size
+    marginRight: spacing.md,
   },
   commentActionText: {
     color: '#999',
-    fontSize: 12,
-    marginRight: 12,
+    fontSize: 12, // Fixed font size
+    marginRight: spacing.md,
     fontWeight: '600',
   },
   commentLikesContainer: {
@@ -3183,25 +3210,24 @@ infoValue: {
     color: '#999',
     fontSize: 14,
   },
-  // COMMENT INPUT - Fixed at bottom (Instagram Style)
+  // COMMENT INPUT - Fixed at bottom (Instagram Style) - Responsive
   commentInputSection: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingTop: 12,
-    paddingHorizontal: 0, // Already handled by parent paddingHorizontal: 20
+    paddingTop: spacing.md,
+    paddingHorizontal: 0,
     borderTopWidth: 0.5,
     borderTopColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: '#0E0E0E', // Solid background so it stays visible
-    // paddingBottom handled dynamically: keyboardHeight + 12 when open, Math.max(insets.bottom, 12) when closed
+    backgroundColor: '#0E0E0E',
   },
   commentInputAvatar: {
-    marginRight: 12,
-    marginBottom: 8,
+    marginRight: spacing.md,
+    marginBottom: spacing.xs,
   },
   commentInputAvatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 40, // Fixed width
+    height: 40, // Fixed height
+    borderRadius: 20, // Fixed border radius
     backgroundColor: '#F5C451',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3210,31 +3236,32 @@ infoValue: {
   },
   commentInputAvatarText: {
     color: '#000000',
-    fontSize: 16,
+    fontSize: 16, // Fixed font size
     fontWeight: '700',
   },
   commentInput: {
     flex: 1,
     backgroundColor: 'transparent',
     color: '#fff',
-    fontSize: 14,
-    maxHeight: 100,
-    paddingVertical: 8,
+    fontSize: 14, // Fixed font size
+    maxHeight: 100, // Fixed max height
+    paddingVertical: spacing.xs,
     paddingHorizontal: 0,
   },
   commentSendBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginLeft: 8,
-    marginBottom: 4,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    marginLeft: spacing.xs,
+    marginBottom: spacing.xs,
     alignSelf: 'flex-end',
+    minHeight: touchTargetSize, // Fixed touch target size
   },
   commentSendBtnDisabled: {
     opacity: 0.5,
   },
   commentSendText: {
     color: '#FFD54A',
-    fontSize: 14,
+    fontSize: 14, // Fixed font size
     fontWeight: '700',
   },
   commentSendTextDisabled: {
@@ -3248,27 +3275,27 @@ infoValue: {
     paddingBottom: 12,
   },
   moreHandleBar: {
-    width: 36,
-    height: 4,
+    width: 36, // Fixed width
+    height: 4, // Fixed height
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
+    borderRadius: borderRadius.sm,
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   moreSheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    marginBottom: 24,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xl,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   moreSheetTitle: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 20, // Fixed font size
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -3278,14 +3305,14 @@ infoValue: {
     justifyContent: 'center',
   },
   moreSection: {
-    marginBottom: 32,
+    marginBottom: spacing.xl, // Fixed spacing (xl instead of xxl)
   },
   moreSectionTitle: {
     color: '#B0B0B0',
-    fontSize: 13,
+    fontSize: 13, // Fixed font size
     fontWeight: '600',
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: spacing.md,
     textTransform: 'uppercase',
   },
   moreOptionsRow: {
@@ -3312,13 +3339,13 @@ infoValue: {
   },
   moreOptionChipText: {
     color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 14,
+    fontSize: 14, // Fixed font size
     fontWeight: '600',
     letterSpacing: 0.2,
   },
   moreOptionChipTextActive: {
     color: '#000000',
-    fontSize: 14,
+    fontSize: 14, // Fixed font size
     fontWeight: '700',
   },
   moreDivider: {
@@ -3340,9 +3367,9 @@ infoValue: {
   },
   moreActionText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 16, // Fixed font size
     fontWeight: '500',
-    marginLeft: 16,
+    marginLeft: spacing.md,
   },
   moreItem: { paddingVertical: 14 },
   moreText: { color: '#fff', fontSize: 16 },
@@ -3352,23 +3379,22 @@ infoValue: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginTop: -40, // Half of background size (80/2)
-    marginLeft: -40, // Half of background size (80/2)
     zIndex: 50,
   },
   centerPlayIconBackground: {
-    width: 80,
+    width: 80, // Fixed play icon size
     height: 80,
     borderRadius: 40,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 2 }, // Fixed shadow offset
     shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowRadius: 8, // Fixed shadow radius
+    elevation: Platform.OS === 'android' ? 10 : 0, // Fixed elevation
   },
+  });
+};
 
-
-});
+const styles = createResponsiveStyles();
