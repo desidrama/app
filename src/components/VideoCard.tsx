@@ -10,30 +10,44 @@ interface VideoCardProps {
   title: string;
   imageUrl: string;
   episodeNumber?: number;
+  seasonNumber?: number;
   seriesName?: string;
   genre?: string;
   onPress: () => void;
+  hideTextOverlay?: boolean; // Hide text overlay for search screen
+  showTitleBelow?: boolean; // Show title below card instead of on card
+  cardWidth?: number; // Custom card width for grid layouts
 }
 
 export default function VideoCard({
   title,
   imageUrl,
   episodeNumber,
+  seasonNumber,
   seriesName,
   genre,
   onPress,
+  hideTextOverlay = false,
+  showTitleBelow = false,
+  cardWidth,
 }: VideoCardProps) {
   const { colors } = useTheme();
 
+  const cardW = cardWidth || 140;
+  const cardH = cardW * 1.43; // Maintain aspect ratio
+
   const dynamicStyles = StyleSheet.create({
     container: {
-      width: 140,
-      height: 200,
+      width: cardW,
       borderRadius: BORDER_RADIUS.large, // 16px radius for cards
       overflow: 'hidden',
       backgroundColor: colors.surface,
       position: 'relative',
       ...SHADOWS.card, // Subtle shadow/elevation
+    },
+    imageContainer: {
+      width: '100%',
+      height: cardH,
     },
     title: {
       ...TYPOGRAPHY.bodySmall,
@@ -48,7 +62,7 @@ export default function VideoCard({
     },
     badge: {
       position: 'absolute',
-      bottom: SPACING.md + 20, // Above text overlay
+      bottom: SPACING.sm,
       left: SPACING.sm,
       backgroundColor: colors.yellow,
       borderRadius: BORDER_RADIUS.small,
@@ -60,50 +74,69 @@ export default function VideoCard({
       fontWeight: '700',
       color: colors.textOnYellow,
     },
+    titleBelow: {
+      ...TYPOGRAPHY.bodySmall,
+      fontWeight: '600',
+      color: colors.textPrimary,
+      marginTop: SPACING.sm,
+      textAlign: 'center',
+    },
   });
 
+  const badgeText = seasonNumber && episodeNumber 
+    ? `S${seasonNumber} E${episodeNumber}`
+    : episodeNumber 
+    ? `EP ${episodeNumber}`
+    : seasonNumber
+    ? `S${seasonNumber}`
+    : null;
+
   return (
-    <TouchableOpacity
-      style={dynamicStyles.container}
-      onPress={onPress}
-      activeOpacity={0.9}
-    >
-      <Image
-        source={{ uri: imageUrl }}
-        style={styles.image}
-        resizeMode="cover"
-      />
-      
-      {/* Gradient overlay for text readability */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-        locations={[0.5, 0.8, 1]}
-        style={styles.gradientOverlay}
-      />
-      
-      {/* Episode badge in bright yellow */}
-      {episodeNumber && (
-        <View style={dynamicStyles.badge}>
-          <Text style={dynamicStyles.badgeText}>EP {episodeNumber}</Text>
+    <View style={styles.wrapper}>
+      <TouchableOpacity
+        style={dynamicStyles.container}
+        onPress={onPress}
+        activeOpacity={0.9}
+      >
+        <View style={dynamicStyles.imageContainer}>
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.image}
+            resizeMode="cover"
+          />
+          
+          {/* Gradient overlay for badge readability */}
+          {badgeText && (
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.4)']}
+              locations={[0.6, 1]}
+              style={styles.gradientOverlay}
+            />
+          )}
+          
+          {/* Season/Episode badge */}
+          {badgeText && (
+            <View style={dynamicStyles.badge}>
+              <Text style={dynamicStyles.badgeText}>{badgeText}</Text>
+            </View>
+          )}
         </View>
-      )}
+      </TouchableOpacity>
       
-      {/* Text Overlay */}
-      <View style={styles.textOverlay}>
-        <Text style={dynamicStyles.title} numberOfLines={1}>
+      {/* Title below card */}
+      {showTitleBelow && (
+        <Text style={dynamicStyles.titleBelow} numberOfLines={2}>
           {seriesName || title}
         </Text>
-        {genre && (
-          <Text style={dynamicStyles.meta} numberOfLines={1}>
-            {genre}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    alignItems: 'center',
+  },
   image: {
     width: '100%',
     height: '100%',
@@ -113,13 +146,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '50%',
-  },
-  textOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: SPACING.sm,
+    height: '40%',
   },
 });

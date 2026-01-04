@@ -12,13 +12,14 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { videoService } from '../../services/video.service';
 import { Video as VideoType } from '../../types';
 import VideoCard from '../../components/VideoCard';
+import SearchVideoCard from '../../components/SearchVideoCard';
 import { API_BASE_URL } from '../../utils/api';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -39,14 +40,13 @@ export default function SearchScreen() {
   const [hasSearched, setHasSearched] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const MOST_SEARCHED = [
-  'Ghost',
-  'Digilocker',
-  'Meridian Exposed',
-  'Firewall of Lies',
-  'eyes',
-  'Machine',
-];
-
+    'Ghost',
+    'Digilocker',
+    'Meridian Exposed',
+    'Firewall of Lies',
+    'eyes',
+    'Machine',
+  ];
 
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -76,7 +76,7 @@ export default function SearchScreen() {
     }
   }, []);
 
-    const loadTrendingVideos = useCallback(async () => {
+  const loadTrendingVideos = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -93,11 +93,11 @@ export default function SearchScreen() {
     }
   }, []);
 
-    useEffect(() => {
-  if (!hasSearched && searchResults.length === 0) {
-    loadTrendingVideos();
-  }
-}, [loadTrendingVideos, hasSearched, searchResults.length]);
+  useEffect(() => {
+    if (!hasSearched && searchResults.length === 0) {
+      loadTrendingVideos();
+    }
+  }, [loadTrendingVideos, hasSearched, searchResults.length]);
 
   // Real-time search with debounce
   useEffect(() => {
@@ -135,10 +135,9 @@ export default function SearchScreen() {
   };
 
   const handleMostSearchedPress = (term: string) => {
-  setSearchQuery(term);
-  // The useEffect will handle the search automatically
-};
-
+    setSearchQuery(term);
+    // The useEffect will handle the search automatically
+  };
 
   const handleVideoPress = (video: VideoType) => {
     // Navigate to Reels tab with the selected video
@@ -152,44 +151,19 @@ export default function SearchScreen() {
 
   const renderVideoItem = ({ item }: { item: VideoType }) => {
     const imageUrl = item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/110/160?random=1';
-    const fullImageUrl = imageUrl.startsWith('http') 
-      ? imageUrl 
+    const fullImageUrl = imageUrl.startsWith('http')
+      ? imageUrl
       : `${API_BASE_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
 
     return (
-      <TouchableOpacity
-  style={hasSearched ? styles.videoItemSearch : styles.videoItemTrending}
-  onPress={() => handleVideoPress(item)}
-  activeOpacity={0.8}
->
-
-  {/* Poster */}
-  <View
-  style={{
-    borderRadius: 14,
-    overflow: 'hidden',
-  }}
->
-
-
-    <VideoCard
-      title={item.title}
-      imageUrl={fullImageUrl}
-      onPress={() => handleVideoPress(item)}
-    />
-  </View>
-
-  {/* Title BELOW poster */}
-  <Text
-  style={styles.posterTitle}
-  numberOfLines={2}
-  ellipsizeMode="tail"
->
-  {item.title}
-</Text>
-
-</TouchableOpacity>
-
+      <View
+        style={hasSearched ? styles.videoItemSearch : styles.videoItemTrending}
+      >
+        <SearchVideoCard
+          imageUrl={fullImageUrl}
+          onPress={() => handleVideoPress(item)}
+        />
+      </View>
     );
   };
 
@@ -234,7 +208,7 @@ export default function SearchScreen() {
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.textPrimary === '#1A1A1A' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
-      <SafeAreaView style={styles.safeAreaInner}>
+      <SafeAreaView style={styles.safeAreaInner} edges={['bottom', 'left', 'right']}>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={[styles.header, { backgroundColor: colors.background }]}>
@@ -242,14 +216,14 @@ export default function SearchScreen() {
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
-              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+              <Ionicons name="arrow-back" size={24} color={colors.yellow} />
             </TouchableOpacity>
 
             <View style={[styles.searchContainerPremium, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
               <Ionicons
                 name="search"
                 size={20}
-                color={colors.textPrimary}
+                color={colors.yellow}
                 style={styles.searchIcon}
               />
               <TextInput
@@ -270,51 +244,49 @@ export default function SearchScreen() {
                     setHasSearched(false);
                   }}
                 >
-                  <Ionicons name="close-circle" size={22} color={colors.textPrimary} />
+                  <Ionicons name="close-circle" size={22} color={colors.yellow} />
                 </TouchableOpacity>
               )}
             </View>
           </View>
-{/* Most searched */}
-{!hasSearched && searchQuery.length === 0 && (
-  <View style={[styles.mostSearchedContainer, { backgroundColor: colors.background }]}>
-    <Text style={[styles.mostSearchedTitle, { color: colors.textPrimary }]}>Most searched</Text>
+          {/* Most searched */}
+          {!hasSearched && searchQuery.length === 0 && (
+            <View style={[styles.mostSearchedContainer, { backgroundColor: colors.background }]}>
+              <Text style={[styles.mostSearchedTitle, { color: colors.textPrimary }]}>Most searched</Text>
 
-    <View style={styles.mostSearchedRow}>
-      {MOST_SEARCHED.map((item) => (
-        <TouchableOpacity
-          key={item}
-          style={[styles.mostSearchedChip, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
-          onPress={() => handleMostSearchedPress(item)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.mostSearchedText, { color: colors.textPrimary }]}>{item}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  </View>
-)}
+              <View style={styles.mostSearchedRow}>
+                {MOST_SEARCHED.map((item) => (
+                  <TouchableOpacity
+                    key={item}
+                    style={[styles.mostSearchedChip, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
+                    onPress={() => handleMostSearchedPress(item)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.mostSearchedText, { color: colors.textPrimary }]}>{item}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
           {/* Results */}
-          {/* Results */}
-{searchResults.length > 0 ? (
-  <>
-    {/* Trending label */}
-    {!hasSearched && (
-      <Text style={[styles.trendingLabel, { color: colors.textPrimary }]}>Trending now</Text>
-    )}
+          {searchResults.length > 0 ? (
+            <>
+              {/* Trending label */}
+              {!hasSearched && (
+                <Text style={[styles.trendingLabel, { color: colors.textPrimary }]}>Trending now</Text>
+              )}
 
-    <FlatList
-      data={searchResults}
-      renderItem={renderVideoItem}
-      keyExtractor={(item) => item._id}
-      numColumns={3}
-      contentContainerStyle={styles.resultsContainerPremium}
-      columnWrapperStyle={styles.row}
-      showsVerticalScrollIndicator={false}
-    />
-  </>
-) : (
-
+              <FlatList
+                data={searchResults}
+                renderItem={renderVideoItem}
+                keyExtractor={(item) => item._id}
+                numColumns={2}
+                contentContainerStyle={styles.resultsContainerPremium}
+                columnWrapperStyle={styles.row}
+                showsVerticalScrollIndicator={false}
+              />
+            </>
+          ) : (
             <View style={styles.contentPremium}>
               {renderEmptyState()}
             </View>
@@ -326,48 +298,42 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-    searchContainerPremium: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderRadius: 32,
-      paddingHorizontal: 18,
-      height: 48,
-      borderWidth: 1,
-      shadowOpacity: 0.18,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 8,
-    },
-    searchInputPremium: {
-      flex: 1,
-      fontSize: 16,
-      fontWeight: '600',
-      paddingVertical: 0,
-      marginLeft: 8,
-    },
-    resultsContainerPremium: {
-      paddingVertical: 18,
-      paddingHorizontal: 10,
-      borderRadius: 18,
-      margin: 8,
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 4,
-    },
-    contentPremium: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 32,
-      borderRadius: 18,
-      margin: 8,
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 4,
-    },
+  searchContainerPremium: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 32,
+    paddingHorizontal: 18,
+    height: 48,
+    borderWidth: 1,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  searchInputPremium: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    paddingVertical: 0,
+    marginLeft: 8,
+  },
+  resultsContainerPremium: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  contentPremium: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    borderRadius: 18,
+    margin: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
   safeArea: {
     flex: 1,
   },
@@ -415,30 +381,23 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   row: {
-  justifyContent: 'flex-start',
+    justifyContent: 'flex-start',
   },
   videoItemSearch: {
-  width: '33.33%',
-  paddingHorizontal: 8,
-  marginBottom: 14,
-},
-videoItemTrending: {
-  width: '33.33%',
-  paddingHorizontal: 8,
-  marginBottom: 18,
-},
+    width: '50%',
+    paddingHorizontal: 6,
+    marginBottom: 20,
+  },
+  videoItemTrending: {
+    width: '50%',
+    paddingHorizontal: 6,
+    marginBottom: 20,
+  },
 
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  posterTitle: {
-  marginTop: 6,
-  fontSize: 13,
-  fontWeight: '600',
-  textAlign: 'center',
-},
-
   emptyText: {
     marginTop: 16,
     fontSize: 18,
@@ -446,12 +405,12 @@ videoItemTrending: {
     textAlign: 'center',
   },
   trendingLabel: {
-  marginLeft: 18,
-  marginBottom: 8,
-  marginTop: 6,
-  fontSize: 20,
-  fontWeight: '700',
-},
+    marginLeft: 18,
+    marginBottom: 8,
+    marginTop: 6,
+    fontSize: 20,
+    fontWeight: '700',
+  },
 
   emptySubtext: {
     marginTop: 8,
@@ -489,5 +448,3 @@ videoItemTrending: {
     fontWeight: '600',
   },
 });
-
-
