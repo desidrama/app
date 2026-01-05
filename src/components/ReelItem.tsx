@@ -33,6 +33,8 @@ import type { Video as VideoType } from '../types';
 
 const { width, height } = Dimensions.get('window');
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 type ReelItemProps = {
   reel: {
     id: string;
@@ -63,6 +65,7 @@ const PROGRESS_UPDATE_INTERVAL = 5000; // Save progress every 5 seconds
 const MIN_PROGRESS_TO_SAVE = 3; // Only save if at least 3 seconds watched
 
 // Format count for display (e.g., 159000 -> "159K", 71600 -> "71.6K")
+
 const formatCount = (count: number): string => {
   if (count >= 1000000) {
     return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -143,7 +146,19 @@ const ActionButton = React.memo(({
   );
 });
 
+<<<<<<< Updated upstream
 export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
+=======
+export default function ReelItem({ 
+  reel, 
+  isActive, 
+  initialTime = 0, 
+  screenFocused = true, 
+  onEpisodeSelect, 
+  shouldPause = false, 
+  containerHeight // This should be SCREEN_HEIGHT from parent
+}: ReelItemProps) {
+>>>>>>> Stashed changes
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -957,6 +972,11 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   }, [reel.adStatus, isActive, screenFocused, reel.title]);
 
+  // ✅ EDGE-TO-EDGE FULLSCREEN: Video fills entire container
+  // - flex: 1 ensures no height restrictions
+  // - ResizeMode.COVER scales video to fill, cropping if needed
+  // - No padding/margins - true edge-to-edge display
+
   // Save progress function
   const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
     try {
@@ -1510,39 +1530,77 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   // Episodes array is now loaded from API in openEpisodes
 
+  // ✅ INSTAGRAM REELS STYLE: True edge-to-edge fullscreen video
+  // - Container uses flex: 1 to fill parent (FlatList item)
+  // - Video layer uses absoluteFill for true edge-to-edge positioning (no gaps)
+  // - ResizeMode.COVER ensures video scales to fill entire screen (no black bars)
+  // - UI overlays (icons, text, progress bar) float above video with absolute positioning
+  // - No padding/margins - true edge-to-edge display on all Android devices
+  // - Handles different aspect ratios by cropping to fill screen
+  // - Status bar and navigation bar handled by parent SafeAreaView with edges={[]}
+  // ✅ Get screen width from Dimensions for Video component
+  const screenWidth = Dimensions.get('window').width;
+
   return (
+<<<<<<< Updated upstream
     <View style={styles.container}>
       {/* ========================================
           LAYER 1: VIDEO LAYER (No UI, No Touch)
           ======================================== */}
       <View style={styles.videoLayer} pointerEvents={showEpisodes || showMore ? "none" : "none"}>
         <Video
+=======
+    <View style={{
+      width: screenWidth,
+      height: containerHeight, // ✅ Use exact containerHeight from parent
+      backgroundColor: '#000',
+      margin: 0, // ✅ Ensure no margins
+      padding: 0, // ✅ Ensure no padding
+      overflow: 'hidden', // ✅ Prevent any overflow
+      position: 'relative', // ✅ Ensure proper stacking context
+    }}>
+      {/* ✅ VIDEO LAYER - TRUE EDGE-TO-EDGE FULLSCREEN */}
+      <View style={{
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: '#000',
+        zIndex: 1,
+        margin: 0, // ✅ Ensure no margins
+        padding: 0, // ✅ Ensure no padding
+      }}>
+
+<Video
+>>>>>>> Stashed changes
           ref={videoRef}
           source={{ uri: reel.videoUrl }}
-          style={StyleSheet.absoluteFill}
-          resizeMode={ResizeMode.COVER}
+          style={{
+            width: screenWidth,
+            height: containerHeight, // ✅ Match container exactly
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            backgroundColor: '#000',
+            margin: 0, // ✅ Ensure no margins
+            padding: 0, // ✅ Ensure no padding
+          }}
+          resizeMode={ResizeMode.COVER} // ✅ COVER fills entire screen, cropping if needed
           shouldPlay={false}
           isLooping
-          isMuted={true} // Always start muted, will be unmuted when active
+          isMuted={true}
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           useNativeControls={false}
           progressUpdateIntervalMillis={100}
           onLoadStart={() => {
             console.log(`🎥 Video loading started: ${reel.title}`);
-            // Immediately mute on load start to prevent audio overlap
             if (videoRef.current) {
               videoRef.current.setIsMutedAsync(true).catch(() => {});
             }
           }}
           onLoad={(status) => {
-            console.log(`✅ Video loaded: ${reel.title}`, status.isLoaded);
-            // Ensure muted on load
+            console.log(`✅ Video loaded: ${reel.title}`);
             if (videoRef.current) {
               videoRef.current.setIsMutedAsync(true).catch(() => {});
             }
-            // Only unmute and play if this video is active
             if (isActive && screenFocused && videoRef.current && status.isLoaded) {
-              // Use retry function to handle audio focus conflicts
               playVideoWithRetry().catch((error) => {
                 console.error(`Error playing video on load for ${reel.title}:`, error);
               });
@@ -1552,41 +1610,58 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             console.error(`❌ Video error for ${reel.title}:`, error);
           }}
         />
-        {/* Visual overlays only (no interaction) */}
+        
+        {/* Visual overlays - NO IMPACT on video display */}
         <LinearGradient
           colors={['transparent', 'transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
           locations={[0, 0.5, 0.7, 1]}
-          style={styles.videoOverlay}
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            zIndex: 2,
+          }}
           pointerEvents="none"
         />
-        <View style={styles.vignetteOverlay} pointerEvents="none" />
       </View>
 
-      {/* ========================================
-          LAYER 2: GESTURE LAYER (Tap/Seek Only)
-          ======================================== */}
-      {/* Gesture layer only covers video area, NOT button areas */}
+    
       <Pressable
-        style={styles.gestureLayer}
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          zIndex: 10,
+        }}
         onPress={handleScreenPress}
         onLongPress={handleLongPress}
         onPressOut={handlePressOut}
         delayLongPress={300}
-        // Do NOT capture touches meant for buttons - buttons will be on Control Layer with higher zIndex
       />
 
-      {/* CENTER PLAY ICON - YouTube Shorts Style (Only visible when paused) */}
-      {!isPlaying && (
+{!isPlaying && (
         <Animated.View
           style={[
-            styles.centerPlayIcon,
             {
+<<<<<<< Updated upstream
               opacity: uiOpacity,
             }
+=======
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: [{ translateX: -40 }, { translateY: -40 }],
+              zIndex: 50,
+            },
+            { opacity: uiOpacity }
+>>>>>>> Stashed changes
           ]}
           pointerEvents="none"
         >
-          <View style={styles.centerPlayIconBackground}>
+          <View style={{
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
             <Ionicons name="play" size={48} color="#FFFFFF" />
           </View>
         </Animated.View>
@@ -1601,17 +1676,25 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       {/* PROGRESS BAR - Bottom edge, draggable (Control Layer) */}
       <Animated.View 
         style={[
-          styles.progressBarContainer,
           {
+<<<<<<< Updated upstream
             opacity: uiOpacity,
             bottom: Math.max(insets.bottom, 16),
           }
+=======
+            position: 'absolute',
+            bottom: insets.bottom, // ✅ Use insets for button positioning
+            left: 16,
+            right: 16,
+            zIndex: 4000,
+          },
+          { opacity: uiOpacity }
+>>>>>>> Stashed changes
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
       >
-        {/* Real-time Playback Timer */}
         {totalDuration > 0 && (
-          <Text style={styles.playbackTimer}>
+          <Text style={{ color: '#fff', fontSize: 11, marginBottom: 8 }}>
             {formatTime(currentTime)} / {formatTime(totalDuration)}
           </Text>
         )}
@@ -2291,6 +2374,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   );
 }
 
+<<<<<<< Updated upstream
 const styles = StyleSheet.create({
   container: { 
     width: '100%', 
@@ -2312,6 +2396,60 @@ const styles = StyleSheet.create({
     // Exclude right side (action buttons) and bottom (metadata) from gesture area
     paddingRight: 80, // Exclude right action rail
     paddingBottom: 120, // Exclude bottom metadata
+=======
+// Create responsive styles function
+const createResponsiveStyles = () => {
+  // Fixed spacing and border radius values for fullscreen Reels
+  const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
+  const borderRadius = { sm: 4, md: 8, lg: 12, xl: 16, full: 999 };
+  const touchTargetSize = 44; // Fixed touch target size
+  
+    return StyleSheet.create({
+      headerLoader: {
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      footerLoader: {
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      container: { 
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
+        backgroundColor: '#000',
+      },
+      
+      videoLayer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
+        zIndex: 1,
+        backgroundColor: '#000',
+      },
+  
+  // LAYER 2: GESTURE LAYER (Tap/Seek Only - Does NOT cover button areas)
+  gestureLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    paddingRight: 70,
+    paddingBottom: 100,
+    // Ensure gesture layer fills entire container
+    width: '100%',
+    height: '100%',
+>>>>>>> Stashed changes
   },
   
   // LAYER 3: CONTROL LAYER (Buttons - Highest Priority for Taps)
@@ -2332,11 +2470,23 @@ const styles = StyleSheet.create({
   
   
   videoOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'transparent',
   },
   vignetteOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'transparent',
     // Radial gradient vignette effect using shadow/opacity
     ...Platform.select({

@@ -14,6 +14,11 @@ import {
   Pressable,
   Alert,
   Share,
+<<<<<<< Updated upstream
+=======
+  StatusBar,
+  useWindowDimensions,
+>>>>>>> Stashed changes
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -35,7 +40,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+// Screen dimensions are now handled dynamically via useWindowDimensions hook
 
 type Reel = {
   id: string;
@@ -65,12 +70,40 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const route = useRoute<ReelsScreenRouteProp>();
   const routeParams = route.params;
   const insets = useSafeAreaInsets();
+
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
+<<<<<<< Updated upstream
   // Calculate available viewport height accounting for safe areas
   // This ensures consistent item height across all devices
   const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
+=======
+  
+
+  // Use dynamic window dimensions that update with screen changes
+
+// ============================================
+// TRUE FULLSCREEN FIX - ReelPlayerScreen.tsx
+// ============================================
+
+
+
+  // ✅ TRUE FULLSCREEN FIX: Use window dimensions for actual screen size
+  // This includes the area behind status bar and navigation bar
+  const windowDimensions = useWindowDimensions();
+  const SCREEN_WIDTH = windowDimensions.width;
+  // ✅ CRITICAL: Add status bar height to get TRUE screen height
+  // On Android, this ensures video fills the entire screen including behind status bar
+  const STATUS_BAR_HEIGHT = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
+  const SCREEN_HEIGHT = windowDimensions.height + STATUS_BAR_HEIGHT;
+
+  // FULLSCREEN RULE: Each reel must occupy FULL screen height (edge-to-edge)
+  // For true Instagram Reels-style fullscreen, we use the FULL screen height
+  // StatusBar is translucent, so video goes behind it (true fullscreen)
+  // UI overlays use safe area insets for proper positioning
+  const ITEM_HEIGHT = SCREEN_HEIGHT; // Full screen height including status bar area
+>>>>>>> Stashed changes
 
 
 // =========================
@@ -545,8 +578,9 @@ useEffect(() => {
 
 
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 70,
-    minimumViewTime: 100,
+    itemVisiblePercentThreshold: 95, // Very strict - item must be 95% visible
+    minimumViewTime: 150,
+    waitForInteraction: false,
   }).current;
 
   // Handle scroll: detect near-top to load previous pages
@@ -605,37 +639,68 @@ useEffect(() => {
   }, [currentIndex, hasPrevious, page, loadPrevious]);
 
   // Get item layout for FlatList - ensures consistent item sizing
-  const getItemLayout = useCallback(
-    (_data: any, index: number) => ({
-      length: ITEM_HEIGHT,
-      offset: ITEM_HEIGHT * index,
-      index,
-    }),
-    [ITEM_HEIGHT]
-  );
+    // ✅ FIX 4: getItemLayout with exact values
+    const getItemLayout = useCallback(
+      (_data: any, index: number) => ({
+        length: SCREEN_HEIGHT,
+        offset: SCREEN_HEIGHT * index,
+        index,
+      }),
+      [SCREEN_HEIGHT]
+    );
+  // Update dimensions when screen size changes (e.g., rotation)
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      // Dimensions will be updated via useWindowDimensions hook
+      // Force FlatList to recalculate layout
+      if (flatListRef.current && currentIndex >= 0) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({ index: currentIndex, animated: false });
+        }, 100);
+      }
+    });
+
+    return () => subscription?.remove();
+  }, [currentIndex]);
 
   // Render item
+  
+  // ✅ FIX 3: renderItem - Ensure exact dimensions with no padding
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:372',message:'renderItem called',data:{itemId:item.id,index,currentIndex,targetVideoId,resumeTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-    // Always use resumeTime only for the current target video
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
+
     return (
+<<<<<<< Updated upstream
 <View style={{ height: ITEM_HEIGHT }}>
         <ReelItem
           key={item.id}
           reel={item}
+=======
+      <View style={{ 
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT, // Required for FlatList item layout
+        backgroundColor: '#000',
+        marginTop: 0, // ✅ Ensure no margins
+        marginBottom: 0,
+        marginLeft: 0,
+        marginRight: 0,
+        paddingTop: 0, // ✅ Ensure no padding
+        paddingBottom: 0,
+        paddingLeft: 0,
+        paddingRight: 0,
+        overflow: 'hidden', // ✅ Prevent any overflow
+      }}>
+        <ReelItem
+          key={item.id}
+          reel={item}
+          containerHeight={SCREEN_HEIGHT} // ✅ Pass constant value
+>>>>>>> Stashed changes
           isActive={index === currentIndex}
           initialTime={initialTime}
           screenFocused={isScreenFocused}
           shouldPause={showAdPopup}
           onEpisodeSelect={(episodeId) => {
-            // Find the episode in the reels list
             const episodeIndex = reels.findIndex(r => r.id === episodeId);
             if (episodeIndex !== -1) {
               setCurrentIndex(episodeIndex);
@@ -650,7 +715,8 @@ useEffect(() => {
         />
       </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, SCREEN_WIDTH, SCREEN_HEIGHT]);
+// 4. getItemLayout - MUST be precise
 
   // #region agent log
   // Log safe area insets for debugging
@@ -696,13 +762,22 @@ useEffect(() => {
 
   if (loading && reels.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
-        <ActivityIndicator size="large" color={colors.yellow} />
-        <Text style={styles.loadingText}>Loading reels…</Text>
-      </SafeAreaView>
+      <View style={{ flex: 1, backgroundColor: '#000', margin: 0, padding: 0 }}>
+        <StatusBar
+          translucent={Platform.OS === 'android'}
+          backgroundColor="transparent"
+          barStyle="light-content"
+          hidden={false}
+        />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={colors.yellow} />
+          <Text style={styles.loadingText}>Loading reels…</Text>
+        </View>
+      </View>
     );
   }
 
+<<<<<<< Updated upstream
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top Header Container - Back & Share Alignment */}
@@ -728,26 +803,73 @@ useEffect(() => {
           <Ionicons name="arrow-redo-outline" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
+=======
+  // Android StatusBar height for manual offset (REQUIRED for Android)
+  const ANDROID_TOP_OFFSET = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
 
+   // ✅ INSTAGRAM REELS STYLE: True edge-to-edge fullscreen video
+   // - On Android: Use regular View (SafeAreaView can cause bottom gaps even with edges=[])
+   // - StatusBar translucent allows video to extend behind status bar (Android)
+   // - flex: 1 layouts ensure no height restrictions (no layout clipping)
+   // - FlatList with zero padding ensures edge-to-edge scrolling
+   // - Each reel item uses SCREEN_HEIGHT for true fullscreen height
+   // - Video uses ResizeMode.COVER to fill entire screen (no black bars)
+   // - UI overlays float above video with absolute positioning
+   // - Works consistently across all Android screen sizes and aspect ratios
+   return (
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: '#000',
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      paddingLeft: 0,
+      paddingRight: 0,
+    }}>
+      <StatusBar
+        translucent={Platform.OS === 'android'} // ✅ Android: Content extends behind status bar
+        backgroundColor="transparent"
+        barStyle="light-content"
+        hidden={false}
+        networkActivityIndicatorVisible={false}
+      />
+>>>>>>> Stashed changes
+
+      {/* ✅ FlatList: flex: 1 to fill container - Edge-to-edge scrolling */}
       <FlatList
+          style={{ 
+            flex: 1, 
+            backgroundColor: '#000',
+            marginTop: 0,
+            marginBottom: 0,
+            marginLeft: 0,
+            marginRight: 0,
+            paddingTop: 0,
+            paddingBottom: 0,
+            paddingLeft: 0,
+            paddingRight: 0,
+          }}
         ref={flatListRef}
         data={reels}
         keyExtractor={(it) => it.id}
         renderItem={renderItem}
         getItemLayout={getItemLayout}
-        pagingEnabled
+        pagingEnabled={true}
         showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_HEIGHT}
+        snapToInterval={SCREEN_HEIGHT} // ✅ Must equal SCREEN_HEIGHT
         snapToAlignment="start"
         decelerationRate="fast"
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        removeClippedSubviews
-        maxToRenderPerBatch={3}
-        windowSize={5}
-        initialNumToRender={2}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={1}
+        windowSize={1}
+        initialNumToRender={1}
         onEndReached={loadMore}
         onScrollToIndexFailed={onScrollToIndexFailed}
         onEndReachedThreshold={0.3}
@@ -755,15 +877,16 @@ useEffect(() => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FFD54A']} />
         }
         ListHeaderComponent={loadingPrevious ? (
-            <View style={styles.headerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
-            </View>
+          <View style={[styles.headerLoader, { height: SCREEN_HEIGHT }]}>
+            <ActivityIndicator size="small" color="#FFD54A" />
+          </View>
         ) : null}
         ListFooterComponent={loading ? (
-            <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color={colors.yellow} />
-            </View>
+          <View style={[styles.footerLoader, { height: SCREEN_HEIGHT }]}>
+            <ActivityIndicator size="small" color={colors.yellow} />
+          </View>
         ) : null}
+<<<<<<< Updated upstream
       />
       
       {/* RewardedEpisodeAd - Always mounted to allow preloading */}
@@ -787,9 +910,25 @@ useEffect(() => {
           // Keep adHandledRef as true for this reel to prevent popup from showing again
           // It will be reset when user navigates to a different reel
           // Don't reset adReelIndexRef here - let it stay so we know this reel was handled
+=======
+        contentContainerStyle={{
+          // ✅ CRITICAL: For pagingEnabled, let items handle their own sizing
+          // Don't constrain width - items use SCREEN_WIDTH explicitly
+          // Don't add any padding or margins
+          paddingTop: 0,
+          paddingBottom: 0,
+          paddingLeft: 0,
+          paddingRight: 0,
+          marginTop: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          marginRight: 0,
+>>>>>>> Stashed changes
         }}
+        scrollIndicatorInsets={{ left: 0, right: 0, top: 0, bottom: 0 }} // ✅ No insets
       />
 
+<<<<<<< Updated upstream
       {showAdPopup && (
   <View
     pointerEvents="box-none"
@@ -802,40 +941,91 @@ useEffect(() => {
       zIndex: 9999,
     }}
   >
+=======
+        {/* ✅ Top Header - Use insets for positioning ONLY */}
+        <View style={[backButtonStyles.topHeader, {
+          top: Platform.OS === 'android'
+            ? (StatusBar.currentHeight ?? 0) + 12
+            : insets.top + 8,
+          left: 16,
+          right: 16,
+          zIndex: 999,
+        }]}>
+          <TouchableOpacity onPress={handleBackPress} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} activeOpacity={0.7}>
+            <Ionicons name="arrow-redo-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+>>>>>>> Stashed changes
 
+        {/* RewardedEpisodeAd - Always mounted to allow preloading */}
+        <RewardedEpisodeAd
+          show={shouldPlayAd}
+          onAdFinished={() => {
+            console.log('[AD DEBUG] Ad finished, unlocking reel at index:', currentIndex);
+            
+            // First unlock the reel
+            setReels(prev =>
+              prev.map((r, i) =>
+                i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
+              )
+            );
 
-    {/* Coins bar ABOVE ad */}
+            // Then close all ad-related states
+            setShowAdPopup(false);
+            setIsAdOpen(false);
+            setShowAd(false);
+            setPreloadAd(false);
+            setShouldPlayAd(false);
 
-  {/* Coins bar ABOVE ad */}
+            // Keep adHandledRef as true for this reel to prevent popup from showing again
+            // It will be reset when user navigates to a different reel
+            // Don't reset adReelIndexRef here - let it stay so we know this reel was handled
+          }}
+        />
 
-<Modal visible={showAdPopup} transparent animationType="fade">
-  <View
-    style={{
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'flex-end', // bottom sheet
-    }}
-  >
-    <View
-      style={{
-        width: '100%',
-        minHeight: '55%',
-        backgroundColor: '#121212',
+        {showAd && (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999,
+            }}
+          >
+            <Modal visible={showAdPopup} transparent animationType="fade">
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  justifyContent: 'flex-end', // bottom sheet
+                }}
+              >
+                <View
+                  style={{
+                    width: '100%',
+                    minHeight: '55%',
+                    backgroundColor: '#121212',
 
-        // Bottom sheet styling
-        borderTopLeftRadius: 26,
-        borderTopRightRadius: 26,
+                    // Bottom sheet styling
+                    borderTopLeftRadius: 26,
+                    borderTopRightRadius: 26,
 
-        paddingTop: 14,
-        paddingBottom: 28,
-        paddingHorizontal: 22,
+                    paddingTop: 14,
+                    paddingBottom: 28,
+                    paddingHorizontal: 22,
 
-        shadowColor: '#000',
-        shadowOpacity: 0.6,
-        shadowRadius: 24,
-        elevation: 24,
-      }}
-    >
+                    shadowColor: '#000',
+                    shadowOpacity: 0.6,
+                    shadowRadius: 24,
+                    elevation: 24,
+                  }}
+                >
       {/* Drag indicator */}
       <View
         style={{
@@ -978,19 +1168,17 @@ useEffect(() => {
           Watch a short ad
         </Text>
       </Pressable>
-    </View>
-  </View>
-</Modal>
-
-  </View>
-)}
-
-
+                </View>
+              </View>
+            </Modal>
+          </View>
+        )}
 
     </SafeAreaView>
   );
 };
 
+<<<<<<< Updated upstream
 const backButtonStyles = StyleSheet.create({
   topHeader: {
     position: 'absolute',
@@ -1002,5 +1190,28 @@ const backButtonStyles = StyleSheet.create({
     elevation: 1000, // Android elevation (equivalent to zIndex)
   },
 });
+=======
+// Responsive styles - will be created in component to access responsive utilities
+const createBackButtonStyles = () => {
+  const touchTarget = Platform.OS === 'android' 
+    ? Math.max(44, StatusBar.currentHeight ?? 0) 
+    : 44;
+  
+  return StyleSheet.create({
+    topHeader: {
+      flex: 1,
+      position: 'absolute',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      zIndex: 999,
+      pointerEvents: 'box-none',
+      elevation: 999,
+    },
+  });
+};
+
+const backButtonStyles = createBackButtonStyles();
+>>>>>>> Stashed changes
 
 export default ReelPlayerScreen;

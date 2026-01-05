@@ -22,6 +22,7 @@ import {
   Alert,
 } from 'react-native';
 import { videoService } from '../services/video.service';
+import { getSpacing, getTouchTargetSize, rf } from '../utils/responsive';
 
 interface CommentInputProps {
   postId: string; // Video/reel ID

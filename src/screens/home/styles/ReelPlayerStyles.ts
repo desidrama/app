@@ -1,648 +1,828 @@
+// ============================================
+// ReelPlayerStyles.ts - TRUE FULLSCREEN FIX
+// ============================================
+
 import { StyleSheet, Dimensions } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const EPISODES_PER_ROW = 6;
-const RANGE_PER_ROW = 4;
+// ✅ FIX 1: Use Dimensions.get() instead of useWindowDimensions
+const screenDimensions = Dimensions.get('window');
+const SCREEN_WIDTH = screenDimensions.width;
+const SCREEN_HEIGHT = screenDimensions.height;
 
 export default StyleSheet.create({
+  // ============================================
+  // CONTAINER STYLES
+  // ============================================
+  
   safeArea: {
     flex: 1,
     backgroundColor: '#000',
   },
+  
   centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
   loadingText: {
     color: '#fff',
     marginTop: 12,
     fontSize: 16,
   },
+  
   headerLoader: {
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 60,
+    backgroundColor: '#000',
   },
+  
   footerLoader: {
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 60,
+    backgroundColor: '#000',
   },
 
+  // ============================================
+  // VIDEO LAYER STYLES
+  // ============================================
+  
+  // ✅ CRITICAL: Video container uses absoluteFill
   reelContainer: {
+    ...StyleSheet.absoluteFillObject,
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     backgroundColor: '#000',
+    overflow: 'hidden', // ✅ CRITICAL: Prevent overflow
   },
+  
+  // ✅ CRITICAL: Video fills parent completely
   video: {
     ...StyleSheet.absoluteFillObject,
-  },
-
-  // top bar
-  topBar: {
-    position: 'absolute',
-    top: 16,
-    left: 14,
-    right: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  backButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 4,
-  },
-  nextEpisodeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  nextEpisodeText: {
-    marginRight: 8,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
-  },
-
-  // reactions – replaced with horizontal reaction row + rate
-  reactionRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  reactionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-  reactionBubble: {
-    marginHorizontal: 6,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reactionEmojiSmall: {
-    fontSize: 20,
-  },
-  actionButtonHorizontal: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  selectedReactionLarge: {
-    fontSize: 30,
-    marginBottom: 4,
-  },
-
-  // settings popup
-  settingsPopup: {
-    position: 'absolute',
-    right: 70,
-    top: SCREEN_HEIGHT * 0.54,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.9)',
-  },
-  settingsItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  settingsText: {
-    marginLeft: 10,
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // comments overlay
-  commentsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    zIndex: 999,
-    elevation: 999,
-  },
-  commentsBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  commentsCard: {
-    backgroundColor: '#111017',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 26,
-    minHeight: SCREEN_HEIGHT * 0.62,
-    maxHeight: SCREEN_HEIGHT * 0.78,
-  },
-  commentsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  commentsTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
-
-  // Movie info shown inside comments sheet (keeps context)
-  commentsMovieRow: {
-    marginBottom: 10,
-  },
-  commentRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#22202b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  commentAvatarText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  commentBubble: {
-    backgroundColor: '#1b1a23',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flex: 1,
-  },
-  commentUser: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  commentText: {
-    color: '#e0e0e5',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  commentInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  commentInput: {
-    flex: 1,
-    backgroundColor: '#1b1a23',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    color: '#fff',
-    marginRight: 8,
-    fontSize: 13,
-  },
-
-  // right actions
-  rightActions: {
-    position: 'absolute',
-    right: 12,
-    top: SCREEN_HEIGHT * 0.22,
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  actionButton: {
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  actionLabel: {
-    marginTop: 5,
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // bottom info – higher above tab bar
-  bottomInfo: {
-    position: 'absolute',
-    left: 16,
-    bottom: 120, // pulled slightly above tab bar to be visible
-    right: 110,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  movieTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-    flex: 1,
-  },
-  infoButton: {
-    marginLeft: 8,
-    padding: 4,
-  },
-  description: {
-    color: '#ececec',
-    fontSize: 13,
-    marginTop: 6,
-    maxWidth: SCREEN_WIDTH - 150,
-  },
-
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  metaText: {
-    color: '#f1f1f1',
-    fontSize: 12,
-    marginRight: 10,
-  },
-  ratingChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderWidth: 1,
-    borderColor: '#42a5f5',
-    marginRight: 10,
-  },
-  ratingChipText: {
-    color: '#42a5f5',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // episodes sheet – like reference
-  episodesSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: SCREEN_HEIGHT * 0.75,
-    backgroundColor: '#120606',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-  },
-  episodesHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  episodesTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  episodesMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  ratingChipSmall: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderWidth: 1,
-    borderColor: '#42a5f5',
-    marginHorizontal: 6,
-  },
-  ratingChipSmallText: {
-    color: '#42a5f5',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-
-  // range chips row
-  rangeRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-    marginBottom: 18,
-  },
-  rangeChip: {
-    width:
-      (SCREEN_WIDTH - 40 - (RANGE_PER_ROW - 1) * 10) / RANGE_PER_ROW,
-    paddingVertical: 10,
-    borderRadius: 24,
-    backgroundColor: '#1b1419',
-    borderWidth: 1,
-    borderColor: '#2c222a',
-    marginRight: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rangeChipActive: {
-    backgroundColor: '#FFD54A',
-    borderColor: '#FFD54A',
-  },
-  rangeChipText: {
-    fontSize: 15,
-    color: '#f5f5f5',
-    fontWeight: '700',
-  },
-  rangeChipTextActive: {
-    color: '#000',
-    fontWeight: '800',
-  },
-
-  // episodes grid as pills
-  episodesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  episodeNumber: {
-    width:
-      (SCREEN_WIDTH - 40 - (EPISODES_PER_ROW - 1) * 8) / EPISODES_PER_ROW,
-    paddingVertical: 10,
-    borderRadius: 14,
-    marginRight: 8,
-    marginBottom: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#252027',
-  },
-  episodeNumberLocked: {
-    backgroundColor: '#18141a',
-  },
-  episodeNumberActive: {
-    backgroundColor: '#FFD54A',
-  },
-  episodeNumberText: {
-    fontSize: 14,
-    color: '#f5f5f5',
-    fontWeight: '600',
-  },
-  episodeNumberTextLocked: {
-    color: '#6c6c73',
-  },
-  episodeNumberTextActive: {
-    color: '#000',
-    fontWeight: '800',
-  },
-
-  // INFO SHEET (if used)
-  infoSheetContainer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
-    elevation: 1000,
-  },
-  infoBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-  },
-  infoSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#050509',
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    zIndex: 1001,
-    elevation: 1001,
-  },
-  infoTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  infoHandle: {
-    width: 60,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#444',
-    alignSelf: 'center',
-  },
-
-  infoPosterRow: {
-    alignItems: 'center',
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  posterWrapper: {
-    width: SCREEN_WIDTH * 0.62,
-    aspectRatio: 2 / 3,
-    borderRadius: 18,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  posterImage: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#000',
   },
-  posterPlayOverlay: {
+
+  // ============================================
+  // VIDEO OVERLAY STYLES (gradient, vignette)
+  // ============================================
+  
+  videoOverlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
+  
+  vignetteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
+
+  // ============================================
+  // GESTURE LAYER STYLES
+  // ============================================
+  
+  gestureLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    paddingRight: 70,
+    paddingBottom: 100,
+  },
+
+  // ============================================
+  // CONTROL LAYER STYLES
+  // ============================================
+  
+  // Top header (back & share buttons)
+  topHeader: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 999,
+    pointerEvents: 'box-none',
+    elevation: 999,
+  },
+  
+  // Progress bar container
+  progressBarContainer: {
+    position: 'absolute',
+    alignItems: 'flex-start',
+    zIndex: 4000,
+  },
+  
+  progressBarBackground: {
+    width: '100%',
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  
+  progressBarFill: { 
+    height: 3,
+    backgroundColor: '#FFD54A',
+    borderRadius: 2,
+  },
+  
+  scrubberThumb: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFD54A',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    top: -4.5,
+    marginLeft: -6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  
+  playbackTimer: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '500',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+
+  // Right action rail
+  rightActions: {
+    position: 'absolute',
+    alignItems: 'center',
+    zIndex: 500,
+  },
+  
+  // Premium action button
+  premiumActionBtn: {
+    alignItems: 'center',
+    marginBottom: 12,
+    minWidth: 44,
+  },
+  
+  premiumIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  posterHeart: {
+  
+  premiumCountLabel: {
+    color: '#E5E5E5',
+    fontSize: 11,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+
+  // Bottom info section
+  bottomInfo: {
     position: 'absolute',
-    right: 10,
-    top: 10,
+    zIndex: 4000,
+  },
+  
+  seriesNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  
+  seriesNameText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    letterSpacing: 0.2,
+  },
+  
+  seriesInfoIcon: {
+    marginLeft: 6,
+    alignSelf: 'center',
+  },
+  
+  seasonEpisodeLabel: {
+    color: '#FFD54A',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0.2,
+  },
+  
+  descriptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  
+  descriptionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    flex: 1,
+    lineHeight: 20,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    letterSpacing: 0.15,
+  },
+  
+  moreButton: {
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 4,
+  },
+  
+  moreButtonText: {
+    color: '#FFD54A',
+    fontSize: 13,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+
+  // ============================================
+  // PLAY ICON STYLES
+  // ============================================
+  
+  centerPlayIcon: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    zIndex: 50,
+  },
+  
+  centerPlayIconBackground: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+
+  // ============================================
+  // OVERLAY LAYER STYLES (Sheets, Modals)
+  // ============================================
+  
+  overlayLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+
+  // Comment sheet
+  commentSheetContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '85%',
+    maxHeight: '85%',
+    width: '100%',
+    zIndex: 10001,
+  },
+  
+  commentSheet: {
+    flex: 1,
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 21,
+  },
+  
+  commentHandleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  
+  commentHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  
+  commentItem: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    paddingRight: 4,
+  },
+  
+  commentAvatar: {
+    marginRight: 12,
+  },
+  
+  commentAvatarPlaceholder: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  tagRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  tagChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    marginHorizontal: 4,
-  },
-  tagText: {
-    color: '#f5f5f5',
-    fontSize: 12,
-  },
-  infoTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#fff',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-
-  infoMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  infoMetaText: {
-    color: '#d7d7dd',
-    fontSize: 12,
-    marginHorizontal: 6,
-  },
-  infoPrimaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 999,
     backgroundColor: '#FFD54A',
-    paddingVertical: 12,
-    marginBottom: 10,
-  },
-  infoSecondaryButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 999,
-    backgroundColor: '#ffdd63',
-    paddingVertical: 12,
-    marginBottom: 16,
   },
-  infoPrimaryText: {
-    marginLeft: 8,
-    fontSize: 16,
-    fontWeight: '800',
+  
+  commentAvatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  
+  commentAvatarText: {
     color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  infoDescription: {
-    color: '#f0f0f3',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
+  
+  commentContent: {
+    flex: 1,
   },
-  infoQuickRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 18,
+  
+  commentBubble: {
+    marginBottom: 4,
   },
-  infoQuickItem: {
-    alignItems: 'center',
-  },
-  infoQuickText: {
-    marginTop: 4,
-    color: '#e5e5ea',
-    fontSize: 12,
-  },
-
-  infoSectionHeading: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 10,
-  },
-
-  castItem: {
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  castAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 6,
-  },
-  castName: {
-    color: '#f5f5f7',
-    fontSize: 11,
-  },
-
-  infoEpisodeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#15151d',
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 10,
-  },
-  infoEpisodeImage: {
-    width: 90,
-    height: 54,
-    borderRadius: 10,
-    marginRight: 10,
-  },
-  infoEpisodeTitle: {
+  
+  commentUsername: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
-    marginBottom: 2,
+    marginRight: 4,
   },
-  infoEpisodeDesc: {
-    color: '#c7c7cf',
-    fontSize: 11,
+  
+  commentText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    letterSpacing: 0.1,
   },
-  infoEpisodePlay: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFD54A',
+  
+  commentActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 4,
+  },
+  
+  commentTime: {
+    color: '#999',
+    fontSize: 12,
+    marginRight: 12,
+  },
+  
+  commentActionText: {
+    color: '#999',
+    fontSize: 12,
+    marginRight: 12,
+    fontWeight: '600',
+  },
+  
+  commentLikesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  
+  commentLikes: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  
+  commentLikeBtn: {
+    padding: 4,
     marginLeft: 8,
   },
-
-  moreLikeImage: {
-    width: 90,
-    height: 130,
-    borderRadius: 10,
-    marginRight: 10,
+  
+  commentEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
+  
+  commentEmptyText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  
+  commentEmptySubtext: {
+    color: '#999',
+    fontSize: 14,
+  },
+  
+  commentInputSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingTop: 12,
+    paddingHorizontal: 0,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#0E0E0E',
+  },
+  
+  commentInputAvatar: {
+    marginRight: 12,
+    marginBottom: 4,
+  },
+  
+  commentInputAvatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5C451',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  
+  commentInputAvatarText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  
+  commentInput: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    color: '#fff',
+    fontSize: 14,
+    maxHeight: 100,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+  },
+  
+  commentSendBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    marginLeft: 4,
+    marginBottom: 4,
+    alignSelf: 'flex-end',
+    minHeight: 44,
+  },
+  
+  commentSendBtnDisabled: {
+    opacity: 0.5,
+  },
+  
+  commentSendText: {
+    color: '#FFD54A',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  
+  commentSendTextDisabled: {
+    color: '#666',
+  },
+
+  // Episode sheet
+  episodeSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  
+  episodeSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '40%',
+    maxHeight: '40%',
+    width: '100%',
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingTop: 16,
+    zIndex: 10001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 21,
+  },
+  
+  episodeSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    marginBottom: 12,
+  },
+  
+  episodeSheetTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    flex: 1,
+    marginRight: 12,
+  },
+  
+  episodeSheetCloseBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  episodeSheetDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 20,
+  },
+  
+  episodeInfoCard: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  
+  episodeInfoText: {
+    color: '#B0B0B0',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 8,
+    letterSpacing: 0.2,
+  },
+  
+  episodeInfoTags: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  
+  episodeInfoTag: {
+    color: '#B0B0B0',
+    fontSize: 12,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  
+  episodeScrollView: {
+    marginHorizontal: -20,
+  },
+  
+  episodeScrollContainer: {
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  
+  netflixEpisodePill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+    minHeight: 44,
+    marginRight: 12,
+  },
+  
+  netflixEpisodePillActive: {
+    backgroundColor: '#F5C451',
+    borderColor: '#F5C451',
+  },
+  
+  netflixEpisodeText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  
+  netflixEpisodeTextActive: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  
   episodesLoadingContainer: {
     width: '100%',
     paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  
   episodesLoadingText: {
     color: '#fff',
     marginTop: 12,
     fontSize: 14,
   },
 
-  // Episode badge bottom-left
-  episodeBadgeWrap: {
+  // More sheet
+  moreSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  
+  moreSheet: {
     position: 'absolute',
-    left: 14,
-    bottom: 90,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '65%',
+    maxHeight: '65%',
+    width: '100%',
+    backgroundColor: '#0E0E0E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    zIndex: 10001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 21,
+  },
+  
+  moreSheetScroll: {
+    flex: 1,
+  },
+  
+  moreSheetScrollContent: {
+    paddingBottom: 12,
+  },
+  
+  moreHandleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  
+  moreSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    paddingBottom: 4,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  
+  moreSheetTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  
+  moreSheetCloseBtn: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  moreSection: {
+    marginBottom: 24,
+  },
+  
+  moreSectionTitle: {
+    color: '#B0B0B0',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
+  
+  moreOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  
+  moreOptionChip: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    marginRight: 10,
+    marginBottom: 10,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  moreOptionChipActive: {
+    backgroundColor: '#F5C451',
+    borderColor: '#F5C451',
+  },
+  
+  moreOptionChipText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  
+  moreOptionChipTextActive: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  
+  moreDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 8,
+    marginBottom: 16,
+  },
+  
+  moreActions: {
+    marginBottom: 12,
+  },
+  
+  moreActionItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
-  episodeLogo: {
-    width: 70,
-    height: 42,
-    borderRadius: 10,
-    overflow: 'hidden',
-    backgroundColor: '#222',
-  },
-  episodeLogoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  episodeLabelRow: {
-    marginLeft: 8,
-  },
-  episodeLabelText: {
+  
+  moreActionText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 12,
   },
 });
