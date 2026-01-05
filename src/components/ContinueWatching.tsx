@@ -1,4 +1,4 @@
-// ContinueWatching: Shows a horizontal list of videos the user can resume watching.
+// ContinueWatching: Horizontal scrollable list
 
 import React, { useRef } from 'react';
 import {
@@ -10,24 +10,17 @@ import {
   ActivityIndicator,
   Image,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../context/ThemeContext';
 
-// Spacing constants for layout
-const spacing = {
-  sectionGap: 28,
-  continueCardWidth: 160,
-  continueCardHeight: 220,
-};
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Border radius constants
-const radius = {
-  card: 18,
-};
+// Enhanced card dimensions for better content display
+const CARD_WIDTH = 140;
+const CARD_IMAGE_HEIGHT = 180;
+const CARD_HEIGHT = 220; // Increased for better content display
 
-// Type for a single continue watching item
 interface ContinueWatchingItem {
   _id?: string;
   videoId: {
@@ -36,127 +29,61 @@ interface ContinueWatchingItem {
     thumbnailUrl?: string;
     thumbnail?: string;
     episodeNumber?: number;
+    seasonNumber?: number;
     duration?: number;
     genre?: string;
+    genres?: string[];
+    languages?: string;
+    seasonId?: {
+      seasonNumber?: number;
+    } | string;
+    type?: 'reel' | 'episode';
   };
   currentTime: number;
   progress: number;
   episodeNumber?: number;
 }
 
-// Props for ContinueWatching component
 interface ContinueWatchingProps {
   items: ContinueWatchingItem[];
   loading: boolean;
   onItemPress: (item: ContinueWatchingItem) => void;
 }
 
-/**
- * ContinueWatchingCard: Card for a single continue watching video.
- */
 const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; onPress: () => void; }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const resumeScaleAnim = useRef(new Animated.Value(0.9)).current;
-  const resumeOpacityAnim = useRef(new Animated.Value(0)).current;
 
-  // Animate card and resume button on press in
   const handlePressIn = () => {
-    Animated.parallel([
-      Animated.timing(scaleAnim, {
-        toValue: 0.97,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.spring(resumeScaleAnim, {
-        toValue: 1.0,
-        damping: 20,
-        stiffness: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(resumeOpacityAnim, {
-        toValue: 1,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+    }).start();
   };
 
-  // Animate card and resume button on press out
   const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1.0,
-        damping: 20,
-        stiffness: 300,
-        useNativeDriver: true,
-      }),
-      Animated.spring(resumeScaleAnim, {
-        toValue: 0.9,
-        damping: 20,
-        stiffness: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(resumeOpacityAnim, {
-        toValue: 0,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      damping: 15,
+      stiffness: 200,
+      useNativeDriver: true,
+    }).start();
   };
 
-  const { colors, theme } = useTheme();
   const videoData = item.videoId || {};
-  const thumbnail = videoData.thumbnailUrl || videoData.thumbnail || 'https://picsum.photos/160/220';
-  const episodeNumber = videoData.episodeNumber || item.episodeNumber;
+  const thumbnail = videoData.thumbnailUrl || videoData.thumbnail || 'https://picsum.photos/245/150';
   
-  // Calculate progress for progress bar
+  // Handle seasonId being either string or object
+  const seasonNumber = videoData.seasonNumber || 
+    (typeof videoData.seasonId === 'object' ? videoData.seasonId?.seasonNumber : undefined) || 1;
+  
+  const episodeNumber = videoData.episodeNumber || item.episodeNumber || 1;
+  const title = videoData.title || 'Untitled';
+  
   const progress = item.progress 
     ? (item.progress > 1 ? item.progress / 100 : item.progress)
     : (item.currentTime && videoData.duration 
         ? item.currentTime / videoData.duration 
         : 0);
-
-  // Dynamic styles for this component
-  const dynamicStyles = StyleSheet.create({
-    card: {
-      width: 140,
-      height: 200,
-      borderRadius: 12,
-      overflow: 'hidden',
-      backgroundColor: colors.surface,
-      position: 'relative',
-      borderWidth: 1,
-      borderColor: colors.borderLight,
-    },
-    episodeBadgeText: {
-      fontSize: 10,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    seriesName: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: colors.textPrimary,
-      lineHeight: 14,
-    },
-    progressTrack: {
-      height: 3,
-      backgroundColor: colors.progressTrack,
-      overflow: 'hidden',
-    },
-    progressFillBar: {
-      height: '100%',
-      backgroundColor: colors.yellow,
-    },
-    resumeButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.yellow,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-  });
 
   return (
     <TouchableOpacity
@@ -168,270 +95,193 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
     >
       <Animated.View
         style={[
-          dynamicStyles.card,
+          styles.card,
           {
             transform: [{ scale: scaleAnim }],
           },
         ]}
       >
-        <Image
-          source={{ uri: thumbnail }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-
-        {/* Bottom Gradient - 40% height */}
-        <LinearGradient
-          colors={theme === 'dark' 
-            ? ['transparent', 'rgba(0,0,0,0.85)']
-            : ['transparent', 'rgba(0,0,0,0.65)']}
-          locations={[0, 1]}
-          style={styles.gradientOverlay}
-        />
-
-        {/* Episode Badge */}
-        {episodeNumber && (
-          <View style={[styles.episodeBadge, { backgroundColor: colors.yellow }]}>
-            <Text style={dynamicStyles.episodeBadgeText}>
-              EP {episodeNumber}
-            </Text>
-          </View>
-        )}
-
-        {/* Content Overlay */}
-        <View style={styles.contentOverlay}>
-          <Text style={[dynamicStyles.seriesName, { color: '#FFFFFF' }]} numberOfLines={1}>
-            {videoData.title || 'Untitled'}
+        {/* Image Container */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ uri: thumbnail }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+          {/* Episode Badge - Centered at bottom middle of image */}
+          <Text style={styles.episodeBadgeText}>
+            S{seasonNumber} • E{episodeNumber}
           </Text>
-        </View>
-
-        {/* Progress Bar - at bottom */}
-        <View style={styles.progressBarContainer}>
-          <View style={dynamicStyles.progressTrack}>
+          {/* Progress Bar - At bottom of image */}
+          <View style={styles.progressBarContainer}>
             <View
               style={[
-                dynamicStyles.progressFillBar,
+                styles.progressFill,
                 { width: `${Math.min(progress * 100, 100)}%` },
               ]}
             />
           </View>
         </View>
 
-        {/* Resume Play Button - Bottom-right corner */}
-        <Animated.View
-          style={[
-            styles.resumeButtonContainer,
-            {
-              transform: [{ scale: resumeScaleAnim }],
-              opacity: resumeOpacityAnim,
-            },
-          ]}
-        >
-          <View style={dynamicStyles.resumeButton}>
-            <Ionicons name="play" size={16} color={theme === 'dark' ? '#1A1A1A' : '#FFFFFF'} />
-          </View>
-        </Animated.View>
+        {/* Text Content Section - BELOW the image */}
+        <View style={styles.textContent}>
+          {/* Title */}
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {title}
+          </Text>
+
+          {/* Genre and Language */}
+          {(videoData.genres || videoData.genre || videoData.languages) && (
+            <View style={styles.metaInfo}>
+              {(videoData.genres || videoData.genre) && (
+                <Text style={styles.metaText} numberOfLines={1}>
+                  {Array.isArray(videoData.genres) 
+                    ? videoData.genres[0] 
+                    : videoData.genre}
+                </Text>
+              )}
+              {videoData.languages && (
+                <Text style={styles.metaText} numberOfLines={1}>
+                  {videoData.languages}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
       </Animated.View>
     </TouchableOpacity>
   );
 };
 
-/**
- * ContinueWatching: Shows a horizontal scroll of videos the user can resume.
- */
 export default function ContinueWatching({ items, loading, onItemPress }: ContinueWatchingProps) {
-  const { colors, theme } = useTheme();
-  
-  // Dynamic styles for main component
-  const dynamicStyles = StyleSheet.create({
-    sectionTitle: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    arrowButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme === 'dark' 
-        ? 'rgba(255, 255, 255, 0.1)' 
-        : 'rgba(0, 0, 0, 0.08)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-  });
-  
-  // Show loading indicator if loading
   if (loading) {
     return (
-      <View style={[styles.wrapper, { backgroundColor: colors.surface }]}>
-        <LinearGradient
-          colors={[colors.background, colors.backgroundGradient, colors.background]}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.gradientContainer}
-        >
-          <View style={styles.content}>
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={colors.yellow} />
-            </View>
-          </View>
-        </LinearGradient>
+      <View style={styles.wrapper}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#FFB800" />
+        </View>
       </View>
     );
   }
 
-  // Don't render if no items
   if (!items || items.length === 0) {
     return null;
   }
 
-  // Main render: section with header and horizontal scroll of cards
   return (
-    <View style={[styles.wrapper, { backgroundColor: colors.surfaceElevated, borderRadius: 20, overflow: 'hidden' }]}>
-      <LinearGradient
-        colors={theme === 'dark' 
-          ? [colors.yellow + '15', colors.yellow + '08', colors.yellow + '15']
-          : [colors.yellow + '20', colors.yellow + '10', colors.yellow + '20']}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientContainer}
-      >
-        <View style={styles.content}>
-          {/* Header with arrow */}
-          <View style={styles.header}>
-            <Text style={dynamicStyles.sectionTitle}>Continue Watching</Text>
-            <TouchableOpacity style={dynamicStyles.arrowButton}>
-              <Ionicons name="chevron-forward" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
+    <View style={styles.wrapper}>
+      {/* Section Title */}
+      <Text style={styles.sectionTitle}>Continue Watching</Text>
 
-          {/* Cards Scroll */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContainer}
-            decelerationRate="fast"
-          >
-            {items.map((item, index) => {
-              const key = item._id || `${item.videoId?._id}-${index}`;
-              return (
-                <ContinueWatchingCard
-                  key={key}
-                  item={item}
-                  onPress={() => onItemPress(item)}
-                />
-              );
-            })}
-          </ScrollView>
-        </View>
-      </LinearGradient>
+      {/* Horizontal Scrollable Cards */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContainer}
+        decelerationRate="fast"
+      >
+        {items.map((item, index) => {
+          const key = item._id || `${item.videoId?._id}-${index}`;
+          return (
+            <ContinueWatchingCard
+              key={key}
+              item={item}
+              onPress={() => onItemPress(item)}
+            />
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginTop: 8,
-    marginBottom: 0,
-    borderRadius: 15,
-    overflow: 'hidden',
-  },
-  gradientContainer: {
-    width: '100%',
-    paddingVertical: 20,
-    paddingBottom: 24,
-    overflow: 'hidden',
-  },
-  content: {
-    paddingLeft: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingRight: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '700',
-  },
-  arrowButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    color: '#FFFFFF',
+    marginBottom: 16,
   },
   loadingContainer: {
-    height: spacing.continueCardHeight,
+    height: CARD_HEIGHT + 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   scrollContainer: {
-    gap: 12,
+    gap: 10,
     paddingRight: 16,
   },
   cardWrapper: {
     marginRight: 0,
   },
+  card: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#1A1A1A',
+    flexDirection: 'column',
+  },
+  imageContainer: {
+    width: '100%',
+    height: CARD_IMAGE_HEIGHT,
+    position: 'relative',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   thumbnail: {
     width: '100%',
     height: '100%',
   },
-  gradientOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '40%',
-  },
-  bookmarkButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 16,
-    padding: 6,
-    zIndex: 10,
-  },
-  episodeBadge: {
-    position: 'absolute',
-    bottom: 28,
-    left: 8,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    zIndex: 5,
-  },
-  contentOverlay: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    right: 8,
-    zIndex: 5,
+  textContent: {
+    flex: 1,
+    padding: 10,
+    justifyContent: 'flex-start',
+    gap: 4,
   },
   progressBarContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 10,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
-  resumeButtonContainer: {
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#FFCB00',
+  },
+  episodeBadgeText: {
     position: 'absolute',
-    bottom: 34,
-    right: 8,
-    zIndex: 15,
+    bottom: 12,
+    left: '50%',
+    marginLeft: -35,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFB800',
+    textAlign: 'center',
+    width: 70,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  resumeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
+    lineHeight: 16,
+  },
+  metaInfo: {
+    flexDirection: 'column',
+    gap: 2,
+  },
+  metaText: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 });
