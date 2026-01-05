@@ -72,14 +72,28 @@ const CoinsScreen = ({ navigation }: any) => {
       if (res?.success && res.data) {
         dispatch(setUser(res.data));
 
-        const last = res.data.lastDailyCheckInDate
-          ? new Date(res.data.lastDailyCheckInDate).toDateString()
+        // Check if user has claimed today
+        const lastCheckInDate = res.data.lastDailyCheckInDate
+          ? new Date(res.data.lastDailyCheckInDate)
           : null;
 
-        const today = new Date().toDateString();
-        setHasClaimedToday(last === today);
-        setCurrentDay(res.data.currentCheckInDay);
-        setSelectedDay(res.data.currentCheckInDay || 1);
+        const today = new Date();
+        const isSameDay = lastCheckInDate &&
+          lastCheckInDate.getDate() === today.getDate() &&
+          lastCheckInDate.getMonth() === today.getMonth() &&
+          lastCheckInDate.getFullYear() === today.getFullYear();
+
+        setHasClaimedToday(!!isSameDay);
+        
+        // Set current day - this should be the day they're on or need to claim
+        const dayToShow = res.data.currentCheckInDay || 1;
+        setCurrentDay(dayToShow);
+        setSelectedDay(dayToShow);
+
+        console.log('Fetch User - Last Check-in:', lastCheckInDate?.toDateString());
+        console.log('Fetch User - Today:', today.toDateString());
+        console.log('Fetch User - Has claimed today:', isSameDay);
+        console.log('Fetch User - Current day:', dayToShow);
       }
     } catch (error) {
       console.error('Error fetching user:', error);
@@ -131,20 +145,29 @@ const CoinsScreen = ({ navigation }: any) => {
     setClaiming(true);
     try {
       const res = await claimDailyCheckIn();
+      console.log('Claim response:', res);
+      
       if (res.success) {
-        if (res.data.currentDay) {
-          setCurrentDay(res.data.currentDay);
-        }
+        // Update local state immediately
+        const newDay = res.data.currentDay || (currentDay || 0) + 1;
+        
+        // Reset to day 1 if we've completed all 7 days
+        const nextDay = newDay > 7 ? 1 : newDay;
+        
+        setCurrentDay(nextDay);
+        setSelectedDay(nextDay);
+        setHasClaimedToday(true);
         
         Alert.alert(
           'Success! 🎉',
-          `You earned ${res.data.coins} coins!`,
+          `You earned ${res.data.coins} coin${res.data.coins > 1 ? 's' : ''}!\nCome back tomorrow for Day ${nextDay}.`,
           [
             {
               text: 'OK',
-              onPress: () => {
-                fetchUser();
-                fetchHistory();
+              onPress: async () => {
+                // Fetch updated user data
+                await fetchUser();
+                await fetchHistory();
               },
             },
           ]
@@ -220,7 +243,7 @@ const CoinsScreen = ({ navigation }: any) => {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: topOffset }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
+      <StatusBar barStyle="light-content" backgroundColor='#0A0A0A' />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -273,26 +296,38 @@ const CoinsScreen = ({ navigation }: any) => {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {DAILY_REWARDS.map(d => {
-              const done = currentDay && d.day < currentDay;
-              const todayDone = hasClaimedToday && d.day === currentDay;
+              // A day is "done" if it's less than the current day
+              const done = currentDay ? d.day < currentDay : false;
+              // Today's day is the current day and has been claimed
+              const isToday = d.day === currentDay;
+              const todayAndClaimed = isToday && hasClaimedToday;
 
               return (
                 <TouchableOpacity
                   key={d.day}
                   style={[
                     styles.day,
-                    d.day === selectedDay && styles.dayActive,
-                    (done || todayDone) && styles.dayDone,
+                    d.day === selectedDay && !todayAndClaimed && styles.dayActive,
+                    (done || todayAndClaimed) && styles.dayDone,
                   ]}
-                  disabled={hasClaimedToday && !done && !todayDone}
-                  onPress={() => !hasClaimedToday && setSelectedDay(d.day)}
+                  disabled={done || todayAndClaimed}
+                  onPress={() => {
+                    if (!done && !todayAndClaimed) {
+                      setSelectedDay(d.day);
+                    }
+                  }}
                 >
                   <FontAwesome5
-                    name={done || todayDone ? 'check' : 'coins'}
+                    name={done || todayAndClaimed ? 'check' : 'coins'}
                     size={16}
-                    color={done || todayDone ? '#10B981' : '#FFC107'}
+                    color={done || todayAndClaimed ? '#10B981' : '#FFC107'}
                   />
                   <Text style={styles.dayLabel}>Day {d.day}</Text>
+                  {isToday && !hasClaimedToday && (
+                    <View style={styles.todayBadge}>
+                      <Text style={styles.todayText}>Today</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -307,7 +342,7 @@ const CoinsScreen = ({ navigation }: any) => {
               {claiming 
                 ? 'Claiming...' 
                 : hasClaimedToday 
-                  ? '✓ Claimed' 
+                  ? '✓ Claimed Today' 
                   : `Claim ${DAILY_REWARDS.find(d => d.day === selectedDay)?.coins} Coin`}
             </Text>
           </TouchableOpacity>
@@ -316,6 +351,22 @@ const CoinsScreen = ({ navigation }: any) => {
         {/* MISSIONS */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Earn More</Text>
+
+          {/* Watch Ad Mission - First */}
+          <View style={styles.mission}>
+            <View style={[styles.icon, { backgroundColor: '#10B981' }]}>
+              <Ionicons name="play" size={20} color="#FFF" />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.missionTitle}>Watch Ads</Text>
+              <Text style={styles.missionCoins}>+5 Coins</Text>
+            </View>
+
+            <TouchableOpacity style={styles.missionBtn}>
+              <Text style={styles.missionBtnText}>Watch</Text>
+            </TouchableOpacity>
+          </View>
 
           {MISSIONS.map(m => (
             <View key={m.id} style={styles.mission}>
@@ -337,22 +388,6 @@ const CoinsScreen = ({ navigation }: any) => {
               </TouchableOpacity>
             </View>
           ))}
-
-          {/* Watch Ad Mission */}
-          <View style={styles.mission}>
-            <View style={[styles.icon, { backgroundColor: '#10B981' }]}>
-              <Ionicons name="play" size={20} color="#FFF" />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.missionTitle}>Watch Ads</Text>
-              <Text style={styles.missionCoins}>+5 Coins</Text>
-            </View>
-
-            <TouchableOpacity style={styles.missionBtn}>
-              <Text style={styles.missionBtnText}>Watch</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* BUY COINS BANNER */}
@@ -407,7 +442,7 @@ export default CoinsScreen;
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#1A1A1A' },
+  safe: { flex: 1, backgroundColor: '#0A0A0A' },
   header: { flexDirection: 'row', padding: 16, justifyContent: 'space-between', alignItems: 'center' },
   back: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#252525', justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 22, fontWeight: '800', color: '#FFF' },
@@ -421,10 +456,32 @@ const styles = StyleSheet.create({
   section: { marginHorizontal: 16, marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#FFF', marginBottom: 12 },
 
-  day: { width: 70, height: 86, backgroundColor: '#1A1A1A', borderRadius: 16, marginRight: 10, justifyContent: 'center', alignItems: 'center' },
+  day: { 
+    width: 70, 
+    height: 86, 
+    backgroundColor: '#1A1A1A', 
+    borderRadius: 16, 
+    marginRight: 10, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    position: 'relative',
+  },
   dayActive: { borderWidth: 2, borderColor: '#FFC107' },
   dayDone: { borderWidth: 2, borderColor: '#10B981' },
   dayLabel: { fontSize: 12, marginTop: 6, color: '#999' },
+  todayBadge: {
+    position: 'absolute',
+    top: -6,
+    backgroundColor: '#FFC107',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  todayText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
 
   claim: { marginTop: 16, backgroundColor: '#FFC107', padding: 16, borderRadius: 16, alignItems: 'center' },
   claimDisabled: { opacity: 0.5 },
@@ -434,8 +491,17 @@ const styles = StyleSheet.create({
   icon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
   missionTitle: { color: '#FFF', fontWeight: '800' },
   missionCoins: { color: '#FFC107', fontSize: 12, fontWeight: '700' },
-  missionBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, borderWidth: 1.5, borderColor: '#FFC107' },
-  missionBtnText: { color: '#FFC107', fontWeight: '800' },
+  missionBtn: { 
+    minWidth: 90,
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1.5, 
+    borderColor: '#FFC107',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  missionBtnText: { color: '#FFC107', fontWeight: '800', fontSize: 13 },
 
   buyBanner: { 
     flexDirection: 'row', 

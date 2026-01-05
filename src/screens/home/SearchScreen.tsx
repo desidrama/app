@@ -322,32 +322,22 @@ export default function SearchScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
+      <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
       
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <View style={styles.backButtonCircle}>
-              <Ionicons name="arrow-back" size={22} color="#FFC107" />
-            </View>
-          </TouchableOpacity>
-
           <View style={styles.searchContainer}>
             <View style={styles.searchIconWrapper}>
               <Ionicons
                 name="search"
-                size={20}
-                color="#FFC107"
+                size={22}
+                color="#888888"
               />
             </View>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search premium videos..."
-              placeholderTextColor="#666666"
+              placeholder="Search videos, movies, shows..."
+              placeholderTextColor="#555555"
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
@@ -364,7 +354,7 @@ export default function SearchScreen() {
                 }}
                 style={styles.clearButton}
               >
-                <Ionicons name="close-circle" size={20} color="#999999" />
+                <Ionicons name="close-circle" size={22} color="#888888" />
               </TouchableOpacity>
             )}
           </View>
@@ -381,7 +371,7 @@ export default function SearchScreen() {
                   onPress={() => handleMostSearchedPress(item)}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="trending-up" size={12} color="#FFC107" style={styles.chipIcon} />
+                  <Ionicons name="trending-up" size={12} color="#999999" style={styles.chipIcon} />
                   <Text style={styles.chipText}>{item}</Text>
                 </TouchableOpacity>
               ))}
@@ -420,76 +410,60 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#0A0A0A',
   },
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#0A0A0A',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingVertical: 12,
-    backgroundColor: '#1A1A1A',
+    paddingVertical: 16,
+    backgroundColor: '#0A0A0A',
   },
-  backButton: {
-    marginRight: 12,
-  },
-  backButtonCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#252525',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#FFC107',
-    shadowColor: '#FFC107',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#252525',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    height: 50,
+    backgroundColor: '#0F0F0F',
+    borderRadius: 28,
+    paddingHorizontal: 18,
+    height: 56,
     borderWidth: 2,
-    borderColor: '#333333',
+    borderColor: '#2A2A2A',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
   },
   searchIconWrapper: {
-    marginRight: 10,
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     color: '#FFFFFF',
     paddingVertical: 0,
   },
   clearButton: {
     padding: 4,
+    marginLeft: 8,
   },
   mostSearchedSection: {
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 8,
+    marginBottom: 10,
     letterSpacing: 0.5,
   },
   chipsContainer: {
@@ -501,24 +475,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#252525',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#FFC107',
-    shadowColor: '#FFC107',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   chipIcon: {
     marginRight: 5,
   },
   chipText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#FFC107',
+    fontWeight: '600',
+    color: '#CCCCCC',
     letterSpacing: 0.3,
   },
   scrollContent: {
@@ -568,33 +537,32 @@ const styles = StyleSheet.create({
     width: HORIZONTAL_CARD_WIDTH,
   },
   horizontalCardWrapper: {
-    backgroundColor: '#252525',
-    borderRadius: 14,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#333333',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
   },
   horizontalThumbnailContainer: {
     width: '100%',
     aspectRatio: 3 / 4,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#0A0A0A',
+    overflow: 'hidden',
   },
   horizontalTitleContainer: {
-    padding: 8,
-    backgroundColor: '#252525',
-    minHeight: 20,
+    padding: 10,
+    backgroundColor: '#1A1A1A',
+    minHeight: 22,
     justifyContent: 'center',
   },
   horizontalVideoTitle: {
     fontSize: 10,
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 10,
+    lineHeight: 11,
     letterSpacing: 0.2,
   },
   gridContainer: {
@@ -610,30 +578,29 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
   },
   cardWrapper: {
-    backgroundColor: '#252525',
-    borderRadius: 14,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#333333',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
   },
   thumbnailContainer: {
     width: '100%',
     aspectRatio: 9 / 16,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#0A0A0A',
+    overflow: 'hidden',
   },
   thumbnail: {
     width: '100%',
     height: '100%',
   },
   titleContainer: {
-    padding: 8,
-    backgroundColor: '#252525',
-    minHeight: 42,
+    padding: 10,
+    backgroundColor: '#1A1A1A',
+    minHeight: 44,
     justifyContent: 'center',
   },
   videoTitle: {
