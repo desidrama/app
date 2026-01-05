@@ -43,7 +43,13 @@ const getApiBaseUrl = (): string => {
   // For Android emulator: use 10.0.2.2 to access host machine's localhost
   // For iOS simulator: use localhost
   // For physical device: use your computer's local IP (e.g., 192.168.x.x)
+<<<<<<< HEAD
   const DEV_API_URL = 'http://192.168.0.191:5000'; // Android emulator default
+=======
+
+  const DEV_API_URL = 'http://192.168.0.119:5000'; // Android emulator default
+
+>>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
   const PROD_API_URL = 'https://api.yourproductiondomain.com';
 
   // Use development URL in dev mode, production URL otherwise

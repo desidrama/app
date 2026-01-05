@@ -5,23 +5,30 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 export type ThemeType = 'dark' | 'light';
 
 export const darkColors = {
-  background: '#0A0A12',
-  backgroundGradient: '#12121E',
-  surface: '#16162A',
-  surfaceElevated: '#1C1C32',
-  borderSubtle: 'rgba(35, 35, 52, 0.35)',
-  borderLight: 'rgba(245, 245, 250, 0.24)',
-  yellow: '#FFD600',
-  yellowBright: '#FFED4E',
-  yellowDim: 'rgba(255, 214, 0, 0.15)',
-  yellowGlow: 'rgba(255, 237, 78, 0.25)',
+  // Primary Background: Deep charcoal black with subtle gradients
+  background: '#0d0d0d',
+  backgroundGradient: '#1a1a1a',
+  // Secondary Background: Dark gray for cards and elevated surfaces
+  surface: '#2a2a2a',
+  surfaceElevated: '#333333',
+  // Borders
+  borderSubtle: 'rgba(255, 255, 255, 0.1)',
+  borderLight: 'rgba(255, 255, 255, 0.15)',
+  // Accent Color: Vibrant yellow (#FFD700 to #FFC400 range)
+  yellow: '#FFD700', // Primary vibrant yellow
+  yellowBright: '#FFC400', // Slightly darker variant
+  yellowDim: 'rgba(255, 215, 0, 0.15)',
+  yellowGlow: 'rgba(255, 215, 0, 0.3)',
+  // Error states
   error: '#F25F5C',
-  textPrimary: '#F5F5FA',
-  textSecondary: '#A5A5C0',
-  textMuted: '#6A6A82',
-  textOnYellow: '#1A1A1A',
+  // Text Colors
+  textPrimary: '#FFFFFF', // Pure white for headings
+  textSecondary: '#B0B0B0', // Light gray for body text
+  textMuted: '#707070', // Medium gray for metadata
+  textOnYellow: '#000000', // Dark text on yellow backgrounds
+  // Progress indicators
   progressTrack: 'rgba(255, 255, 255, 0.15)',
-  progressFill: '#FFD600',
+  progressFill: '#FFD700',
 };
 
 export const lightColors = {

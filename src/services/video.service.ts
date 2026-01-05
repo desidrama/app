@@ -126,4 +126,110 @@ export const videoService = {
     const response = await api.get(`/api/content/search?q=${encodeURIComponent(query)}&page=${page}`);
     return response.data;
   },
+
+  // ========== Like Methods ==========
+  async toggleLike(videoId: string) {
+    try {
+      if (!videoId) {
+        throw new Error('Video ID is required');
+      }
+      const response = await api.post(`/api/content/videos/${videoId}/like`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error toggling like:', error);
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required');
+      }
+      throw error;
+    }
+  },
+
+  async getLikeStatus(videoId: string) {
+    try {
+      if (!videoId) {
+        throw new Error('Video ID is required');
+      }
+      const response = await api.get(`/api/content/videos/${videoId}/like`);
+      return response.data;
+    } catch (error: any) {
+      // Graceful fallback: if 404, treat as not liked
+      if (error.response?.status === 404) {
+        console.warn('Like status endpoint not found, treating as not liked');
+        return { success: true, data: { liked: false, likeCount: 0 } };
+      }
+      if (error.response?.status === 401) {
+        // Not authenticated - treat as not liked
+        return { success: true, data: { liked: false, likeCount: 0 } };
+      }
+      console.error('Error getting like status:', error);
+      // Return safe default on any error
+      return { success: true, data: { liked: false, likeCount: 0 } };
+    }
+  },
+
+  // ========== Comment Methods ==========
+  async getComments(reelId: string, page: number = 1, limit: number = 20) {
+    try {
+      if (!reelId) {
+        throw new Error('Reel ID is required');
+      }
+      const response = await api.get(`/api/content/videos/${reelId}/comments`, {
+        params: { page, limit },
+      });
+      return response.data;
+    } catch (error: any) {
+      // Graceful fallback: if 404 or any error, return empty comments
+      if (error.response?.status === 404) {
+        console.warn('Comments endpoint not found, returning empty list');
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      if (error.response?.status === 401) {
+        // Not authenticated - return empty list
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      console.error('Error getting comments:', error);
+      // Return safe default on any error
+      return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+    }
+  },
+
+  async postComment(reelId: string, commentText: string) {
+    try {
+      if (!reelId) {
+        console.error('Missing reelId, cannot post comment');
+        throw new Error('Reel ID is required');
+      }
+      
+      if (!commentText || !commentText.trim()) {
+        throw new Error('Comment text is required');
+      }
+      
+      console.log('Posting comment for reel:', reelId);
+      
+      const response = await api.post(`/api/content/videos/${reelId}/comments`, {
+        text: commentText.trim(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('Error posting comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        reelId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to post comments');
+      }
+      if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || 'Invalid comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment feature not available. Please try again later.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to post comment. Please try again.');
+    }
+  },
 };

@@ -26,7 +26,7 @@ type TabAnim = {
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
 
   // 🔴 IMPORTANT: hide tab bar completely on Reels
   const focusedRoute = state.routes[state.index];
@@ -34,7 +34,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   if (
     focusedRoute.name === 'Reels' ||
-    (focusedOptions?.tabBarStyle as any)?.display === 'none'
+    focusedOptions?.tabBarStyle?.display === 'none'
   ) {
     return null;
   }
@@ -215,13 +215,24 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   return (
     <View 
-      style={[styles.wrapper, { 
-        paddingBottom: bottomInset,
-        backgroundColor: colors.background,
-        borderTopColor: colors.borderLight,
-      }]}
+      style={[
+        styles.wrapper,
+        {
+          paddingBottom: bottomInset,
+          backgroundColor: colors.surface,
+          borderTopColor: theme === 'dark' 
+            ? 'rgba(255, 255, 255, 0.1)' 
+            : 'rgba(0, 0, 0, 0.1)',
+        }
+      ]}
     >
-      <View style={[styles.tabBar, { height: tabBarHeight, backgroundColor: colors.surface }]}> 
+      <View style={[
+        styles.tabBar,
+        {
+          height: tabBarHeight,
+          backgroundColor: colors.background,
+        }
+      ]}> 
         {/* Custom order: Home, Search, Reels (center), Rewards, Profile */}
         {[0, 1, 2, 3, 4].map((customIndex) => {
           // Map custom order: 0=Home, 1=Search, 2=Reels, 3=Rewards, 4=Profile
@@ -241,7 +252,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           const iconWrapperStyle = [
             styles.iconWrapper,
             isReels && {
-              backgroundColor: 'transparent',
+              backgroundColor: colors.background,
               borderWidth: 0,
               borderColor: 'transparent',
               shadowColor: 'transparent',
@@ -289,12 +300,12 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 }
 
 const styles = StyleSheet.create({
-    reelTabItem: {
-      flex: 1.2,
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 10,
-    },
+  reelTabItem: {
+    flex: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
   wrapper: {
     position: 'absolute',
     left: 0,
