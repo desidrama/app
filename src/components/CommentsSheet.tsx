@@ -21,6 +21,8 @@ type Comment = {
   };
   createdAt?: string;
   updatedAt?: string;
+  replyCount?: number;
+  replies?: Comment[];
 };
 
 // Props for CommentsSheet component
@@ -29,12 +31,14 @@ type Props = {
   onClose: () => void;
   postId: string; // Video/reel ID
   initialComments?: Comment[];
+  commentCount?: number;
+  onCommentCountChange?: (count: number) => void;
 };
 
 /**
  * CommentsSheet: Bottom sheet for displaying and adding comments to content.
  */
-const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComments = [] }) => {
+const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComments = [], commentCount, onCommentCountChange }) => {
   const [comments, setComments] = useState<Comment[]>(initialComments);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -42,6 +46,9 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{commentId: string, username: string} | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [localCommentCount, setLocalCommentCount] = useState(commentCount || 0);
 
   // Load comments when component becomes visible (only once)
   useEffect(() => {
@@ -65,10 +72,11 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
           id: comment.id || comment._id,
           username: comment.user?.username || comment.user?.name || 'User',
           text: comment.text,
-          likes: comment.likes || 0,
+          likes: comment.likesCount || comment.likes || 0,
           timeAgo: comment.timeAgo || 'now',
           isLiked: comment.isLiked || comment.liked || false,
           avatar: comment.user?.avatar || comment.user?.profilePicture,
+          replyCount: comment.replyCount || 0,
           createdAt: comment.createdAt,
           user: comment.user,
         }));
@@ -124,22 +132,77 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
           id: response.data.id || response.data._id || `c-${Date.now()}`,
           username: response.data.user?.username || response.data.user?.name || 'You',
           text: response.data.text || t,
-          likes: 0,
-          timeAgo: 'now',
-          isLiked: false,
+          likes: response.data.likesCount || response.data.likes || 0,
+          timeAgo: response.data.timeAgo || 'now',
+          isLiked: response.data.isLiked || response.data.liked || false,
           avatar: response.data.user?.avatar || response.data.user?.profilePicture,
+          replyCount: response.data.replyCount || 0,
           createdAt: response.data.createdAt,
           user: response.data.user,
         };
         
         setComments(prev => [newComment, ...prev]);
         setText('');
+        // Update local comment count
+        const newCount = localCommentCount + 1;
+        setLocalCommentCount(newCount);
+        // Notify parent component if callback exists
+        if (onCommentCountChange) {
+          onCommentCountChange(newCount);
+        }
       } else {
         Alert.alert('Error', response?.message || 'Failed to post comment');
       }
     } catch (error: any) {
       console.error('Error posting comment:', error);
       Alert.alert('Error', error.message || 'Failed to post comment. Please try again.');
+    }
+  };
+
+  // Reply to a comment
+  const replyToComment = async (commentId: string) => {
+    const t = replyText.trim();
+    if (!t) return;
+    if (!postId) {
+      Alert.alert('Error', 'Cannot post reply: invalid post ID');
+      return;
+    }
+
+    try {
+      // For replies, we'll post to the same endpoint but with parent comment ID
+      const response = await videoService.postComment(postId, t, commentId);
+      if (response?.success && response.data) {
+        // For now, we'll just add the reply to the top-level comments
+        // In a full implementation, you'd want to structure replies differently
+        const newReply = {
+          id: response.data.id || response.data._id || `r-${Date.now()}`,
+          username: response.data.user?.username || response.data.user?.name || 'You',
+          text: response.data.text || t,
+          likes: response.data.likesCount || response.data.likes || 0,
+          timeAgo: response.data.timeAgo || 'now',
+          isLiked: response.data.isLiked || response.data.liked || false,
+          avatar: response.data.user?.avatar || response.data.user?.profilePicture,
+          replyCount: response.data.replyCount || 0,
+          createdAt: response.data.createdAt,
+          user: response.data.user,
+        };
+        
+        setComments(prev => [newReply, ...prev]);
+        setReplyText('');
+        setReplyingTo(null);
+        // Update local comment count
+        const newCount = localCommentCount + 1;
+        setLocalCommentCount(newCount);
+        // Notify parent component if callback exists
+        if (onCommentCountChange) {
+          onCommentCountChange(newCount);
+        }
+      } else {
+        Alert.alert('Error', response?.message || 'Failed to post reply');
+      }
+    } catch (error: any) {
+      console.error('Error posting reply:', error);
+      Alert.alert('Error', error.message || 'Failed to post reply. Please try again.');
     }
   };
 
@@ -162,9 +225,11 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
               ? { 
                   ...comment, 
                   isLiked: !currentLiked, 
-                  likes: response.data?.likes !== undefined 
-                    ? response.data.likes 
-                    : (currentLiked ? comment.likes - 1 : comment.likes + 1) 
+                  likes: response.data?.likesCount !== undefined 
+                    ? response.data.likesCount 
+                    : response.data?.likes !== undefined
+                      ? response.data.likes
+                      : (currentLiked ? comment.likes - 1 : comment.likes + 1) 
                 } 
               : comment
           )
@@ -206,10 +271,18 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
               {item.likes}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center' }}
+            onPress={() => setReplyingTo({ commentId: item.id, username: item.username })}
+          >
             <Ionicons name="return-down-back-outline" size={14} color="#888" />
             <Text style={{ color: '#888', fontSize: 12, marginLeft: 4 }}>Reply</Text>
           </TouchableOpacity>
+          {item.replyCount && item.replyCount > 0 && (
+            <Text style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>
+              {item.replyCount} repl{item.replyCount === 1 ? 'y' : 'ies'}
+            </Text>
+          )}
         </View>
       </View>
     </View>
@@ -256,6 +329,42 @@ const CommentsSheet: React.FC<Props> = ({ visible, onClose, postId, initialComme
                 ) : null
               }
             />
+          )}
+
+          {/* Reply input if replying to a comment */}
+          {replyingTo && (
+            <View style={[styles.commentInputRow, { marginTop: 10, backgroundColor: '#22212a', padding: 10, borderRadius: 10 }]}>
+              <Text style={{ color: '#FFD54A', fontSize: 12, marginBottom: 5 }}>
+                Replying to @{replyingTo.username}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  value={replyText}
+                  onChangeText={setReplyText}
+                  style={[styles.commentInput, { flex: 1, backgroundColor: '#1b1a23' }]}
+                  placeholder={`Write a reply to @${replyingTo.username}...`}
+                  placeholderTextColor="#888"
+                  multiline
+                  maxLength={500}
+                />
+                <View style={{ flexDirection: 'row' }}>
+                  <TouchableOpacity 
+                    onPress={() => setReplyingTo(null)}
+                    style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: '#888' }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => replyToComment(replyingTo.commentId)}
+                    disabled={!replyText.trim()}
+                  >
+                    <Text style={{ color: replyText.trim() ? '#FFD54A' : '#666' }}>
+                      Reply
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           )}
 
           {/* Input for new comment */}

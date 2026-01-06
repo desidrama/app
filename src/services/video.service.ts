@@ -139,8 +139,14 @@ export const videoService = {
         throw new Error('Video ID is required');
       }
       
-      // Use the same endpoint for both like and unlike - backend handles the toggle logic
-      const response = await api.post(`/api/content/videos/${videoId}/like`);
+      let response;
+      if (currentLiked) {
+        // Unlike the video
+        response = await api.post(`/api/content/videos/${videoId}/unlike`);
+      } else {
+        // Like the video
+        response = await api.post(`/api/content/videos/${videoId}/like`);
+      }
       
       return response.data;
     } catch (error: any) {
@@ -201,7 +207,7 @@ export const videoService = {
     }
   },
 
-  async postComment(reelId: string, commentText: string) {
+  async postComment(reelId: string, commentText: string, parentCommentId?: string) {
     try {
       if (!reelId) {
         console.error('Missing reelId, cannot post comment');
@@ -214,9 +220,12 @@ export const videoService = {
       
       console.log('Posting comment for reel:', reelId);
       
-      const response = await api.post(`/api/content/videos/${reelId}/comments`, {
-        text: commentText.trim(),
-      });
+      const requestBody: any = { text: commentText.trim() };
+      if (parentCommentId) {
+        requestBody.parentCommentId = parentCommentId;
+      }
+      
+      const response = await api.post(`/api/content/videos/${reelId}/comments`, requestBody);
       return response.data;
     } catch (error: any) {
       console.error('Error posting comment:', {
