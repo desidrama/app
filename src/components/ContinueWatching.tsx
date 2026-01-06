@@ -10,11 +10,7 @@ import {
   ActivityIndicator,
   Image,
   Animated,
-<<<<<<< HEAD
   Dimensions,
-=======
-  Platform,
->>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -36,20 +32,12 @@ interface ContinueWatchingItem {
     seasonNumber?: number;
     duration?: number;
     genre?: string;
-<<<<<<< HEAD
     genres?: string[];
     languages?: string;
     seasonId?: {
       seasonNumber?: number;
     } | string;
     type?: 'reel' | 'episode';
-=======
-    seasonId?: {
-      _id: string;
-      title: string;
-      seasonNumber?: number;
-    } | string;
->>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
   };
   currentTime: number;
   progress: number;
@@ -82,7 +70,6 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
   };
 
   const videoData = item.videoId || {};
-<<<<<<< HEAD
   const thumbnail = videoData.thumbnailUrl || videoData.thumbnail || 'https://picsum.photos/245/150';
   
   // Handle seasonId being either string or object
@@ -91,14 +78,6 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
   
   const episodeNumber = videoData.episodeNumber || item.episodeNumber || 1;
   const title = videoData.title || 'Untitled';
-=======
-  const thumbnail = videoData.thumbnailUrl || videoData.thumbnail || 'https://picsum.photos/160/220';
-  const episodeNumber = videoData.episodeNumber || item.episodeNumber;
-  // Extract series name from seasonId (can be object with title or just ID)
-  const seriesName = videoData.seasonId && typeof videoData.seasonId === 'object' 
-    ? videoData.seasonId.title 
-    : null;
->>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
   
   const progress = item.progress 
     ? (item.progress > 1 ? item.progress / 100 : item.progress)
@@ -106,65 +85,6 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
         ? item.currentTime / videoData.duration 
         : 0);
 
-<<<<<<< HEAD
-=======
-  // Dynamic styles for this component
-  const dynamicStyles = StyleSheet.create({
-    card: {
-      width: 140,
-      height: 200,
-      borderRadius: 16, // 16px radius for cards
-      overflow: 'hidden',
-      backgroundColor: colors.surface,
-      position: 'relative',
-      ...(Platform.OS === 'ios' ? {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-      } : {
-        elevation: 8,
-      }),
-    },
-    episodeBadgeText: {
-      fontSize: 10,
-      fontWeight: '700',
-      color: colors.textOnYellow,
-    },
-    seriesName: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.textPrimary,
-      lineHeight: 20,
-    },
-    progressTrack: {
-      height: 3, // Thin yellow progress bar
-      backgroundColor: colors.progressTrack,
-      overflow: 'hidden',
-    },
-    progressFillBar: {
-      height: '100%',
-      backgroundColor: colors.yellow, // Vibrant yellow
-    },
-    resumeButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.yellow,
-      justifyContent: 'center',
-      alignItems: 'center',
-      ...(Platform.OS === 'ios' ? {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-      } : {
-        elevation: 4,
-      }),
-    },
-  });
-
->>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -181,7 +101,6 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
           },
         ]}
       >
-<<<<<<< HEAD
         {/* Image Container */}
         <View style={styles.imageContainer}>
           <Image
@@ -192,36 +111,6 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
           {/* Episode Badge - Centered at bottom middle of image */}
           <Text style={styles.episodeBadgeText}>
             S{seasonNumber} • E{episodeNumber}
-=======
-        <Image
-          source={{ uri: thumbnail }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-
-        {/* Bottom Gradient - 40% height */}
-        <LinearGradient
-          colors={theme === 'dark' 
-            ? ['transparent', 'rgba(0,0,0,0.85)']
-            : ['transparent', 'rgba(0,0,0,0.65)']}
-          locations={[0, 1]}
-          style={styles.gradientOverlay}
-        />
-
-        {/* Episode Badge */}
-        {episodeNumber && (
-          <View style={[styles.episodeBadge, { backgroundColor: colors.yellow }]}>
-            <Text style={dynamicStyles.episodeBadgeText}>
-              EP {episodeNumber}
-            </Text>
-          </View>
-        )}
-
-        {/* Content Overlay */}
-        <View style={styles.contentOverlay}>
-          <Text style={[dynamicStyles.seriesName, { color: '#FFFFFF' }]} numberOfLines={1}>
-            {seriesName || videoData.title || 'Untitled'}
->>>>>>> f0ee78489892d57d4ca0f6bbbb008238746f16b1
           </Text>
           {/* Progress Bar - At bottom of image */}
           <View style={styles.progressBarContainer}>

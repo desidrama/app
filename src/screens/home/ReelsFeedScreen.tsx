@@ -14,6 +14,7 @@ import {
   Pressable,
   Alert,
   Share,
+  StatusBar,
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -25,6 +26,7 @@ import { setUser } from '../../redux/slices/userSlice';
 import { useTheme } from '../../context/ThemeContext';
 
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import * as NavigationBar from 'expo-navigation-bar';
 import { videoService } from '../../services/video.service';
 import ReelItem from '../../components/ReelItem';
 import RewardedEpisodeAd from '../../components/RewardedEpisodeAd';
@@ -35,7 +37,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+// 🔥 CRITICAL: Use 'screen' instead of 'window' for true fullscreen
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
 type Reel = {
   id: string;
@@ -50,7 +53,6 @@ type Reel = {
   seasonId?: any;
   episodeNumber?: number;
   adStatus?: 'locked' | 'unlocked';
-
   thumbnailUrl?: string;
 };
 
@@ -68,104 +70,105 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  // Calculate available viewport height accounting for safe areas
-  // This ensures consistent item height across all devices
-  const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
+  // 🔥 CRITICAL: Use full screen height, don't subtract safe areas
+  const ITEM_HEIGHT = SCREEN_HEIGHT;
 
-
-// =========================
-// REDUX COINS (FIX 1)
-// =========================
-const dispatch = useDispatch();
-const user = useSelector((state: RootState) => state.user.profile);
-const SKIP_COST = 10;
-const coins = user?.coinsBalance ?? user?.coins ?? 0;
-
-const coinAnim = useRef(new Animated.Value(1)).current;
-
-// Fetch user profile to get latest coins
-const fetchUserProfile = useCallback(async () => {
-  try {
-    const token = await getToken();
-    if (!token) {
-      return;
+  // 🔥 TRUE EDGE-TO-EDGE FULLSCREEN - Hide system UI
+  useEffect(() => {
+    StatusBar.setHidden(true);
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
     }
 
-    const response = await getUserProfile();
-    if (response.success && response.data) {
-      dispatch(setUser(response.data));
+    return () => {
+      // Restore system UI when leaving screen
+      StatusBar.setHidden(false);
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('visible');
+      }
+    };
+  }, []);
+
+  // =========================
+  // REDUX COINS
+  // =========================
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.user.profile);
+  const SKIP_COST = 10;
+  const coins = user?.coinsBalance ?? user?.coins ?? 0;
+
+  const coinAnim = useRef(new Animated.Value(1)).current;
+
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        return;
+      }
+
+      const response = await getUserProfile();
+      if (response.success && response.data) {
+        dispatch(setUser(response.data));
+      }
+    } catch (error: any) {
+      console.error('Error fetching user profile:', error);
     }
-  } catch (error: any) {
-    // Silently fail - coins will show 0 if not available
-    console.error('Error fetching user profile:', error);
-  }
-}, [dispatch]);
+  }, [dispatch]);
 
-// Fetch user profile when screen is focused to get latest coins
-useFocusEffect(
-  useCallback(() => {
-    fetchUserProfile();
-  }, [fetchUserProfile])
-);
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserProfile();
+    }, [fetchUserProfile])
+  );
 
+  const deductCoins = async (amount: number): Promise<boolean> => {
+    if (!user) return false;
 
+    try {
+      const response = await skipAdWithCoins(amount);
+      
+      if (response.success && response.data) {
+        const updatedBalance = response.data.coinsBalance;
+        dispatch(
+          setUser({
+            ...user,
+            coinsBalance: updatedBalance,
+            coins: updatedBalance,
+          })
+        );
 
+        Animated.sequence([
+          Animated.timing(coinAnim, {
+            toValue: 0.8,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(coinAnim, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ]).start();
 
-
-const deductCoins = async (amount: number): Promise<boolean> => {
-  if (!user) return false;
-
-  try {
-    // Call backend API to deduct coins
-    const response = await skipAdWithCoins(amount);
-    
-    if (response.success && response.data) {
-      // Update Redux state with new balance from backend
-      const updatedBalance = response.data.coinsBalance;
-      dispatch(
-        setUser({
-          ...user,
-          coinsBalance: updatedBalance,
-          coins: updatedBalance,
-        })
-      );
-
-      // Animate coin deduction
-      Animated.sequence([
-        Animated.timing(coinAnim, {
-          toValue: 0.8,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(coinAnim, {
-          toValue: 1,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      return true;
-    } else {
-      Alert.alert('Error', response.message || 'Failed to deduct coins');
+        return true;
+      } else {
+        Alert.alert('Error', response.message || 'Failed to deduct coins');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('Error deducting coins:', error);
+      
+      if (error.response?.status === 400) {
+        const errorMessage = error.response.data?.message || 'Insufficient coins';
+        Alert.alert('Insufficient Coins', errorMessage);
+      } else {
+        Alert.alert('Error', 'Failed to deduct coins. Please try again.');
+      }
+      
       return false;
     }
-  } catch (error: any) {
-    console.error('Error deducting coins:', error);
-    
-    // Handle specific error cases
-    if (error.response?.status === 400) {
-      const errorMessage = error.response.data?.message || 'Insufficient coins';
-      Alert.alert('Insufficient Coins', errorMessage);
-    } else {
-      Alert.alert('Error', 'Failed to deduct coins. Please try again.');
-    }
-    
-    return false;
-  }
-};
-
-
-
+  };
 
   const prevIndexRef = useRef<number | null>(null);
   const [reels, setReels] = useState<Reel[]>([]);
@@ -181,40 +184,30 @@ const deductCoins = async (amount: number): Promise<boolean> => {
   const [shouldPlayAd, setShouldPlayAd] = useState(false);
 
   useEffect(() => {
-    // Reset adHandledRef when changing to a different reel
-    // But only if we're not currently on the same reel that was just unlocked
     if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
       adHandledRef.current = false;
       adReelIndexRef.current = null;
-      setIsAdOpen(false); // ✅ REQUIRED
-
+      setIsAdOpen(false);
     }
   }, [currentIndex]);
 
-useEffect(() => {
-  const reel = reels[currentIndex];
-  if (!reel) return;
+  useEffect(() => {
+    const reel = reels[currentIndex];
+    if (!reel) return;
 
-  if (
-    reel.adStatus === 'locked' &&
-    !adHandledRef.current &&
-    !isAdOpen
-  ) {
-    adHandledRef.current = true;
-    adReelIndexRef.current = currentIndex;
+    if (
+      reel.adStatus === 'locked' &&
+      !adHandledRef.current &&
+      !isAdOpen
+    ) {
+      adHandledRef.current = true;
+      adReelIndexRef.current = currentIndex;
 
-    setIsAdOpen(true);
-    setShowAdPopup(true);
-    setShouldPlayAd(false); // ❗ never autoplay
-  }
-}, [currentIndex, reels, isAdOpen]);
-
-
-
-
-
-
-
+      setIsAdOpen(true);
+      setShowAdPopup(true);
+      setShouldPlayAd(false);
+    }
+  }, [currentIndex, reels, isAdOpen]);
 
   const [targetVideoId, setTargetVideoId] = useState<string | null>(routeParams?.targetVideoId || null);
   const [resumeTime, setResumeTime] = useState<number>(routeParams?.resumeTime || 0);
@@ -224,42 +217,41 @@ useEffect(() => {
   const scrollOffsetRef = useRef<number>(0);
   const [isScreenFocused, setIsScreenFocused] = useState(true);
 
-  // Transform backend video to Reel format
   const transformVideoToReel = useCallback((video: VideoType): Reel => {
-          let videoUrl = video.masterPlaylistUrl || '';
+    let videoUrl = video.masterPlaylistUrl || '';
 
-          if (!videoUrl && video.variants && video.variants.length > 0) {
-            const preferredOrder = ['720p', '1080p', '480p', '360p'];
-            for (const res of preferredOrder) {
+    if (!videoUrl && video.variants && video.variants.length > 0) {
+      const preferredOrder = ['720p', '1080p', '480p', '360p'];
+      for (const res of preferredOrder) {
         const v = video.variants.find((x) => x.resolution === res);
         if (v && v.url) {
           videoUrl = v.url;
-                break;
-              }
-            }
+          break;
+        }
+      }
       if (!videoUrl && video.variants.length > 0) {
-              videoUrl = video.variants[0].url;
-            }
-          }
+        videoUrl = video.variants[0].url;
+      }
+    }
 
     const formatDuration = (seconds?: number) => {
-            if (!seconds) return '0m';
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
+      if (!seconds) return '0m';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
       if (hours > 0) return `${hours}h ${minutes}m`;
-            return `${minutes}m`;
-          };
+      return `${minutes}m`;
+    };
 
-          return {
+    return {
       id: (video as any)._id || String(Date.now()),
-            title: video.title || 'Untitled',
+      title: video.title || 'Untitled',
       year: video.createdAt ? new Date(video.createdAt).getFullYear().toString() : '',
       rating: (video as any).ageRating || 'UA 16+',
       duration: formatDuration(video.duration),
       durationSeconds: video.duration,
-            videoUrl,
+      videoUrl,
       initialLikes: (video as any).likes || 0,
-            description: video.description,
+      description: video.description,
       seasonId: (video as any).seasonId,
       episodeNumber: (video as any).episodeNumber,
       adStatus: (video as any).adStatus ?? 'unlocked',
@@ -267,19 +259,13 @@ useEffect(() => {
     };
   }, []);
 
-  // Function to find and scroll to target video (used as fallback)
   const findAndScrollToVideo = useCallback((videoId: string) => {
     if (!videoId || !flatListRef.current || targetVideoFound) return;
     
-    console.log('🔍 Looking for video with ID:', videoId);
-    
-    // Check if video is already in loaded reels
     const index = reels.findIndex((reel: Reel) => reel.id === videoId);
     if (index !== -1) {
-      console.log('✅ Found video at index:', index);
       setCurrentIndex(index);
       setTargetVideoFound(true);
-      // Scroll immediately - but guard against empty array
       if (reels.length > 0) {
         requestAnimationFrame(() => {
           if (flatListRef.current && reels.length > 0) {
@@ -290,14 +276,11 @@ useEffect(() => {
       return;
     }
     
-    // If not found, try to fetch the specific video
     const fetchTargetVideo = async () => {
       try {
-        console.log('📥 Video not in feed, fetching specific video...');
         const response = await videoService.getVideoById(videoId);
         if (response.success && response.data) {
           const targetReel = transformVideoToReel(response.data);
-          // Prepend to the beginning of the list
           setReels((prev) => [targetReel, ...prev]);
           setCurrentIndex(0);
           setTargetVideoFound(true);
@@ -315,28 +298,22 @@ useEffect(() => {
     fetchTargetVideo();
   }, [reels, targetVideoFound, transformVideoToReel]);
 
-  // Handle route params change (when navigating with targetVideoId)
   useEffect(() => {
     if (routeParams?.targetVideoId) {
       const videoId = routeParams.targetVideoId;
       const resume = routeParams.resumeTime || 0;
-      console.log('🎯 Navigation params received:', { videoId, resume });
       setTargetVideoId(videoId);
       setResumeTime(resume);
       setTargetVideoFound(false);
-      // Clear reels so the targetVideoId effect will reload with the new video
       setReels([]);
       setCurrentIndex(0);
       setPage(1);
       setHasMore(true);
-      // Don't scroll here - let the targetVideoId effect handle it after loading
     }
   }, [routeParams]);
 
-  // Try to find target video when reels are loaded (fallback if not found in initial load)
   useEffect(() => {
     if (targetVideoId && reels.length > 0 && !targetVideoFound && !loading) {
-      // Small delay to ensure reels are rendered
       const timer = setTimeout(() => {
         findAndScrollToVideo(targetVideoId);
       }, 200);
@@ -344,52 +321,41 @@ useEffect(() => {
     }
   }, [targetVideoId, reels, targetVideoFound, findAndScrollToVideo, loading]);
 
-  // Load target video first if navigating with targetVideoId
   useEffect(() => {
     if (targetVideoId && !targetVideoFound && reels.length === 0) {
       const loadTargetVideoFirst = async () => {
         try {
-          console.log('🎯 Loading target video first:', targetVideoId);
           const response = await videoService.getVideoById(targetVideoId);
           if (response.success && response.data) {
             const targetReel = transformVideoToReel(response.data);
-            // Set as the only reel initially, then load feed
             setReels([targetReel]);
             setCurrentIndex(0);
             setTargetVideoFound(true);
             
-            // Scroll to index 0 - but only after reels are definitely in state
             setTimeout(() => {
               if (flatListRef.current && reels.length > 0) {
                 flatListRef.current.scrollToIndex({ index: 0, animated: false });
               }
             }, 100);
             
-            // Then load the feed in the background (after a short delay to ensure scroll happens)
             setTimeout(() => {
               loadPage(1, { replace: false });
             }, 300);
           } else {
-            // If target video not found, just load normal feed
-            console.warn('❌ Target video not found:', targetVideoId);
             loadPage(1, { replace: true });
           }
         } catch (error) {
-          console.error('❌ Error loading target video:', error);
-          // Fallback to normal feed load
+          console.error('Error loading target video:', error);
           loadPage(1, { replace: true });
         }
       };
       
       loadTargetVideoFirst();
     } else if (!targetVideoId && reels.length === 0) {
-      // Normal load if no target video and no reels loaded
       loadPage(1, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetVideoId]); // Only run when targetVideoId changes
+  }, [targetVideoId]);
 
-  // Load a page (forward or initial)
   const loadPage = useCallback(
     async (pageToLoad: number, opts?: { replace?: boolean }) => {
       if (loading) return;
@@ -399,12 +365,9 @@ useEffect(() => {
         if (res && res.success && Array.isArray(res.data)) {
           const transformed = res.data.map(transformVideoToReel);
           
-          // If we have a target video, check if it's in the feed
           if (targetVideoId && !targetVideoFound) {
             const targetIndex = transformed.findIndex((reel: Reel) => reel.id === targetVideoId);
             if (targetIndex !== -1) {
-              console.log('✅ Target video found in feed at index:', targetIndex);
-              // Move target video to the beginning
               const targetReel = transformed[targetIndex];
               const otherReels = transformed.filter((_: Reel, idx: number) => idx !== targetIndex);
               const finalReels = opts?.replace ? [targetReel, ...otherReels] : [...reels, targetReel, ...otherReels];
@@ -418,7 +381,6 @@ useEffect(() => {
                 }
               }, 50);
             } else {
-              // Target not in feed, append normally
               if (opts?.replace) {
                 setReels(transformed);
                 flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -428,7 +390,6 @@ useEffect(() => {
               }
             }
           } else {
-            // No target video, normal append
             if (opts?.replace) {
               setReels(transformed);
               flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -453,7 +414,6 @@ useEffect(() => {
     [loading, transformVideoToReel, targetVideoId, targetVideoFound, reels]
   );
 
-  // Load previous page and prepend
   const loadPrevious = useCallback(async () => {
     if (loadingPrevious || page <= 1) return;
     const prevPage = page - 1;
@@ -468,8 +428,8 @@ useEffect(() => {
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToOffset({
             offset: scrollOffsetRef.current + offsetDelta,
-              animated: false,
-            });
+            animated: false,
+          });
         });
 
         setPage(prevPage);
@@ -482,24 +442,23 @@ useEffect(() => {
     } finally {
       setLoadingPrevious(false);
     }
-  }, [loadingPrevious, page, transformVideoToReel]);
+  }, [loadingPrevious, page, transformVideoToReel, ITEM_HEIGHT]);
 
-  // Load more (next page)
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
     const nextPage = page + 1;
-      setLoading(true);
+    setLoading(true);
     try {
       const res = await videoService.getWebseriesFeed(nextPage);
       if (res && res.success && Array.isArray(res.data) && res.data.length) {
         const transformed = res.data.map(transformVideoToReel);
         setReels((prev) => [...prev, ...transformed]);
-          setPage(nextPage);
+        setPage(nextPage);
         setHasMore(Boolean(res.pagination?.hasMore));
-          setHasPrevious(true);
-        } else {
-          setHasMore(false);
-        }
+        setHasPrevious(true);
+      } else {
+        setHasMore(false);
+      }
     } catch (err) {
       console.error('Error loading more reels', err);
     } finally {
@@ -507,7 +466,6 @@ useEffect(() => {
     }
   }, [loading, hasMore, page, transformVideoToReel]);
 
-  // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -517,39 +475,31 @@ useEffect(() => {
     }
   }, [loadPage]);
 
-  // Viewability: determine active reel
-
-
-
   const onViewableItemsChanged = useCallback(
-  ({ viewableItems }: any) => {
-    if (!viewableItems || viewableItems.length === 0) return;
+    ({ viewableItems }: any) => {
+      if (!viewableItems || viewableItems.length === 0) return;
 
-    const first = viewableItems[0];
-    if (typeof first.index !== 'number') return;
+      const first = viewableItems[0];
+      if (typeof first.index !== 'number') return;
 
-    // 🔥 USER IS LEAVING THE PREVIOUS REEL
-    if (
-      prevIndexRef.current !== null &&
-      first.index !== prevIndexRef.current
-    ) {
-      //handleEpisodeEnd();
-    }
+      if (
+        prevIndexRef.current !== null &&
+        first.index !== prevIndexRef.current
+      ) {
+        // handleEpisodeEnd();
+      }
 
-    prevIndexRef.current = first.index;
-    setCurrentIndex(first.index);
-  },
-  []
-);
-
-
+      prevIndexRef.current = first.index;
+      setCurrentIndex(first.index);
+    },
+    []
+  );
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 70,
     minimumViewTime: 100,
   }).current;
 
-  // Handle scroll: detect near-top to load previous pages
   const handleScroll = useCallback((evt: any) => {
     const offsetY = evt.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
@@ -558,21 +508,13 @@ useEffect(() => {
     }
   }, [hasPrevious, loadingPrevious, loadPrevious, page, ITEM_HEIGHT]);
 
-  // Handle scroll to index failed
   const onScrollToIndexFailed = useCallback((info: any) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:364',message:'scrollToIndex failed',data:{index:info.index,reelsLength:reels.length,averageItemLength:info.averageItemLength},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     const wait = new Promise(resolve => setTimeout(resolve, 500));
     wait.then(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:367',message:'Retrying scrollToIndex',data:{index:info.index},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
     });
-  }, [reels.length]);
+  }, []);
 
-  // Navigate to next webseries
   const goToNext = useCallback(() => {
     if (currentIndex < reels.length - 1) {
       const nextIndex = currentIndex + 1;
@@ -581,16 +523,10 @@ useEffect(() => {
         flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
       }, 100);
     } else if (hasMore) {
-      // Load more if available
       loadMore();
     }
   }, [currentIndex, reels.length, hasMore, loadMore]);
-  // 🔥 Called when a video/episode finishes playing
-    
 
-
-
-  // Navigate to previous webseries
   const goToPrevious = useCallback(() => {
     if (currentIndex > 0) {
       const prevIndex = currentIndex - 1;
@@ -599,12 +535,10 @@ useEffect(() => {
         flatListRef.current?.scrollToIndex({ index: prevIndex, animated: true });
       }, 100);
     } else if (hasPrevious && page > 1) {
-      // Load previous page if available
       loadPrevious();
     }
   }, [currentIndex, hasPrevious, page, loadPrevious]);
 
-  // Get item layout for FlatList - ensures consistent item sizing
   const getItemLayout = useCallback(
     (_data: any, index: number) => ({
       length: ITEM_HEIGHT,
@@ -614,19 +548,12 @@ useEffect(() => {
     [ITEM_HEIGHT]
   );
 
-  // Render item
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:372',message:'renderItem called',data:{itemId:item.id,index,currentIndex,targetVideoId,resumeTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-    // Always use resumeTime only for the current target video
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:375',message:'renderItem calculated values',data:{itemId:item.id,index,isTargetVideo,initialTime,isActive:index === currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
+    
     return (
-<View style={{ height: ITEM_HEIGHT }}>
+      <View style={{ height: ITEM_HEIGHT }}>
         <ReelItem
           key={item.id}
           reel={item}
@@ -635,7 +562,6 @@ useEffect(() => {
           screenFocused={isScreenFocused}
           shouldPause={showAdPopup}
           onEpisodeSelect={(episodeId) => {
-            // Find the episode in the reels list
             const episodeIndex = reels.findIndex(r => r.id === episodeId);
             if (episodeIndex !== -1) {
               setCurrentIndex(episodeIndex);
@@ -650,26 +576,12 @@ useEffect(() => {
         />
       </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, setCurrentIndex, setTargetVideoId, setResumeTime, ITEM_HEIGHT]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, showAdPopup, ITEM_HEIGHT]);
 
-  // #region agent log
-  // Log safe area insets for debugging
-  useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:411',message:'Safe area insets',data:{top:insets.top,bottom:insets.bottom,left:insets.left,right:insets.right,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'safe-area'})}).catch(()=>{});
-  }, [insets.top, insets.bottom, insets.left, insets.right]);
-  // #endregion
-
-  // Handle screen focus/blur to pause all videos when navigating away
   useFocusEffect(
     useCallback(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:useFocusEffect',message:'Screen focused',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
-      // #endregion
       setIsScreenFocused(true);
       return () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelsFeedScreen.tsx:useFocusEffect-cleanup',message:'Screen blurred - pausing all videos',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'screen-focus'})}).catch(()=>{});
-        // #endregion
         setIsScreenFocused(false);
       };
     }, [])
@@ -696,16 +608,16 @@ useEffect(() => {
 
   if (loading && reels.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, styles.centerContent]}>
+      <View style={[styles.safeArea, styles.centerContent]}>
         <ActivityIndicator size="large" color={colors.yellow} />
         <Text style={styles.loadingText}>Loading reels…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      {/* Top Header Container - Back & Share Alignment */}
+    <View style={styles.safeArea}>
+      {/* Top Header - Fixed position with absolute */}
       <View style={[backButtonStyles.topHeader, {
         top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
         left: insets.left + 16,
@@ -719,7 +631,6 @@ useEffect(() => {
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </TouchableOpacity>
         
-        {/* Share Button */}
         <TouchableOpacity
           onPress={handleShare}
           activeOpacity={0.7}
@@ -755,239 +666,194 @@ useEffect(() => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FFD54A']} />
         }
         ListHeaderComponent={loadingPrevious ? (
-            <View style={styles.headerLoader}>
-              <ActivityIndicator size="small" color="#FFD54A" />
-            </View>
+          <View style={styles.headerLoader}>
+            <ActivityIndicator size="small" color="#FFD54A" />
+          </View>
         ) : null}
         ListFooterComponent={loading ? (
-            <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color={colors.yellow} />
-            </View>
+          <View style={styles.footerLoader}>
+            <ActivityIndicator size="small" color={colors.yellow} />
+          </View>
         ) : null}
       />
       
-      {/* RewardedEpisodeAd - Always mounted to allow preloading */}
       <RewardedEpisodeAd
         show={shouldPlayAd}
         onAdFinished={() => {
-          console.log('[AD DEBUG] Ad finished, unlocking reel at index:', currentIndex);
-          
-          // First unlock the reel
           setReels(prev =>
             prev.map((r, i) =>
               i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
             )
           );
 
-          // Then close all ad-related states
           setShowAdPopup(false);
           setIsAdOpen(false);
           setShouldPlayAd(false);
-
-          // Keep adHandledRef as true for this reel to prevent popup from showing again
-          // It will be reset when user navigates to a different reel
-          // Don't reset adReelIndexRef here - let it stay so we know this reel was handled
         }}
       />
 
       {showAdPopup && (
-  <View
-    pointerEvents="box-none"
-    style={{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 9999,
-    }}
-  >
+        <Modal visible={showAdPopup} transparent animationType="fade">
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <View
+              style={{
+                width: '100%',
+                minHeight: '55%',
+                backgroundColor: '#121212',
+                borderTopLeftRadius: 26,
+                borderTopRightRadius: 26,
+                paddingTop: 14,
+                paddingBottom: 28,
+                paddingHorizontal: 22,
+                shadowColor: '#000',
+                shadowOpacity: 0.6,
+                shadowRadius: 24,
+                elevation: 24,
+              }}
+            >
+              <View
+                style={{
+                  alignSelf: 'center',
+                  width: 44,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: '#444',
+                  marginBottom: 16,
+                }}
+              />
 
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 22,
+                  fontWeight: '800',
+                  textAlign: 'center',
+                  letterSpacing: 0.3,
+                }}
+              >
+                Unlock Next Reel
+              </Text>
 
-    {/* Coins bar ABOVE ad */}
+              <Text
+                style={{
+                  color: '#aaa',
+                  fontSize: 15,
+                  textAlign: 'center',
+                  marginTop: 8,
+                  lineHeight: 20,
+                }}
+              >
+                Watch a short ad or use coins to continue
+              </Text>
 
-  {/* Coins bar ABOVE ad */}
+              <Animated.View
+                style={{
+                  alignSelf: 'center',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: 18,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 22,
+                  backgroundColor: '#1E1E1E',
+                  transform: [{ scale: coinAnim }],
+                }}
+              >
+                <Text style={{ fontSize: 16 }}>🪙</Text>
+                <Text
+                  style={{
+                    color: '#FFD54A',
+                    fontWeight: '600',
+                    marginLeft: 8,
+                    fontSize: 14,
+                  }}
+                >
+                  {coins} coins available
+                </Text>
+              </Animated.View>
 
-<Modal visible={showAdPopup} transparent animationType="fade">
-  <View
-    style={{
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'flex-end', // bottom sheet
-    }}
-  >
-    <View
-      style={{
-        width: '100%',
-        minHeight: '55%',
-        backgroundColor: '#121212',
+              <Pressable
+                disabled={coins < SKIP_COST}
+                onPress={async () => {
+                  if (coins < SKIP_COST) {
+                    Alert.alert('Insufficient Coins', `You need ${SKIP_COST} coins to skip. You have ${coins} coins.`);
+                    return;
+                  }
+                  
+                  const success = await deductCoins(SKIP_COST);
+                  
+                  if (success) {
+                    setReels(prev =>
+                      prev.map((reel, index) =>
+                        index === currentIndex
+                          ? { ...reel, adStatus: 'unlocked' }
+                          : reel
+                      )
+                    );
+            
+                    setShowAdPopup(false);
+                    setIsAdOpen(false);
+                    setShouldPlayAd(false);
+                    adHandledRef.current = true;
+                  }
+                }}
+                style={({ pressed }) => ({
+                  marginTop: 26,
+                  paddingVertical: 16,
+                  borderRadius: 16,
+                  backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
+                  opacity: pressed ? 0.8 : 1,
+                })}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text
+                  style={{
+                    textAlign: 'center',
+                    fontWeight: '800',
+                    fontSize: 16,
+                    color: coins >= SKIP_COST ? '#000' : '#666',
+                  }}
+                >
+                  Skip using {SKIP_COST} coins
+                </Text>
+              </Pressable>
 
-        // Bottom sheet styling
-        borderTopLeftRadius: 26,
-        borderTopRightRadius: 26,
-
-        paddingTop: 14,
-        paddingBottom: 28,
-        paddingHorizontal: 22,
-
-        shadowColor: '#000',
-        shadowOpacity: 0.6,
-        shadowRadius: 24,
-        elevation: 24,
-      }}
-    >
-      {/* Drag indicator */}
-      <View
-        style={{
-          alignSelf: 'center',
-          width: 44,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: '#444',
-          marginBottom: 16,
-        }}
-      />
-
-      {/* Title */}
-      <Text
-        style={{
-          color: '#fff',
-          fontSize: 22,
-          fontWeight: '800',
-          textAlign: 'center',
-          letterSpacing: 0.3,
-        }}
-      >
-        Unlock Next Reel
-      </Text>
-
-      {/* Subtitle */}
-      <Text
-        style={{
-          color: '#aaa',
-          fontSize: 15,
-          textAlign: 'center',
-          marginTop: 8,
-          lineHeight: 20,
-        }}
-      >
-        Watch a short ad or use coins to continue
-      </Text>
-
-      {/* Coins pill */}
-      <Animated.View
-        style={{
-          alignSelf: 'center',
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginTop: 18,
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          borderRadius: 22,
-          backgroundColor: '#1E1E1E',
-          transform: [{ scale: coinAnim }],
-        }}
-      >
-        <Text style={{ fontSize: 16 }}>🪙</Text>
-        <Text
-          style={{
-            color: '#FFD54A',
-            fontWeight: '600',
-            marginLeft: 8,
-            fontSize: 14,
-          }}
-        >
-          {coins} coins available
-        </Text>
-      </Animated.View>
-
-      {/* PRIMARY CTA — Skip using coins */}
-      <Pressable
-        disabled={coins < SKIP_COST}
-        onPress={async () => {
-          if (coins < SKIP_COST) {
-            Alert.alert('Insufficient Coins', `You need ${SKIP_COST} coins to skip. You have ${coins} coins.`);
-            return;
-          }
-          
-          const success = await deductCoins(SKIP_COST);
-          
-          if (success) {
-            setReels(prev =>
-              prev.map((reel, index) =>
-                index === currentIndex
-                  ? { ...reel, adStatus: 'unlocked' }
-                  : reel
-              )
-            );
-    
-            setShowAdPopup(false);
-            setIsAdOpen(false);
-            setShouldPlayAd(false);
-            // keep handled so popup NEVER comes back for this reel
-            adHandledRef.current = true;
-          }
-        }}
-        style={({ pressed }) => ({
-          marginTop: 26,
-          paddingVertical: 16,
-          borderRadius: 16,
-          backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
-          opacity: pressed ? 0.8 : 1,
-        })}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Text
-          style={{
-            textAlign: 'center',
-            fontWeight: '800',
-            fontSize: 16,
-            color: coins >= SKIP_COST ? '#000' : '#666',
-          }}
-        >
-          Skip using {SKIP_COST} coins
-        </Text>
-      </Pressable>
-
-      {/* SECONDARY CTA — Watch ad */}
-      <Pressable
-  onPress={() => {
-    setShowAdPopup(false);
-    setShouldPlayAd(true); // 🔥 ONLY trigger
-  }}
-
-
-        
-        style={{
-          marginTop: 14,
-          paddingVertical: 14,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: '#333',
-          backgroundColor: '#181818',
-        }}
-      >
-        <Text
-          style={{
-            textAlign: 'center',
-            color: '#fff',
-            fontWeight: '600',
-            fontSize: 14,
-          }}
-        >
-          Watch a short ad
-        </Text>
-      </Pressable>
+              <Pressable
+                onPress={() => {
+                  setShowAdPopup(false);
+                  setShouldPlayAd(true);
+                }}
+                style={{
+                  marginTop: 14,
+                  paddingVertical: 14,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: '#333',
+                  backgroundColor: '#181818',
+                }}
+              >
+                <Text
+                  style={{
+                    textAlign: 'center',
+                    color: '#fff',
+                    fontWeight: '600',
+                    fontSize: 14,
+                  }}
+                >
+                  Watch a short ad
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
-  </View>
-</Modal>
-
-  </View>
-)}
-
-
-
-    </SafeAreaView>
   );
 };
 
@@ -997,9 +863,9 @@ const backButtonStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 10000, // Very high z-index to ensure it stays above ads and overlays
-    pointerEvents: 'box-none', // Allow touches to pass through to children
-    elevation: 1000, // Android elevation (equivalent to zIndex)
+    zIndex: 10000,
+    pointerEvents: 'box-none',
+    elevation: 1000,
   },
 });
 
