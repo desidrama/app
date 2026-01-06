@@ -232,4 +232,70 @@ export const videoService = {
       throw new Error(error.response?.data?.message || 'Failed to post comment. Please try again.');
     }
   },
+
+  // ========== OTT Experience Methods ==========
+  async getWebseriesWithEpisodes(webseriesId: string) {
+    try {
+      const response = await api.get(`/api/content/webseries/${webseriesId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching webseries with episodes:', error);
+      throw error;
+    }
+  },
+
+  async getSeasonEpisodes(seasonId: string) {
+    try {
+      const response = await api.get(`/api/content/seasons/${seasonId}/episodes`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching season episodes:', error);
+      throw error;
+    }
+  },
+
+  async getAllEpisodes(webseriesId: string) {
+    try {
+      // Fetch all seasons for the webseries
+      const webseriesResponse = await this.getWebseriesWithEpisodes(webseriesId);
+      if (webseriesResponse.success && webseriesResponse.data) {
+        const episodes: any[] = [];
+        const seasons = webseriesResponse.data.seasons || [];
+        
+        for (const season of seasons) {
+          if (season.episodes && Array.isArray(season.episodes)) {
+            episodes.push(...season.episodes);
+          }
+        }
+        
+        return { success: true, data: episodes };
+      }
+      return { success: false, data: [] };
+    } catch (error: any) {
+      console.error('Error fetching all episodes:', error);
+      return { success: false, data: [] };
+    }
+  },
+
+  async getEpisodeDetails(episodeId: string) {
+    try {
+      const response = await api.get(`/api/content/episodes/${episodeId}/details`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching episode details:', error);
+      throw error;
+    }
+  },
+
+  async preloadEpisodeVideo(episodeId: string) {
+    try {
+      // This would trigger video caching on the server side if implemented
+      const response = await api.post(`/api/content/episodes/${episodeId}/preload`);
+      return response.data;
+    } catch (error: any) {
+      // Non-critical operation, silently fail
+      console.warn('Could not preload episode video:', error);
+      return { success: false };
+    }
+  },
 };

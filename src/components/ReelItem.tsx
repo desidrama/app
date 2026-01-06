@@ -54,6 +54,7 @@ type ReelItemProps = {
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
   shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
+  onStartWatching?: () => void; // Callback when user wants to start watching full series
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -143,7 +144,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -1801,6 +1802,18 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           );
         })()}
         
+        {/* Start Watching Button - Only show for webseries */}
+        {reel.seasonId && onStartWatching && (
+          <TouchableOpacity
+            style={styles.startWatchingButton}
+            onPress={onStartWatching}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
+            <Text style={styles.startWatchingButtonText}>Start Watching</Text>
+          </TouchableOpacity>
+        )}
+        
         </Animated.View>
       )}
 
@@ -3369,6 +3382,28 @@ infoValue: {
     shadowRadius: 8,
     elevation: 10,
   },
-
+  
+  startWatchingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD54A',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  startWatchingButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+    letterSpacing: 0.3,
+  },
 
 });

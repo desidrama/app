@@ -1,4 +1,4 @@
-// src/screens/home/ReelPlayerScreen.tsx
+// src/screens/home/EpisodePlayerScreen.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -17,6 +17,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,27 +26,23 @@ import { RootState } from '../../redux/store';
 import { setUser } from '../../redux/slices/userSlice';
 import { useTheme } from '../../context/ThemeContext';
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import * as NavigationBar from 'expo-navigation-bar';
 import { videoService } from '../../services/video.service';
 import ReelItem from '../../components/ReelItem';
 import RewardedEpisodeAd from '../../components/RewardedEpisodeAd';
 import styles from './styles/ReelPlayerStyles';
 import type { Video as VideoType } from '../../types';
-import type { TabParamList } from '../../navigation/TabNavigator';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-// 🔥 CRITICAL: Use 'screen' instead of 'window' for true fullscreen
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
 type Reel = {
   id: string;
-  webseriesId: string;
-  webseriesTitle: string;
-  seasonNumber: number;
-  episodeNumber: number;
+  title: string;
   year: string;
   rating: string;
   duration: string;
@@ -53,17 +50,18 @@ type Reel = {
   videoUrl: string;
   initialLikes: number;
   description?: string;
+  seasonId?: any;
+  episodeNumber?: number;
   adStatus?: 'locked' | 'unlocked';
   thumbnailUrl?: string;
-  uploadedAt?: string;
 };
 
 const ITEMS_PER_PAGE = 15;
 
-type ReelsScreenRouteProp = RouteProp<TabParamList, 'Reels'>;
-type ReelsScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Reels'>;
+type ReelsScreenRouteProp = RouteProp<RootStackParamList, 'EpisodePlayer'>;
+type ReelsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'EpisodePlayer'>;
 
-const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
+const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
   const navigation = useNavigation<ReelsScreenNavigationProp>();
   const { colors } = useTheme();
   const route = useRoute<ReelsScreenRouteProp>();
@@ -72,10 +70,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  // 🔥 CRITICAL: Use full screen height
   const ITEM_HEIGHT = SCREEN_HEIGHT;
 
-  // 🔥 TRUE EDGE-TO-EDGE FULLSCREEN - Hide system UI
+  // True edge-to-edge fullscreen
   useEffect(() => {
     StatusBar.setHidden(true);
     if (Platform.OS === 'android') {
@@ -91,9 +88,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     };
   }, []);
 
-  // =========================
-  // REDUX COINS
-  // =========================
+  // Redux coins
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.user.profile);
   const SKIP_COST = 10;
@@ -171,6 +166,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
   const prevIndexRef = useRef<number | null>(null);
   const [reels, setReels] = useState<Reel[]>([]);
+  const [allSeasonEpisodes, setAllSeasonEpisodes] = useState<Reel[]>([]);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingPrevious, setLoadingPrevious] = useState<boolean>(false);
@@ -181,6 +177,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const [isAdOpen, setIsAdOpen] = useState(false);
   const [showAdPopup, setShowAdPopup] = useState(false);
   const [shouldPlayAd, setShouldPlayAd] = useState(false);
+  const [showExploreMore, setShowExploreMore] = useState(false);
+  const [episodesLoaded, setEpisodesLoaded] = useState(false);
 
   useEffect(() => {
     if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
@@ -216,16 +214,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const scrollOffsetRef = useRef<number>(0);
   const [isScreenFocused, setIsScreenFocused] = useState(true);
 
-  // 🎬 Transform backend video to Reel format (S1E1 only)
-  const transformVideoToReel = useCallback((video: VideoType): Reel | null => {
-    // Only include Season 1 Episode 1
-    const seasonNum = (video as any).seasonNumber || 1;
-    const episodeNum = (video as any).episodeNumber || 1;
-    
-    if (seasonNum !== 1 || episodeNum !== 1) {
-      return null; // Skip non-S1E1 videos
-    }
-
+  const transformVideoToReel = useCallback((video: VideoType): Reel => {
     let videoUrl = video.masterPlaylistUrl || '';
 
     if (!videoUrl && video.variants && video.variants.length > 0) {
@@ -252,10 +241,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
     return {
       id: (video as any)._id || String(Date.now()),
-      webseriesId: (video as any).webseriesId || (video as any)._id,
-      webseriesTitle: video.title || 'Untitled',
-      seasonNumber: seasonNum,
-      episodeNumber: episodeNum,
+      title: video.title || 'Untitled',
       year: video.createdAt ? new Date(video.createdAt).getFullYear().toString() : '',
       rating: (video as any).ageRating || 'UA 16+',
       duration: formatDuration(video.duration),
@@ -263,53 +249,39 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       videoUrl,
       initialLikes: (video as any).likes || 0,
       description: video.description,
+      seasonId: (video as any).seasonId,
+      episodeNumber: (video as any).episodeNumber,
       adStatus: (video as any).adStatus ?? 'unlocked',
       thumbnailUrl: (video as any).thumbnailUrl || (video as any).thumbnail,
-      uploadedAt: video.createdAt,
     };
   }, []);
 
-  const findAndScrollToVideo = useCallback((videoId: string) => {
-    if (!videoId || !flatListRef.current || targetVideoFound) return;
-    
-    const index = reels.findIndex((reel: Reel) => reel.id === videoId);
-    if (index !== -1) {
-      setCurrentIndex(index);
-      setTargetVideoFound(true);
-      if (reels.length > 0) {
-        requestAnimationFrame(() => {
-          if (flatListRef.current && reels.length > 0) {
-            flatListRef.current.scrollToIndex({ index, animated: false });
-          }
-        });
+  // Load all episodes from all seasons for a webseries
+  const loadAllSeasonEpisodes = useCallback(async (seasonId: string) => {
+    try {
+      console.log('🔍 Loading all episodes for seasonId:', seasonId);
+      const response = await videoService.getEpisodes(seasonId);
+      
+      if (response.success && response.data && response.data.length > 0) {
+        const sortedEpisodes = [...response.data].sort(
+          (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
+        );
+        
+        const transformedEpisodes = sortedEpisodes.map(transformVideoToReel);
+        console.log('✅ Loaded', transformedEpisodes.length, 'episodes');
+        
+        setAllSeasonEpisodes(transformedEpisodes);
+        setEpisodesLoaded(true);
+        return transformedEpisodes;
       }
-      return;
+      return [];
+    } catch (error) {
+      console.error('❌ Error loading season episodes:', error);
+      return [];
     }
-    
-    const fetchTargetVideo = async () => {
-      try {
-        const response = await videoService.getVideoById(videoId);
-        if (response.success && response.data) {
-          const targetReel = transformVideoToReel(response.data);
-          if (targetReel) {
-            setReels((prev) => [targetReel, ...prev]);
-            setCurrentIndex(0);
-            setTargetVideoFound(true);
-            setTimeout(() => {
-              if (flatListRef.current && reels.length > 0) {
-                flatListRef.current.scrollToIndex({ index: 0, animated: false });
-              }
-            }, 100);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching target video:', error);
-      }
-    };
-    
-    fetchTargetVideo();
-  }, [reels, targetVideoFound, transformVideoToReel]);
+  }, [transformVideoToReel]);
 
+  // Initialize with target video and load all episodes
   useEffect(() => {
     if (routeParams?.targetVideoId) {
       const videoId = routeParams.targetVideoId;
@@ -321,58 +293,98 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       setCurrentIndex(0);
       setPage(1);
       setHasMore(true);
+      setEpisodesLoaded(false);
     }
   }, [routeParams]);
 
   useEffect(() => {
-    if (targetVideoId && reels.length > 0 && !targetVideoFound && !loading) {
-      const timer = setTimeout(() => {
-        findAndScrollToVideo(targetVideoId);
-      }, 200);
-      return () => clearTimeout(timer);
-    }
-  }, [targetVideoId, reels, targetVideoFound, findAndScrollToVideo, loading]);
-
-  useEffect(() => {
     if (targetVideoId && !targetVideoFound && reels.length === 0) {
-      const loadTargetVideoFirst = async () => {
+      const loadTargetVideoAndEpisodes = async () => {
         try {
           const response = await videoService.getVideoById(targetVideoId);
           if (response.success && response.data) {
             const targetReel = transformVideoToReel(response.data);
-            if (targetReel) {
-              setReels([targetReel]);
-              setCurrentIndex(0);
-              setTargetVideoFound(true);
+            
+            // Check if this video is part of a webseries
+            const seasonId = response.data.seasonId 
+              ? (typeof response.data.seasonId === 'string' 
+                  ? response.data.seasonId 
+                  : (response.data.seasonId as any)?._id)
+              : null;
+
+            if (seasonId) {
+              // Load all episodes from this season
+              const allEpisodes = await loadAllSeasonEpisodes(seasonId);
               
-              setTimeout(() => {
-                if (flatListRef.current && reels.length > 0) {
-                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
+              if (allEpisodes.length > 0) {
+                // Find the index of the target episode
+                const targetEpisodeIndex = allEpisodes.findIndex(ep => ep.id === targetVideoId);
+                
+                if (targetEpisodeIndex !== -1) {
+                  // Add "Explore More" at the beginning (index -1)
+                  const exploreMoreItem: Reel = {
+                    id: 'explore-more-start',
+                    title: 'Explore More Webseries',
+                    year: '',
+                    rating: '',
+                    duration: '',
+                    videoUrl: '',
+                    initialLikes: 0,
+                    description: 'Discover more amazing content',
+                  };
+
+                  // Build the complete reels array with explore more at start and end
+                  const reelsWithExplore = [
+                    exploreMoreItem,
+                    ...allEpisodes,
+                  ];
+                  
+                  setReels(reelsWithExplore);
+                  // +1 because we added explore more at the start
+                  setCurrentIndex(targetEpisodeIndex + 1);
+                  setTargetVideoFound(true);
+                  
+                  setTimeout(() => {
+                    if (flatListRef.current) {
+                      flatListRef.current.scrollToIndex({ 
+                        index: targetEpisodeIndex + 1, 
+                        animated: false 
+                      });
+                    }
+                  }, 100);
+                  return;
                 }
-              }, 100);
-              
-              setTimeout(() => {
-                loadPage(1, { replace: false });
-              }, 300);
-            } else {
-              loadPage(1, { replace: true });
+              }
             }
+            
+            // Fallback: Just load the single video
+            setReels([targetReel]);
+            setCurrentIndex(0);
+            setTargetVideoFound(true);
+            
+            setTimeout(() => {
+              if (flatListRef.current) {
+                flatListRef.current.scrollToIndex({ index: 0, animated: false });
+              }
+            }, 100);
           } else {
+            // If target video not found, load the feed
             loadPage(1, { replace: true });
           }
         } catch (error) {
           console.error('Error loading target video:', error);
+          // If there's an error loading target video, load the feed
           loadPage(1, { replace: true });
         }
       };
       
-      loadTargetVideoFirst();
+      loadTargetVideoAndEpisodes();
     } else if (!targetVideoId && reels.length === 0) {
+      // Load default feed if no target video is specified
       loadPage(1, { replace: true });
     }
-  }, [targetVideoId]);
+  }, [targetVideoId, targetVideoFound, reels.length, loadPage, loadAllSeasonEpisodes, transformVideoToReel]);
 
-  // 🎬 Load a page and filter for S1E1 only, sorted by latest
   const loadPage = useCallback(
     async (pageToLoad: number, opts?: { replace?: boolean }) => {
       if (loading) return;
@@ -380,59 +392,14 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       try {
         const res = await videoService.getWebseriesFeed(pageToLoad);
         if (res && res.success && Array.isArray(res.data)) {
-          // Transform and filter for S1E1 only
-          const transformed = res.data
-            .map(transformVideoToReel)
-            .filter((reel): reel is Reel => reel !== null);
-
-          // Sort by uploadedAt (latest first)
-          transformed.sort((a, b) => {
-            const dateA = new Date(a.uploadedAt || 0).getTime();
-            const dateB = new Date(b.uploadedAt || 0).getTime();
-            return dateB - dateA; // Descending order
-          });
-
-          // Remove duplicates by webseriesId (keep only first S1E1 per webseries)
-          const uniqueWebseries = new Map<string, Reel>();
-          for (const reel of transformed) {
-            if (!uniqueWebseries.has(reel.webseriesId)) {
-              uniqueWebseries.set(reel.webseriesId, reel);
-            }
-          }
-          const finalReels = Array.from(uniqueWebseries.values());
+          const transformed = res.data.map(transformVideoToReel);
           
-          if (targetVideoId && !targetVideoFound) {
-            const targetIndex = finalReels.findIndex((reel: Reel) => reel.id === targetVideoId);
-            if (targetIndex !== -1) {
-              const targetReel = finalReels[targetIndex];
-              const otherReels = finalReels.filter((_: Reel, idx: number) => idx !== targetIndex);
-              const reelsToSet = opts?.replace ? [targetReel, ...otherReels] : [...reels, targetReel, ...otherReels];
-              setReels(reelsToSet);
-              setCurrentIndex(0);
-              setTargetVideoFound(true);
-              
-              setTimeout(() => {
-                if (flatListRef.current && reels.length > 0) {
-                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
-                }
-              }, 50);
-            } else {
-              if (opts?.replace) {
-                setReels(finalReels);
-                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-                setCurrentIndex(0);
-              } else {
-                setReels((prev) => [...prev, ...finalReels]);
-              }
-            }
+          if (opts?.replace) {
+            setReels(transformed);
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+            setCurrentIndex(0);
           } else {
-            if (opts?.replace) {
-              setReels(finalReels);
-              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-              setCurrentIndex(0);
-            } else {
-              setReels((prev) => [...prev, ...finalReels]);
-            }
+            setReels((prev) => [...prev, ...transformed]);
           }
 
           setPage(pageToLoad);
@@ -447,55 +414,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         setLoading(false);
       }
     },
-    [loading, transformVideoToReel, targetVideoId, targetVideoFound, reels]
+    [loading, transformVideoToReel]
   );
-
-  const loadPrevious = useCallback(async () => {
-    if (loadingPrevious || page <= 1) return;
-    const prevPage = page - 1;
-    setLoadingPrevious(true);
-    try {
-      const res = await videoService.getWebseriesFeed(prevPage);
-      if (res && res.success && Array.isArray(res.data) && res.data.length) {
-        const transformed = res.data
-          .map(transformVideoToReel)
-          .filter((reel): reel is Reel => reel !== null);
-
-        transformed.sort((a, b) => {
-          const dateA = new Date(a.uploadedAt || 0).getTime();
-          const dateB = new Date(b.uploadedAt || 0).getTime();
-          return dateB - dateA;
-        });
-
-        const uniqueWebseries = new Map<string, Reel>();
-        for (const reel of transformed) {
-          if (!uniqueWebseries.has(reel.webseriesId)) {
-            uniqueWebseries.set(reel.webseriesId, reel);
-          }
-        }
-        const finalReels = Array.from(uniqueWebseries.values());
-
-        setReels((prev) => [...finalReels, ...prev]);
-
-        const offsetDelta = finalReels.length * ITEM_HEIGHT;
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToOffset({
-            offset: scrollOffsetRef.current + offsetDelta,
-            animated: false,
-          });
-        });
-
-        setPage(prevPage);
-        setHasPrevious(prevPage > 1);
-      } else {
-        setHasPrevious(false);
-      }
-    } catch (err) {
-      console.error('Error loading previous page', err);
-    } finally {
-      setLoadingPrevious(false);
-    }
-  }, [loadingPrevious, page, transformVideoToReel, ITEM_HEIGHT]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -504,25 +424,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     try {
       const res = await videoService.getWebseriesFeed(nextPage);
       if (res && res.success && Array.isArray(res.data) && res.data.length) {
-        const transformed = res.data
-          .map(transformVideoToReel)
-          .filter((reel): reel is Reel => reel !== null);
-
-        transformed.sort((a, b) => {
-          const dateA = new Date(a.uploadedAt || 0).getTime();
-          const dateB = new Date(b.uploadedAt || 0).getTime();
-          return dateB - dateA;
-        });
-
-        const uniqueWebseries = new Map<string, Reel>();
-        for (const reel of transformed) {
-          if (!uniqueWebseries.has(reel.webseriesId)) {
-            uniqueWebseries.set(reel.webseriesId, reel);
-          }
-        }
-        const finalReels = Array.from(uniqueWebseries.values());
-
-        setReels((prev) => [...prev, ...finalReels]);
+        const transformed = res.data.map(transformVideoToReel);
+        setReels((prev) => [...prev, ...transformed]);
         setPage(nextPage);
         setHasMore(Boolean(res.pagination?.hasMore));
         setHasPrevious(true);
@@ -545,20 +448,32 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }
   }, [loadPage]);
 
-  // 🎬 Handle episode end - auto-advance to next webseries S1E1
+  useFocusEffect(
+    useCallback(() => {
+      if (reels.length === 0 && !loading && !targetVideoId) {
+        loadPage(1, { replace: true });
+      }
+      setIsScreenFocused(true);
+      return () => {
+        setIsScreenFocused(false);
+      };
+    }, [reels.length, loading, targetVideoId, loadPage])
+  );
+
   const handleEpisodeEnd = useCallback(() => {
-    console.log('🎬 Episode ended, auto-advancing to next webseries...');
+    console.log('🎬 Episode ended, checking for next episode...');
     
-    if (currentIndex < reels.length - 1) {
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-      }, 100);
-    } else if (hasMore) {
-      loadMore();
+    // Check if we're at the last episode (before "Explore More" end screen)
+    if (episodesLoaded && allSeasonEpisodes.length > 0) {
+      const lastEpisodeIndex = reels.length - 1;
+      
+      if (currentIndex === lastEpisodeIndex) {
+        // Last episode finished - show explore more
+        console.log('✅ Last episode finished, showing explore more');
+        setShowExploreMore(true);
+      }
     }
-  }, [currentIndex, reels.length, hasMore, loadMore]);
+  }, [currentIndex, reels.length, episodesLoaded, allSeasonEpisodes]);
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: any) => {
@@ -567,17 +482,25 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       const first = viewableItems[0];
       if (typeof first.index !== 'number') return;
 
+      // Check if scrolled to "Explore More" screens
+      const item = reels[first.index];
+      if (item && item.id.startsWith('explore-more')) {
+        setShowExploreMore(true);
+      } else {
+        setShowExploreMore(false);
+      }
+
       if (
         prevIndexRef.current !== null &&
         first.index !== prevIndexRef.current
       ) {
-        // User scrolled away from previous reel
+        // Episode changed
       }
 
       prevIndexRef.current = first.index;
       setCurrentIndex(first.index);
     },
-    []
+    [reels]
   );
 
   const viewabilityConfig = useRef({
@@ -588,10 +511,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const handleScroll = useCallback((evt: any) => {
     const offsetY = evt.nativeEvent.contentOffset.y;
     scrollOffsetRef.current = offsetY;
-    if (offsetY < ITEM_HEIGHT * 1.5 && hasPrevious && !loadingPrevious && page > 1) {
-      loadPrevious();
-    }
-  }, [hasPrevious, loadingPrevious, loadPrevious, page, ITEM_HEIGHT]);
+  }, []);
 
   const onScrollToIndexFailed = useCallback((info: any) => {
     const wait = new Promise(resolve => setTimeout(resolve, 500));
@@ -609,34 +529,57 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     [ITEM_HEIGHT]
   );
 
-  // 🎬 Navigate to webseries player (all episodes)
-  const handleStartWatching = useCallback(async (webseriesId: string) => {
-    console.log('🎬 Starting webseries:', webseriesId);
-    try {
-      const episodesResponse = await videoService.getEpisodes(webseriesId);
-      if (episodesResponse.success && episodesResponse.data?.length > 0) {
-        const sorted = [...episodesResponse.data].sort(
-          (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
-        );
-        navigation.navigate('EpisodePlayer', { 
-          targetVideoId: sorted[0]._id 
-        });
-      } else {
-        // If no episodes found, navigate to EpisodePlayer with just the webseriesId
-        navigation.navigate('EpisodePlayer', { 
-          targetVideoId: webseriesId 
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching episodes:', error);
-      // Fallback navigation
-      navigation.navigate('EpisodePlayer', { 
-        targetVideoId: webseriesId 
-      });
-    }
-  }, [navigation]);
-
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
+    // Check if this is an "Explore More" screen
+    if (item.id.startsWith('explore-more')) {
+      return (
+        <View style={{ height: ITEM_HEIGHT }}>
+          <LinearGradient
+            colors={['#050509', '#0a0a12', '#1a1a2e']}
+            style={exploreMoreStyles.container}
+          >
+            <View style={exploreMoreStyles.content}>
+              <Ionicons name="compass-outline" size={80} color="#F6C453" />
+              <Text style={exploreMoreStyles.title}>Explore More Webseries</Text>
+              <Text style={exploreMoreStyles.subtitle}>
+                Discover amazing content waiting for you
+              </Text>
+              
+              <TouchableOpacity
+                style={exploreMoreStyles.button}
+                onPress={() => {
+                  setShowExploreMore(false);
+                  navigation.navigate('Home' as any);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={exploreMoreStyles.buttonText}>Browse Webseries</Text>
+                <Ionicons name="arrow-forward" size={20} color="#000" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={exploreMoreStyles.secondaryButton}
+                onPress={() => {
+                  if (item.id === 'explore-more-start') {
+                    // Scrolled up from first episode - go to home
+                    navigation.navigate('Home' as any);
+                  } else {
+                    // Finished all episodes - continue with feed
+                    loadMore();
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={exploreMoreStyles.secondaryButtonText}>
+                  {item.id === 'explore-more-start' ? 'Go Back' : 'Continue Watching'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
+      );
+    }
+
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
     const initialTime = isTargetVideo ? resumeTime : 0;
     
@@ -650,38 +593,29 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           screenFocused={isScreenFocused}
           shouldPause={showAdPopup}
           onVideoEnd={handleEpisodeEnd}
-          onStartWatching={() => handleStartWatching(item.webseriesId)}
+          onEpisodeSelect={(episodeId) => {
+            const episodeIndex = reels.findIndex(r => r.id === episodeId);
+            if (episodeIndex !== -1) {
+              setCurrentIndex(episodeIndex);
+              setTargetVideoId(episodeId);
+              setResumeTime(0);
+              setTargetVideoFound(false);
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: episodeIndex, animated: false });
+              }, 100);
+            }
+          }}
+          onStartWatching={() => {
+            // Navigate to the webseries screen with all episodes
+            if (item.seasonId) {
+              // Reload all episodes for the webseries
+              loadAllSeasonEpisodes(item.seasonId);
+            }
+          }}
         />
-        
-        {/* Overlay UI for webseries info */}
-        <View style={reelOverlayStyles.overlay}>
-          <View style={reelOverlayStyles.bottomInfo}>
-            <Text style={reelOverlayStyles.title} numberOfLines={2}>
-              {item.webseriesTitle}
-            </Text>
-            <Text style={reelOverlayStyles.episodeLabel}>
-              Season {item.seasonNumber} • Episode {item.episodeNumber}
-            </Text>
-            {item.description && (
-              <Text style={reelOverlayStyles.description} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
-            
-            {/* Start Watching Button */}
-            <TouchableOpacity
-              style={reelOverlayStyles.startButton}
-              onPress={() => handleStartWatching(item.webseriesId)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
-              <Text style={reelOverlayStyles.startButtonText}>Start Watching</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, showAdPopup, handleEpisodeEnd, handleStartWatching, ITEM_HEIGHT]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, reels, showAdPopup, ITEM_HEIGHT, handleEpisodeEnd, navigation, loadMore]);
 
   useFocusEffect(
     useCallback(() => {
@@ -693,18 +627,19 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   );
 
   const handleBackPress = () => {
-    navigation.navigate('Home');
+    // Navigate back to Home tab
+    navigation.navigate('Home' as any);
   };
 
   const handleShare = useCallback(async () => {
     const currentReel = reels[currentIndex];
-    if (!currentReel) return;
+    if (!currentReel || currentReel.id.startsWith('explore-more')) return;
     
     try {
-      const shareMessage = `Check out "${currentReel.webseriesTitle}" on Digital Kalakar! 🎬\n\n${currentReel.description || 'Watch now!'}`;
+      const shareMessage = `Check out "${currentReel.title}" on Digital Kalakar! 🎬\n\n${currentReel.description || 'Watch now!'}`;
       await Share.share({
         message: shareMessage,
-        title: currentReel.webseriesTitle,
+        title: currentReel.title,
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -715,14 +650,14 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     return (
       <View style={[styles.safeArea, styles.centerContent]}>
         <ActivityIndicator size="large" color={colors.yellow} />
-        <Text style={styles.loadingText}>Loading reels…</Text>
+        <Text style={styles.loadingText}>Loading episodes…</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.safeArea}>
-      {/* Top Header - Fixed position with absolute */}
+      {/* Top Header */}
       <View style={[backButtonStyles.topHeader, {
         top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
         left: insets.left + 16,
@@ -770,11 +705,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FFD54A']} />
         }
-        ListHeaderComponent={loadingPrevious ? (
-          <View style={styles.headerLoader}>
-            <ActivityIndicator size="small" color="#FFD54A" />
-          </View>
-        ) : null}
         ListFooterComponent={loading ? (
           <View style={styles.footerLoader}>
             <ActivityIndicator size="small" color={colors.yellow} />
@@ -799,88 +729,19 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
       {showAdPopup && (
         <Modal visible={showAdPopup} transparent animationType="fade">
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              justifyContent: 'flex-end',
-            }}
-          >
-            <View
-              style={{
-                width: '100%',
-                minHeight: '55%',
-                backgroundColor: '#121212',
-                borderTopLeftRadius: 26,
-                borderTopRightRadius: 26,
-                paddingTop: 14,
-                paddingBottom: 28,
-                paddingHorizontal: 22,
-                shadowColor: '#000',
-                shadowOpacity: 0.6,
-                shadowRadius: 24,
-                elevation: 24,
-              }}
-            >
-              <View
-                style={{
-                  alignSelf: 'center',
-                  width: 44,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: '#444',
-                  marginBottom: 16,
-                }}
-              />
+          <View style={adPopupStyles.overlay}>
+            <View style={adPopupStyles.container}>
+              <View style={adPopupStyles.handle} />
 
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 22,
-                  fontWeight: '800',
-                  textAlign: 'center',
-                  letterSpacing: 0.3,
-                }}
-              >
-                Unlock Next Reel
-              </Text>
+              <Text style={adPopupStyles.title}>Unlock Next Episode</Text>
 
-              <Text
-                style={{
-                  color: '#aaa',
-                  fontSize: 15,
-                  textAlign: 'center',
-                  marginTop: 8,
-                  lineHeight: 20,
-                }}
-              >
+              <Text style={adPopupStyles.subtitle}>
                 Watch a short ad or use coins to continue
               </Text>
 
-              <Animated.View
-                style={{
-                  alignSelf: 'center',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  marginTop: 18,
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 22,
-                  backgroundColor: '#1E1E1E',
-                  transform: [{ scale: coinAnim }],
-                }}
-              >
+              <Animated.View style={[adPopupStyles.coinsBadge, { transform: [{ scale: coinAnim }] }]}>
                 <Text style={{ fontSize: 16 }}>🪙</Text>
-                <Text
-                  style={{
-                    color: '#FFD54A',
-                    fontWeight: '600',
-                    marginLeft: 8,
-                    fontSize: 14,
-                  }}
-                >
-                  {coins} coins available
-                </Text>
+                <Text style={adPopupStyles.coinsText}>{coins} coins available</Text>
               </Animated.View>
 
               <Pressable
@@ -908,23 +769,19 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
                     adHandledRef.current = true;
                   }
                 }}
-                style={({ pressed }) => ({
-                  marginTop: 26,
-                  paddingVertical: 16,
-                  borderRadius: 16,
-                  backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
-                  opacity: pressed ? 0.8 : 1,
-                })}
+                style={({ pressed }) => [
+                  adPopupStyles.primaryButton,
+                  {
+                    backgroundColor: coins >= SKIP_COST ? '#FFD54A' : '#333',
+                    opacity: pressed ? 0.8 : 1,
+                  }
+                ]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Text
-                  style={{
-                    textAlign: 'center',
-                    fontWeight: '800',
-                    fontSize: 16,
-                    color: coins >= SKIP_COST ? '#000' : '#666',
-                  }}
-                >
+                <Text style={[
+                  adPopupStyles.primaryButtonText,
+                  { color: coins >= SKIP_COST ? '#000' : '#666' }
+                ]}>
                   Skip using {SKIP_COST} coins
                 </Text>
               </Pressable>
@@ -934,25 +791,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
                   setShowAdPopup(false);
                   setShouldPlayAd(true);
                 }}
-                style={{
-                  marginTop: 14,
-                  paddingVertical: 14,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: '#333',
-                  backgroundColor: '#181818',
-                }}
+                style={adPopupStyles.secondaryButton}
               >
-                <Text
-                  style={{
-                    textAlign: 'center',
-                    color: '#fff',
-                    fontWeight: '600',
-                    fontSize: 14,
-                  }}
-                >
-                  Watch a short ad
-                </Text>
+                <Text style={adPopupStyles.secondaryButtonText}>Watch a short ad</Text>
               </Pressable>
             </View>
           </View>
@@ -974,61 +815,148 @@ const backButtonStyles = StyleSheet.create({
   },
 });
 
-const reelOverlayStyles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    paddingBottom: 80,
-    background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+const exploreMoreStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
   },
-  bottomInfo: {
-    gap: 8,
+  content: {
+    alignItems: 'center',
+    gap: 20,
+    maxWidth: 400,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 16,
   },
-  episodeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFD54A',
-    letterSpacing: 0.5,
+  subtitle: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#A5A5C0',
+    textAlign: 'center',
+    lineHeight: 24,
   },
-  description: {
-    fontSize: 14,
-    color: '#ddd',
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  startButton: {
+  button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFD54A',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginTop: 16,
-    alignSelf: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    backgroundColor: '#F6C453',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 28,
+    marginTop: 12,
+    gap: 8,
+    minWidth: 240,
   },
-  startButtonText: {
+  buttonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#000',
-    letterSpacing: 0.3,
+  },
+  secondaryButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#181818',
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
 
-export default ReelPlayerScreen;
+const adPopupStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    width: '100%',
+    minHeight: '55%',
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingTop: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 22,
+    shadowColor: '#000',
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 24,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#444',
+    marginBottom: 16,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    color: '#aaa',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  coinsBadge: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 22,
+    backgroundColor: '#1E1E1E',
+  },
+  coinsText: {
+    color: '#FFD54A',
+    fontWeight: '600',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  primaryButton: {
+    marginTop: 26,
+    paddingVertical: 16,
+    borderRadius: 16,
+  },
+  primaryButtonText: {
+    textAlign: 'center',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  secondaryButton: {
+    marginTop: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#181818',
+  },
+  secondaryButtonText: {
+    textAlign: 'center',
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+});
+
+export default EpisodePlayerScreen;
