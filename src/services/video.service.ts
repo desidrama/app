@@ -83,6 +83,11 @@ export const videoService = {
     return response.data;
   },
 
+  async unlikeVideo(videoId: string) {
+    const response = await api.post(`/api/content/videos/${videoId}/unlike`);
+    return response.data;
+  },
+
   // ========== Watch Progress Methods ==========
   async saveWatchProgress(videoId: string, currentTime: number, duration: number) {
     const response = await api.post('/api/content/watch-progress', {
@@ -128,12 +133,15 @@ export const videoService = {
   },
 
   // ========== Like Methods ==========
-  async toggleLike(videoId: string) {
+  async toggleLike(videoId: string, currentLiked: boolean) {
     try {
       if (!videoId) {
         throw new Error('Video ID is required');
       }
+      
+      // Use the same endpoint for both like and unlike - backend handles the toggle logic
       const response = await api.post(`/api/content/videos/${videoId}/like`);
+      
       return response.data;
     } catch (error: any) {
       console.error('Error toggling like:', error);
@@ -230,6 +238,152 @@ export const videoService = {
         throw new Error('Comment feature not available. Please try again later.');
       }
       throw new Error(error.response?.data?.message || 'Failed to post comment. Please try again.');
+    }
+  },
+
+  async getReplies(commentId: string, page: number = 1, limit: number = 20) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      const response = await api.get(`/api/content/comments/${commentId}/replies`, {
+        params: { page, limit },
+      });
+      return response.data;
+    } catch (error: any) {
+      // Graceful fallback: if 404 or any error, return empty replies
+      if (error.response?.status === 404) {
+        console.warn('Replies endpoint not found, returning empty list');
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      if (error.response?.status === 401) {
+        // Not authenticated - return empty list
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      console.error('Error getting replies:', error);
+      // Return safe default on any error
+      return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+    }
+  },
+
+  async editComment(commentId: string, commentText: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      if (!commentText || !commentText.trim()) {
+        throw new Error('Comment text is required');
+      }
+      
+      const response = await api.put(`/api/content/comments/${commentId}`, {
+        text: commentText.trim(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('Error editing comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to edit comment');
+      }
+      if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || 'Invalid comment text');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot edit comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to edit comment. Please try again.');
+    }
+  },
+
+  async deleteComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.delete(`/api/content/comments/${commentId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error deleting comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to delete comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot delete comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to delete comment. Please try again.');
+    }
+  },
+
+  async likeComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.post(`/api/content/comments/${commentId}/like`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error liking comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to like comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot like comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to like comment. Please try again.');
+    }
+  },
+
+  async unlikeComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.post(`/api/content/comments/${commentId}/unlike`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error unliking comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to unlike comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot unlike comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to unlike comment. Please try again.');
     }
   },
 

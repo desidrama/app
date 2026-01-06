@@ -55,6 +55,7 @@ type ReelItemProps = {
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
   shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
   onStartWatching?: () => void; // Callback when user wants to start watching full series
+  onVideoEnd?: () => void; // Callback when video ends
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -144,7 +145,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   const { keyboardHeight } = useKeyboard();
   
@@ -277,9 +278,9 @@ const [showMore, setShowMore] = useState(false);
           id: comment.id || comment._id,
           username: comment.user?.username || comment.user?.name || 'User',
           text: comment.text,
-          likes: 0,
+          likes: comment.likes || 0,
           timeAgo: formatTimeAgo(comment.createdAt),
-          isLiked: false,
+          isLiked: comment.isLiked || comment.liked || false,
           avatar: comment.user?.avatar || comment.user?.profilePicture,
         }));
         setComments(formattedComments);
@@ -292,7 +293,7 @@ const [showMore, setShowMore] = useState(false);
     } finally {
       setLoadingComments(false);
     }
-  }, [reel.id, loadingComments]);
+  }, [reel.id]);
 
   // Load comments when comment sheet opens
   useEffect(() => {
@@ -543,7 +544,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       };
       loadLikeStatus();
     }
-  }, [isActive, reel.id, reel.initialLikes]);
+  }, [isActive, reel.id]);
 
   // Initialize video and seek to initial time when video becomes active
   useEffect(() => {
@@ -1481,11 +1482,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     } catch {}
 
     try {
-      const response = await videoService.toggleLike(reel.id);
-      if (response?.success && response.data) {
+      const response = await videoService.toggleLike(reel.id, previousLiked);
+      
+      if (response?.success) {
         // Sync with server response - handle both formats for backward compatibility
-        const liked = response.data.liked !== undefined ? response.data.liked : (response.data.likedByUser ?? newLiked);
-        const likeCountValue = response.data.likeCount !== undefined ? response.data.likeCount : (response.data.likes ?? newCount);
+        const liked = response.data?.liked !== undefined ? response.data.liked : (response.data?.likedByUser ?? newLiked);
+        const likeCountValue = response.data?.likeCount !== undefined ? response.data.likeCount : (response.data?.likes ?? newCount);
         setIsLiked(liked);
         setLikeCount(likeCountValue);
       } else {
@@ -1498,7 +1500,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       // Revert on error
       setIsLiked(previousLiked);
       setLikeCount(previousCount);
-      console.error('Error toggling like:', error);
+      console.error('Error updating like:', error);
       
       // Only show alert for non-authentication errors
       if (error.message !== 'Authentication required' && error.response?.status !== 401) {
@@ -1803,7 +1805,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         })()}
         
         {/* Start Watching Button - Only show for webseries */}
-        {reel.seasonId && onStartWatching && (
+        {/* {reel.seasonId && onStartWatching && (
           <TouchableOpacity
             style={styles.startWatchingButton}
             onPress={onStartWatching}
@@ -1812,7 +1814,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
             <Text style={styles.startWatchingButtonText}>Start Watching</Text>
           </TouchableOpacity>
-        )}
+        )} */}
         
         </Animated.View>
       )}
@@ -2042,12 +2044,64 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                       <View style={styles.commentActions}>
                         <Text style={styles.commentTime}>{item.timeAgo}</Text>
                         <TouchableOpacity
-                          onPress={() => {
+                          onPress={async () => {
+                            // Toggle like locally for immediate feedback
                             setComments(comments.map(c => 
                               c.id === item.id 
                                 ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
                                 : c
                             ));
+                            
+                            try {
+                              let response;
+                              if (item.isLiked) {
+                                // Unlike the comment
+                                response = await videoService.unlikeComment(item.id);
+                              } else {
+                                // Like the comment
+                                response = await videoService.likeComment(item.id);
+                              }
+                              
+                              if (response?.success) {
+                                // Update UI based on server response
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { 
+                                        ...c, 
+                                        isLiked: !item.isLiked, 
+                                        likes: response.data?.likes !== undefined 
+                                          ? response.data.likes 
+                                          : (item.isLiked ? item.likes - 1 : item.likes + 1)
+                                      } 
+                                    : c
+                                ));
+                              } else {
+                                // Revert if API call failed
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                    : c
+                                ));
+                              }
+                            } catch (error: any) {
+                              console.error('Error toggling comment like:', error);
+                              // Check if it's a duplicate like error
+                              if (error.message && error.message.includes('already liked')) {
+                                // Server says already liked, so update UI to reflect that it is liked
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: true, likes: c.likes + (c.isLiked ? 0 : 1) } 
+                                    : c
+                                ));
+                              } else {
+                                // Revert on other errors
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                    : c
+                                ));
+                              }
+                            }
                           }}
                           hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                         >
@@ -2071,12 +2125,64 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
                     {/* Like Button */}
                     <TouchableOpacity
-                      onPress={() => {
+                      onPress={async () => {
+                        // Toggle like locally for immediate feedback
                         setComments(comments.map(c => 
                           c.id === item.id 
                             ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
                             : c
                         ));
+                        
+                        try {
+                          let response;
+                          if (item.isLiked) {
+                            // Unlike the comment
+                            response = await videoService.unlikeComment(item.id);
+                          } else {
+                            // Like the comment
+                            response = await videoService.likeComment(item.id);
+                          }
+                          
+                          if (response?.success) {
+                            // Update UI based on server response
+                            setComments(comments.map(c => 
+                              c.id === item.id 
+                                ? { 
+                                    ...c, 
+                                    isLiked: !item.isLiked, 
+                                    likes: response.data?.likes !== undefined 
+                                      ? response.data.likes 
+                                      : (item.isLiked ? item.likes - 1 : item.likes + 1)
+                                  } 
+                                : c
+                            ));
+                          } else {
+                            // Revert if API call failed
+                            setComments(comments.map(c => 
+                              c.id === item.id 
+                                ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                : c
+                            ));
+                          }
+                        } catch (error: any) {
+                          console.error('Error toggling comment like:', error);
+                          // Check if it's a duplicate like error
+                          if (error.message && error.message.includes('already liked')) {
+                            // Server says already liked, so update UI to reflect that it is liked
+                            setComments(comments.map(c => 
+                              c.id === item.id 
+                                ? { ...c, isLiked: true, likes: c.likes + (c.isLiked ? 0 : 1) } 
+                                : c
+                            ));
+                          } else {
+                            // Revert on other errors
+                            setComments(comments.map(c => 
+                              c.id === item.id 
+                                ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                : c
+                            ));
+                          }
+                        }
                       }}
                       style={styles.commentLikeBtn}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

@@ -19,6 +19,7 @@ import {
 import { Animated } from 'react-native';
 
 import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../redux/store';
@@ -34,6 +35,8 @@ import styles from './styles/ReelPlayerStyles';
 import type { Video as VideoType } from '../../types';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RootStackParamList } from '../../navigation/AppNavigator';
+import type { CompositeNavigationProp } from '@react-navigation/native';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
 
@@ -42,6 +45,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
 type Reel = {
   id: string;
+  title: string; // Added to match ReelItem expectations
   webseriesId: string;
   webseriesTitle: string;
   seasonNumber: number;
@@ -61,7 +65,10 @@ type Reel = {
 const ITEMS_PER_PAGE = 15;
 
 type ReelsScreenRouteProp = RouteProp<TabParamList, 'Reels'>;
-type ReelsScreenNavigationProp = BottomTabNavigationProp<TabParamList, 'Reels'>;
+type ReelsScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<TabParamList, 'Reels'>,
+  any
+>;
 
 const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavigation }) => {
   const navigation = useNavigation<ReelsScreenNavigationProp>();
@@ -252,6 +259,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
     return {
       id: (video as any)._id || String(Date.now()),
+      title: video.title || 'Untitled', // Added title field
       webseriesId: (video as any).webseriesId || (video as any)._id,
       webseriesTitle: video.title || 'Untitled',
       seasonNumber: seasonNum,
@@ -383,10 +391,10 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           // Transform and filter for S1E1 only
           const transformed = res.data
             .map(transformVideoToReel)
-            .filter((reel): reel is Reel => reel !== null);
+            .filter((reel: Reel | null): reel is Reel => reel !== null);
 
           // Sort by uploadedAt (latest first)
-          transformed.sort((a, b) => {
+          transformed.sort((a: Reel, b: Reel) => {
             const dateA = new Date(a.uploadedAt || 0).getTime();
             const dateB = new Date(b.uploadedAt || 0).getTime();
             return dateB - dateA; // Descending order
@@ -459,9 +467,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       if (res && res.success && Array.isArray(res.data) && res.data.length) {
         const transformed = res.data
           .map(transformVideoToReel)
-          .filter((reel): reel is Reel => reel !== null);
+          .filter((reel: Reel | null): reel is Reel => reel !== null);
 
-        transformed.sort((a, b) => {
+        transformed.sort((a: Reel, b: Reel) => {
           const dateA = new Date(a.uploadedAt || 0).getTime();
           const dateB = new Date(b.uploadedAt || 0).getTime();
           return dateB - dateA;
@@ -506,9 +514,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       if (res && res.success && Array.isArray(res.data) && res.data.length) {
         const transformed = res.data
           .map(transformVideoToReel)
-          .filter((reel): reel is Reel => reel !== null);
+          .filter((reel: Reel | null): reel is Reel => reel !== null);
 
-        transformed.sort((a, b) => {
+        transformed.sort((a: Reel, b: Reel) => {
           const dateA = new Date(a.uploadedAt || 0).getTime();
           const dateB = new Date(b.uploadedAt || 0).getTime();
           return dateB - dateA;
@@ -618,19 +626,20 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         const sorted = [...episodesResponse.data].sort(
           (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
         );
-        navigation.navigate('EpisodePlayer', { 
+        // Navigate to the parent stack to access EpisodePlayer
+        navigation.getParent()?.navigate('EpisodePlayer', { 
           targetVideoId: sorted[0]._id 
         });
       } else {
         // If no episodes found, navigate to EpisodePlayer with just the webseriesId
-        navigation.navigate('EpisodePlayer', { 
+        navigation.getParent()?.navigate('EpisodePlayer', { 
           targetVideoId: webseriesId 
         });
       }
     } catch (error) {
       console.error('Error fetching episodes:', error);
       // Fallback navigation
-      navigation.navigate('EpisodePlayer', { 
+      navigation.getParent()?.navigate('EpisodePlayer', { 
         targetVideoId: webseriesId 
       });
     }
@@ -693,7 +702,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   );
 
   const handleBackPress = () => {
-    navigation.navigate('Home');
+    navigation.navigate('Main');
   };
 
   const handleShare = useCallback(async () => {
@@ -982,7 +991,6 @@ const reelOverlayStyles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 16,
     paddingBottom: 80,
-    background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
   },
   bottomInfo: {
     gap: 8,

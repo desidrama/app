@@ -281,6 +281,39 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
     }
   }, [transformVideoToReel]);
 
+  // Define loadPage before the useEffect that uses it
+  const loadPage = useCallback(
+    async (pageToLoad: number, opts?: { replace?: boolean }) => {
+      if (loading) return;
+      setLoading(true);
+      try {
+        const res = await videoService.getWebseriesFeed(pageToLoad);
+        if (res && res.success && Array.isArray(res.data)) {
+          const transformed = res.data.map(transformVideoToReel);
+          
+          if (opts?.replace) {
+            setReels(transformed);
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+            setCurrentIndex(0);
+          } else {
+            setReels((prev) => [...prev, ...transformed]);
+          }
+
+          setPage(pageToLoad);
+          setHasMore(Boolean(res.pagination?.hasMore));
+          setHasPrevious(Boolean(res.pagination?.hasPrevious) || pageToLoad > 1);
+        } else {
+          setHasMore(false);
+        }
+      } catch (e) {
+        console.error('Error loading reels page', e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, transformVideoToReel]
+  );
+
   // Initialize with target video and load all episodes
   useEffect(() => {
     if (routeParams?.targetVideoId) {
@@ -321,33 +354,61 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
                 const targetEpisodeIndex = allEpisodes.findIndex(ep => ep.id === targetVideoId);
                 
                 if (targetEpisodeIndex !== -1) {
-                  // Add "Explore More" at the beginning (index -1)
-                  const exploreMoreItem: Reel = {
-                    id: 'explore-more-start',
-                    title: 'Explore More Webseries',
+                  // Check if we're navigating directly to the first episode (from ReelFeedScreen or HomeScreen)
+                  const isNavigatingToFirstEpisode = targetEpisodeIndex === 0;
+                  
+                  // Add "Explore More" at the end to indicate completion of webseries
+                  const exploreMoreEndItem: Reel = {
+                    id: 'explore-more-end',
+                    title: 'You have completed this webseries!',
                     year: '',
                     rating: '',
                     duration: '',
                     videoUrl: '',
                     initialLikes: 0,
-                    description: 'Discover more amazing content',
+                    description: 'Congratulations! You have watched all episodes of this webseries.',
                   };
 
-                  // Build the complete reels array with explore more at start and end
-                  const reelsWithExplore = [
-                    exploreMoreItem,
-                    ...allEpisodes,
-                  ];
+                  let reelsWithExplore;
+                  let adjustedTargetIndex;
+                  
+                  if (isNavigatingToFirstEpisode) {
+                    // Don't add explore-more-start when navigating directly to first episode
+                    // User should see the first episode directly
+                    reelsWithExplore = [
+                      ...allEpisodes,
+                      exploreMoreEndItem,
+                    ];
+                    adjustedTargetIndex = targetEpisodeIndex; // No adjustment needed
+                  } else {
+                    // Add explore-more-start when not starting from first episode
+                    const exploreMoreItem: Reel = {
+                      id: 'explore-more-start',
+                      title: 'Explore More Webseries',
+                      year: '',
+                      rating: '',
+                      duration: '',
+                      videoUrl: '',
+                      initialLikes: 0,
+                      description: 'Discover more amazing content',
+                    };
+                    
+                    reelsWithExplore = [
+                      exploreMoreItem,
+                      ...allEpisodes,
+                      exploreMoreEndItem,
+                    ];
+                    adjustedTargetIndex = targetEpisodeIndex + 1; // +1 because we added explore more at the start
+                  }
                   
                   setReels(reelsWithExplore);
-                  // +1 because we added explore more at the start
-                  setCurrentIndex(targetEpisodeIndex + 1);
+                  setCurrentIndex(adjustedTargetIndex);
                   setTargetVideoFound(true);
                   
                   setTimeout(() => {
                     if (flatListRef.current) {
                       flatListRef.current.scrollToIndex({ 
-                        index: targetEpisodeIndex + 1, 
+                        index: adjustedTargetIndex, 
                         animated: false 
                       });
                     }
@@ -383,39 +444,7 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
       // Load default feed if no target video is specified
       loadPage(1, { replace: true });
     }
-  }, [targetVideoId, targetVideoFound, reels.length, loadPage, loadAllSeasonEpisodes, transformVideoToReel]);
-
-  const loadPage = useCallback(
-    async (pageToLoad: number, opts?: { replace?: boolean }) => {
-      if (loading) return;
-      setLoading(true);
-      try {
-        const res = await videoService.getWebseriesFeed(pageToLoad);
-        if (res && res.success && Array.isArray(res.data)) {
-          const transformed = res.data.map(transformVideoToReel);
-          
-          if (opts?.replace) {
-            setReels(transformed);
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-            setCurrentIndex(0);
-          } else {
-            setReels((prev) => [...prev, ...transformed]);
-          }
-
-          setPage(pageToLoad);
-          setHasMore(Boolean(res.pagination?.hasMore));
-          setHasPrevious(Boolean(res.pagination?.hasPrevious) || pageToLoad > 1);
-        } else {
-          setHasMore(false);
-        }
-      } catch (e) {
-        console.error('Error loading reels page', e);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [loading, transformVideoToReel]
-  );
+  }, [targetVideoId, targetVideoFound, reels.length, loadAllSeasonEpisodes, transformVideoToReel]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -442,11 +471,121 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadPage(1, { replace: true });
+      if (targetVideoId) {
+        // If we have a target video, reload the specific video and its webseries
+        const videoId = targetVideoId;
+        setTargetVideoId(videoId);
+        setTargetVideoFound(false);
+        setReels([]);
+        setCurrentIndex(0);
+        setPage(1);
+        setHasMore(true);
+        setEpisodesLoaded(false);
+        
+        // Reload target video and its episodes
+        try {
+          const res = await videoService.getVideoById(videoId);
+          if (res && res.success && res.data) {
+            const reel = transformVideoToReel(res.data);
+            
+            // Load all episodes of the same webseries
+            if (reel.seasonId) {
+              const allEpisodes = await loadAllSeasonEpisodes(reel.seasonId);
+              
+              if (allEpisodes.length > 0) {
+                // Find the index of the current target episode
+                const targetEpisodeIndex = allEpisodes.findIndex(ep => ep.id === targetVideoId);
+                
+                if (targetEpisodeIndex !== -1) {
+                  // Check if we're navigating directly to the first episode (from ReelFeedScreen or HomeScreen)
+                  const isNavigatingToFirstEpisode = targetEpisodeIndex === 0;
+                  
+                  // Add "Explore More" at the end to indicate completion of webseries
+                  const exploreMoreEndItem: Reel = {
+                    id: 'explore-more-end',
+                    title: 'You have completed this webseries!',
+                    year: '',
+                    rating: '',
+                    duration: '',
+                    videoUrl: '',
+                    initialLikes: 0,
+                    description: 'Congratulations! You have watched all episodes of this webseries.',
+                  };
+
+                  let reelsWithExplore;
+                  let adjustedTargetIndex;
+                  
+                  if (isNavigatingToFirstEpisode) {
+                    // Don't add explore-more-start when navigating directly to first episode
+                    // User should see the first episode directly
+                    reelsWithExplore = [
+                      ...allEpisodes,
+                      exploreMoreEndItem,
+                    ];
+                    adjustedTargetIndex = targetEpisodeIndex; // No adjustment needed
+                  } else {
+                    // Add explore-more-start when not starting from first episode
+                    const exploreMoreItem: Reel = {
+                      id: 'explore-more-start',
+                      title: 'Explore More Webseries',
+                      year: '',
+                      rating: '',
+                      duration: '',
+                      videoUrl: '',
+                      initialLikes: 0,
+                      description: 'Discover more amazing content',
+                    };
+                    
+                    reelsWithExplore = [
+                      exploreMoreItem,
+                      ...allEpisodes,
+                      exploreMoreEndItem,
+                    ];
+                    adjustedTargetIndex = targetEpisodeIndex + 1; // +1 because we added explore more at the start
+                  }
+                  
+                  setReels(reelsWithExplore);
+                  setCurrentIndex(adjustedTargetIndex);
+                  
+                  setTimeout(() => {
+                    if (flatListRef.current) {
+                      flatListRef.current.scrollToIndex({ 
+                        index: adjustedTargetIndex, 
+                        animated: false 
+                      });
+                    }
+                  }, 100);
+                  return;
+                }
+              }
+            } else {
+              // For single episodes (not part of webseries), just set the single reel
+              setReels([reel]);
+              setTargetVideoFound(true);
+              
+              setTimeout(() => {
+                if (flatListRef.current) {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                }
+              }, 100);
+            }
+          } else {
+            // If target video not found, load the feed
+            await loadPage(1, { replace: true });
+          }
+        } catch (error) {
+          console.error('Error reloading target video:', error);
+          // If there's an error, load the feed
+          await loadPage(1, { replace: true });
+        }
+      } else {
+        // If no target video, load the default feed
+        await loadPage(1, { replace: true });
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [loadPage]);
+  }, [targetVideoId, loadPage, transformVideoToReel, loadAllSeasonEpisodes, flatListRef]);
 
   useFocusEffect(
     useCallback(() => {
@@ -465,15 +604,21 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
     
     // Check if we're at the last episode (before "Explore More" end screen)
     if (episodesLoaded && allSeasonEpisodes.length > 0) {
-      const lastEpisodeIndex = reels.length - 1;
+      // Find the index of the explore-more-end item
+      const exploreMoreEndIndex = reels.findIndex(item => 
+        item.id.startsWith('explore-more-end')
+      );
       
-      if (currentIndex === lastEpisodeIndex) {
+      // If we found the explore-more-end item, the last actual episode is one before it
+      const lastActualEpisodeIndex = exploreMoreEndIndex > 0 ? exploreMoreEndIndex - 1 : -1;
+      
+      if (lastActualEpisodeIndex >= 0 && currentIndex === lastActualEpisodeIndex) {
         // Last episode finished - show explore more
         console.log('✅ Last episode finished, showing explore more');
         setShowExploreMore(true);
       }
     }
-  }, [currentIndex, reels.length, episodesLoaded, allSeasonEpisodes]);
+  }, [currentIndex, reels, episodesLoaded, allSeasonEpisodes]);
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: any) => {
@@ -540,38 +685,69 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
           >
             <View style={exploreMoreStyles.content}>
               <Ionicons name="compass-outline" size={80} color="#F6C453" />
-              <Text style={exploreMoreStyles.title}>Explore More Webseries</Text>
-              <Text style={exploreMoreStyles.subtitle}>
-                Discover amazing content waiting for you
-              </Text>
+              {item.id === 'explore-more-start' ? (
+                <>
+                  <Text style={exploreMoreStyles.title}>Explore More Webseries</Text>
+                  <Text style={exploreMoreStyles.subtitle}>
+                    Discover amazing content waiting for you
+                  </Text>
+                </>
+              ) : item.id === 'explore-more-end' ? (
+                <>
+                  <Text style={exploreMoreStyles.title}>You've Completed This Webseries!</Text>
+                  <Text style={exploreMoreStyles.subtitle}>
+                    Congratulations! You have watched all episodes.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={exploreMoreStyles.title}>Explore More Webseries</Text>
+                  <Text style={exploreMoreStyles.subtitle}>
+                    Discover amazing content waiting for you
+                  </Text>
+                </>
+              )}
               
               <TouchableOpacity
                 style={exploreMoreStyles.button}
                 onPress={() => {
                   setShowExploreMore(false);
-                  navigation.navigate('Home' as any);
+                  navigation.navigate('Main');
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={exploreMoreStyles.buttonText}>Browse Webseries</Text>
-                <Ionicons name="arrow-forward" size={20} color="#000" />
+                {item.id === 'explore-more-end' ? (
+                  <>
+                    <Text style={exploreMoreStyles.buttonText}>Explore More Content</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#000" />
+                  </>
+                ) : (
+                  <>
+                    <Text style={exploreMoreStyles.buttonText}>Browse Webseries</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#000" />
+                  </>
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={exploreMoreStyles.secondaryButton}
                 onPress={() => {
                   if (item.id === 'explore-more-start') {
-                    // Scrolled up from first episode - go to home
-                    navigation.navigate('Home' as any);
+                    // Scrolled up from first episode - go to reels feed
+                    navigation.navigate('Main');
                   } else {
-                    // Finished all episodes - continue with feed
-                    loadMore();
+                    // Finished all episodes - go to reels feed
+                    navigation.navigate('Main');
                   }
                 }}
                 activeOpacity={0.8}
               >
                 <Text style={exploreMoreStyles.secondaryButtonText}>
-                  {item.id === 'explore-more-start' ? 'Go Back' : 'Continue Watching'}
+                  {item.id === 'explore-more-start' 
+                    ? 'Back to Feed' 
+                    : item.id === 'explore-more-end'
+                    ? 'Go to Reel Feed'
+                    : 'Back to Feed'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -605,7 +781,8 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
               }, 100);
             }
           }}
-          onStartWatching={() => {
+          // Don't show Start Watching button on explore more screens
+          onStartWatching={item.id.startsWith('explore-more') ? undefined : () => {
             // Navigate to the webseries screen with all episodes
             if (item.seasonId) {
               // Reload all episodes for the webseries
@@ -627,8 +804,8 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
   );
 
   const handleBackPress = () => {
-    // Navigate back to Home tab
-    navigation.navigate('Home' as any);
+    // Navigate back to Main tab which contains the TabNavigator
+    navigation.navigate('Main');
   };
 
   const handleShare = useCallback(async () => {
