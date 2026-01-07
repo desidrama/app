@@ -429,7 +429,7 @@ export interface SkipAdWithCoinsResponse {
 
 export const skipAdWithCoins = async (amount: number): Promise<SkipAdWithCoinsResponse> => {
   try {
-    const response = await api.post('/api/user/skip-ad', { amount });
+    const response = await api.post('/api/reward/skip-ad', { amount });
     return response.data;
   } catch (error: any) {
     console.error('Skip Ad With Coins Error:', {
