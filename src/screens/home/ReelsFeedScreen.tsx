@@ -692,7 +692,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   );
 
   const handleBackPress = () => {
-    navigation.navigate('Main');
+    navigation.navigate('Home');
   };
 
   const handleShare = useCallback(async () => {
