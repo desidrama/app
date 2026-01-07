@@ -336,23 +336,6 @@ export const claimDailyCheckIn = async () => {
 };
 
 /**
- * Skip ad with coins
- */
-export const skipAdWithCoins = async (amount: number) => {
-  try {
-    const response = await api.post('/api/reward/skip-ad', { amount });
-    return response.data;
-  } catch (error: any) {
-    console.error('Skip Ad With Coins Error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    throw error;
-  }
-};
-
-/**
  * Persist FCM token for authenticated user
  */
 export const updateFcmToken = async (fcmToken: string) => {
