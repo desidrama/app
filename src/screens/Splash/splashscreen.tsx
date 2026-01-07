@@ -259,8 +259,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   logo: {
-    width: 110,
-    height: 110,
+    width: 80,
+    height: 80,
     marginRight: -14, // closer to text
   },
   textContainer: {

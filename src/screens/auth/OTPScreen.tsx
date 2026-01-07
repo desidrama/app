@@ -440,8 +440,8 @@ const styles = StyleSheet.create({
     marginBottom: SCREEN_HEIGHT * 0.04 
   },
   logo: { 
-    width: 80, 
-    height: 80, 
+    width: 85, 
+    height: 85, 
     marginBottom: 8 
   },
   textContainer: { 
