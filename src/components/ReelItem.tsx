@@ -60,6 +60,7 @@ type ReelItemProps = {
   onOverlayToggle?: (shouldHide: boolean) => void; // Callback to handle overlay visibility
   onVideoTap?: () => void; // Callback when video is tapped
   onSheetStateChange?: (isOpen: boolean) => void; // Callback when any sheet/modal opens/closes
+  onLockedVideoPlayAttempt?: () => boolean | void; // Callback when user tries to play a locked video. Returns true if video is actually locked, false/undefined if unlocked
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -150,7 +151,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange, onLockedVideoPlayAttempt }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   
   
@@ -1369,6 +1370,26 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         const status = await videoRef.current.getStatusAsync();
         if (!status.isLoaded || isBuffering) return;
         
+        // Check if video is locked before attempting to play
+        let isVideoUnlocked = reel.adStatus !== 'locked';
+        
+        if (reel.adStatus === 'locked' && !status.isPlaying) {
+          // Video appears locked - check with parent to see actual state
+          console.log(`🔒 ReelItem: User tried to play video ${reel.title}, checking if actually locked`);
+          if (onLockedVideoPlayAttempt) {
+            const isActuallyLocked = onLockedVideoPlayAttempt();
+            // If callback returns false, video is actually unlocked (state updated but prop hasn't)
+            if (isActuallyLocked === false) {
+              console.log(`✅ ReelItem: Video is actually unlocked, allowing playback`);
+              isVideoUnlocked = true; // Override the prop check
+            } else {
+              return; // Don't attempt to play locked video
+            }
+          } else {
+            return; // Don't attempt to play locked video
+          }
+        }
+        
         // Idempotent toggle: check actual state, then act
         if (status.isPlaying && actualPlayStateRef.current === 'playing') {
           // Actually playing → pause
@@ -1378,13 +1399,16 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           actualPlayStateRef.current = 'paused';
           setIsPlaying(false);
         } else if (!status.isPlaying && actualPlayStateRef.current !== 'playing') {
-          // Actually paused → play
-          isPausedByUserRef.current = false;
-          setIsPausedByUser(false);
-          await videoRef.current.setIsMutedAsync(false);
-          await videoRef.current.playAsync();
-          actualPlayStateRef.current = 'playing';
-          setIsPlaying(true);
+          // Actually paused → play (only if not locked)
+          if (isVideoUnlocked) {
+            isPausedByUserRef.current = false;
+            setIsPausedByUser(false);
+            await videoRef.current.setIsMutedAsync(false);
+            await videoRef.current.playAsync();
+            actualPlayStateRef.current = 'playing';
+            setIsPlaying(true);
+          }
+          // If video is locked, we already handled it above and returned early
         }
         // If state is inconsistent, sync it (shouldn't happen, but safety check)
       } catch (error) {
@@ -1392,7 +1416,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         // Don't throw - gracefully handle errors
       }
     }, 300);
-  }, [isActive, isBuffering, showUI]);
+  }, [isActive, isBuffering, showUI, reel.adStatus, reel.title, onLockedVideoPlayAttempt]);
 
   // Long-press handler for 2x speed (replaces onPressIn)
   const handleLongPress = () => {
