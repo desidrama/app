@@ -69,6 +69,7 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
   const insets = useSafeAreaInsets();
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
+  const justUnlockedRef = useRef(false); // Track if video was just unlocked via ad
 
   const ITEM_HEIGHT = SCREEN_HEIGHT;
 
@@ -191,6 +192,12 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
   useEffect(() => {
     const reel = reels[currentIndex];
     if (!reel) return;
+
+    // Don't show popup if video was just unlocked
+    if (justUnlockedRef.current) {
+      justUnlockedRef.current = false; // Reset after one check
+      return;
+    }
 
     if (
       reel.adStatus === 'locked' &&
@@ -789,6 +796,33 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
               loadAllSeasonEpisodes(item.seasonId);
             }
           }}
+          onLockedVideoPlayAttempt={() => {
+            // User tried to play a video - check if it's actually locked
+            const currentReel = reels[currentIndex];
+            
+            // Double-check that video is actually locked before showing popup
+            // This handles the case where state has updated but prop hasn't refreshed yet
+            if (currentReel && currentReel.adStatus === 'locked') {
+              console.log('🔒 EpisodePlayerScreen: User tried to play locked video, showing popup');
+              // Reset adHandledRef to false so popup can show, but set isAdOpen to true
+              // to prevent useEffect from interfering
+              adHandledRef.current = true; // Keep as true to prevent auto-show, we'll show manually
+              setIsAdOpen(true);
+              setShowAdPopup(true);
+              setShouldPlayAd(false);
+              return true; // Video is actually locked
+            } else {
+              // Video is unlocked (or doesn't exist), allow it to play normally
+              console.log('✅ EpisodePlayerScreen: Video is unlocked or status unknown, allowing playback', {
+                hasReel: !!currentReel,
+                adStatus: currentReel?.adStatus,
+                currentIndex,
+                reelsLength: reels.length
+              });
+              adHandledRef.current = false;
+              return false; // Video is unlocked, allow playback
+            }
+          }}
         />
       </View>
     );
@@ -892,6 +926,7 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
       <RewardedEpisodeAd
         show={shouldPlayAd}
         onAdFinished={() => {
+          // Update the reel status to unlocked
           setReels(prev =>
             prev.map((r, i) =>
               i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
@@ -901,6 +936,12 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
           setShowAdPopup(false);
           setIsAdOpen(false);
           setShouldPlayAd(false);
+          // Reset adHandledRef so video can play normally after being unlocked
+          adHandledRef.current = false;
+          // Mark that video was just unlocked to prevent auto-popup
+          justUnlockedRef.current = true;
+          
+          console.log('✅ EpisodePlayerScreen: Ad finished, video unlocked, ready to play');
         }}
       />
 
@@ -910,7 +951,23 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
             <View style={adPopupStyles.container}>
               <View style={adPopupStyles.handle} />
 
-              <Text style={adPopupStyles.title}>Unlock Next Episode</Text>
+              <View style={adPopupStyles.header}>
+                <Text style={adPopupStyles.title}>Unlock Next Episode</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAdPopup(false);
+                    setIsAdOpen(false);
+                    setShouldPlayAd(false);
+                    // Keep adHandledRef as true to prevent automatic popup from useEffect
+                    // Popup will only reappear when user explicitly tries to play (via callback)
+                    adHandledRef.current = true;
+                  }}
+                  style={adPopupStyles.closeButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
               <Text style={adPopupStyles.subtitle}>
                 Watch a short ad or use coins to continue
@@ -1080,12 +1137,28 @@ const adPopupStyles = StyleSheet.create({
     backgroundColor: '#444',
     marginBottom: 16,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    position: 'relative',
+    paddingRight: 40, // Add padding to prevent title from overlapping close button
+  },
   title: {
     color: '#fff',
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
     letterSpacing: 0.3,
+    flex: 1,
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    padding: 8,
+    zIndex: 1,
   },
   subtitle: {
     color: '#aaa',
