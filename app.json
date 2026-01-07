@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shubham1719.desidrama",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -57,9 +58,9 @@
     "extra": {
       "apiBaseUrl": "Configured via app.config.js and .env file",
       "eas": {
-        "projectId": "b71faa6b-a136-470c-916d-d0d39081cabf"
+        "projectId": "9a05d36e-a51b-4045-9b57-19e6d0e8386d"
       }
     },
-    "owner": "shivamtiwari28"
+    "owner": "sagarteotia"
   }
 }

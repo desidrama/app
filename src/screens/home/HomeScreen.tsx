@@ -119,7 +119,7 @@ function CarouselVideoPlayer({ videoUrl, style, isMuted, isActive }: { videoUrl:
       source={{ uri: videoUrl }}
       style={style}
       resizeMode={ResizeMode.COVER}
-      shouldPlay={isActive}
+      shouldPlay={false}
       isLooping
       isMuted={isMuted}
       useNativeControls={false}
@@ -165,9 +165,17 @@ export default function HomeScreen() {
   const fetchVideoUrlForCarouselItem = useCallback(async (item: CarouselItem): Promise<string | null> => {
     try {
       const possibleVideoFields = [
-        'videoUrl', 'video', 'trailerUrl', 'trailer', 
-        'previewUrl', 'preview', 'url', 'videoPath', 
-        'path', 'videoLink', 'link'
+        'videoUrl',
+        'video',
+        'trailerUrl',
+        'trailer',
+        'previewUrl',
+        'preview',
+        'url',
+        'videoPath',
+        'path',
+        'videoLink',
+        'link'
       ];
 
       for (const field of possibleVideoFields) {
@@ -186,12 +194,10 @@ export default function HomeScreen() {
 
       if (item.contentType === 'webseries') {
         const episodesResponse = await videoService.getEpisodes(item.contentId);
-        
         if (episodesResponse.success && episodesResponse.data?.length > 0) {
           const sortedEpisodes = [...episodesResponse.data].sort(
             (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
           );
-          
           const firstEpisode = sortedEpisodes[0];
           
           if (firstEpisode.variants && Array.isArray(firstEpisode.variants) && firstEpisode.variants.length > 0) {
@@ -202,7 +208,7 @@ export default function HomeScreen() {
             }
             if (firstEpisode.variants[0]?.url) return firstEpisode.variants[0].url;
           }
-          
+
           for (const field of possibleVideoFields) {
             if (firstEpisode[field]) {
               let videoUrl = firstEpisode[field];
@@ -218,7 +224,6 @@ export default function HomeScreen() {
       } else if (item.contentType === 'reels') {
         if (typeof videoService.getVideoById === 'function') {
           const videoResponse = await videoService.getVideoById(item.contentId);
-          
           if (videoResponse.success && videoResponse.data) {
             if (videoResponse.data.variants && Array.isArray(videoResponse.data.variants) && videoResponse.data.variants.length > 0) {
               const preferredResolutions = ['720p', '480p', '360p'];
@@ -228,7 +233,7 @@ export default function HomeScreen() {
               }
               if (videoResponse.data.variants[0]?.url) return videoResponse.data.variants[0].url;
             }
-            
+
             for (const field of possibleVideoFields) {
               if (videoResponse.data[field]) {
                 let videoUrl = videoResponse.data[field];
@@ -289,7 +294,6 @@ export default function HomeScreen() {
       try {
         setCarouselLoading(true);
         setCarouselError(null);
-        
         const items = await carouselService.getActiveCarouselItems();
 
         const transformedPromises = items
@@ -363,7 +367,6 @@ export default function HomeScreen() {
       clearTimeout(autoPlayTimerRef.current);
       autoPlayTimerRef.current = null;
     }
-
     setActiveVideoIndex(null);
 
     if (!carouselItems || carouselItems.length === 0) {
@@ -374,6 +377,7 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = carouselIndex % originalLength;
       const currentItem = carouselItems[actualIndex];
+
       if (currentItem && currentItem.videoUrl) {
         setActiveVideoIndex(carouselIndex);
       }
@@ -447,8 +451,8 @@ export default function HomeScreen() {
       }
     };
     load();
-    return () => { 
-      isMounted = false; 
+    return () => {
+      isMounted = false;
     };
   }, [dispatch]);
 
@@ -462,7 +466,7 @@ export default function HomeScreen() {
   // Enhanced infinite scroll with smooth transitions
   const onCarouselScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (carouselItems.length === 0) return;
-    
+
     const originalLength = carouselItems.length;
     const index = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
     setCarouselIndex(index);
@@ -492,7 +496,7 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = displayIndex % originalLength;
       const actualItem = carouselItems[actualIndex];
-      
+
       if (actualItem.contentType === 'webseries' && actualItem.contentId) {
         const episodesResponse = await videoService.getEpisodes(actualItem.contentId);
           if (episodesResponse.success && episodesResponse.data?.length > 0) {
@@ -508,26 +512,44 @@ export default function HomeScreen() {
       }
       navigation.navigate('Reels');
     } catch (error) {
-      navigation.navigate('Reels');
+      navigation.navigate('EpisodePlayer' as any);
     }
   };
 
   const handleContinueWatchingPress = (item: any) => {
     const targetVideoId = item.videoId?._id || item.videoId;
     if (!targetVideoId) return;
-    navigation.navigate('Reels', {
+
+    navigation.navigate('EpisodePlayer' as any, {
       targetVideoId: String(targetVideoId).trim(),
       resumeTime: item.currentTime || 0,
       progress: item.progress,
     });
   };
 
-  const handleVideoPress = (videoItem: { _id: string }) => {
+  const handleVideoPress = (videoItem: { _id: string; seasonId?: any }) => {
     if (!videoItem._id) return;
-    navigation.navigate('Reels', {
-      targetVideoId: String(videoItem._id).trim(),
-      resumeTime: 0,
-    });
+
+    // Check if this video is part of a webseries to load all episodes
+    const seasonId = videoItem.seasonId 
+      ? (typeof videoItem.seasonId === 'string' 
+          ? videoItem.seasonId 
+          : (videoItem.seasonId as any)._id)
+      : null;
+
+    if (seasonId) {
+      // Navigate to EpisodePlayer with the first episode of the webseries
+      navigation.navigate('EpisodePlayer' as any, {
+        targetVideoId: String(videoItem._id).trim(),
+        resumeTime: 0,
+      });
+    } else {
+      // For standalone videos/reels
+      navigation.navigate('EpisodePlayer' as any, {
+        targetVideoId: String(videoItem._id).trim(),
+        resumeTime: 0,
+      });
+    }
   };
 
   const handleMuteToggle = useCallback(() => {
@@ -973,7 +995,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   content: {
-    flex: 1,
+    paddingBottom: 20,
   },
   heroSection: {
     marginTop: -6,

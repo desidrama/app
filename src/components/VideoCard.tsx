@@ -1,8 +1,10 @@
 // FILE: src/components/VideoCard.tsx
 
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
+import { BORDER_RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../utils/designSystem';
 
 interface VideoCardProps {
   title: string;
@@ -27,23 +29,36 @@ export default function VideoCard({
     container: {
       width: 140,
       height: 200,
-      borderRadius: 12,
+      borderRadius: BORDER_RADIUS.large, // 16px radius for cards
       overflow: 'hidden',
       backgroundColor: colors.surface,
       position: 'relative',
-      elevation: 0,
-      shadowOpacity: 0,
+      ...SHADOWS.card, // Subtle shadow/elevation
     },
     title: {
-      fontSize: 13,
+      ...TYPOGRAPHY.bodySmall,
       fontWeight: '700',
       color: colors.textPrimary,
-      marginBottom: 2,
+      marginBottom: SPACING.xs,
     },
     meta: {
-      fontSize: 11,
+      ...TYPOGRAPHY.labelSmall,
       fontWeight: '400',
       color: colors.textSecondary,
+    },
+    badge: {
+      position: 'absolute',
+      bottom: SPACING.md + 20, // Above text overlay
+      left: SPACING.sm,
+      backgroundColor: colors.yellow,
+      borderRadius: BORDER_RADIUS.small,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: SPACING.xs,
+    },
+    badgeText: {
+      ...TYPOGRAPHY.labelSmall,
+      fontWeight: '700',
+      color: colors.textOnYellow,
     },
   });
 
@@ -51,7 +66,7 @@ export default function VideoCard({
     <TouchableOpacity
       style={dynamicStyles.container}
       onPress={onPress}
-      activeOpacity={0.85}
+      activeOpacity={0.9}
     >
       <Image
         source={{ uri: imageUrl }}
@@ -59,18 +74,28 @@ export default function VideoCard({
         resizeMode="cover"
       />
       
+      {/* Gradient overlay for text readability */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+        locations={[0.5, 0.8, 1]}
+        style={styles.gradientOverlay}
+      />
       
+      {/* Episode badge in bright yellow */}
+      {episodeNumber && (
+        <View style={dynamicStyles.badge}>
+          <Text style={dynamicStyles.badgeText}>EP {episodeNumber}</Text>
+        </View>
+      )}
       
       {/* Text Overlay */}
       <View style={styles.textOverlay}>
         <Text style={dynamicStyles.title} numberOfLines={1}>
-          {title}
+          {seriesName || title}
         </Text>
-        {(seriesName || genre) && (
+        {genre && (
           <Text style={dynamicStyles.meta} numberOfLines={1}>
-            {seriesName || ''}
-            {seriesName && genre ? ' · ' : ''}
-            {genre || ''}
+            {genre}
           </Text>
         )}
       </View>
@@ -83,12 +108,18 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  
+  gradientOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+  },
   textOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 8,
+    padding: SPACING.sm,
   },
 });

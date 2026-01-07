@@ -16,7 +16,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { sendOTP } from '../../services/api';
 
-const logoImage = require('../../../assets/App Logo.png');
+const logoImage = require('../../../assets/LOGOLATE.png');
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const LoginScreen: React.FC = () => {
@@ -108,8 +108,7 @@ const LoginScreen: React.FC = () => {
       <View style={styles.brandWrapper}>
         <Image source={logoImage} style={styles.logo} resizeMode="contain" />
         <View style={styles.textContainer}>
-          <Text style={styles.textDigital}>digital</Text>
-          <Text style={styles.textKalakar}>कलाकार</Text>
+
         </View>
       </View>
 
@@ -162,7 +161,7 @@ const styles = StyleSheet.create({
   },
   brandWrapper: { 
     alignItems: 'center', 
-    marginTop: SCREEN_HEIGHT * 0.12, 
+    marginTop: SCREEN_HEIGHT * 0.15, 
     marginBottom: SCREEN_HEIGHT * 0.06 
   },
   logo: { 
