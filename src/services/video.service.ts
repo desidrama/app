@@ -83,6 +83,11 @@ export const videoService = {
     return response.data;
   },
 
+  async unlikeVideo(videoId: string) {
+    const response = await api.post(`/api/content/videos/${videoId}/unlike`);
+    return response.data;
+  },
+
   // ========== Watch Progress Methods ==========
   async saveWatchProgress(videoId: string, currentTime: number, duration: number) {
     const response = await api.post('/api/content/watch-progress', {
@@ -128,12 +133,21 @@ export const videoService = {
   },
 
   // ========== Like Methods ==========
-  async toggleLike(videoId: string) {
+  async toggleLike(videoId: string, currentLiked: boolean) {
     try {
       if (!videoId) {
         throw new Error('Video ID is required');
       }
-      const response = await api.post(`/api/content/videos/${videoId}/like`);
+      
+      let response;
+      if (currentLiked) {
+        // Unlike the video
+        response = await api.post(`/api/content/videos/${videoId}/unlike`);
+      } else {
+        // Like the video
+        response = await api.post(`/api/content/videos/${videoId}/like`);
+      }
+      
       return response.data;
     } catch (error: any) {
       console.error('Error toggling like:', error);
@@ -193,7 +207,7 @@ export const videoService = {
     }
   },
 
-  async postComment(reelId: string, commentText: string) {
+  async postComment(reelId: string, commentText: string, parentCommentId?: string) {
     try {
       if (!reelId) {
         console.error('Missing reelId, cannot post comment');
@@ -206,9 +220,12 @@ export const videoService = {
       
       console.log('Posting comment for reel:', reelId);
       
-      const response = await api.post(`/api/content/videos/${reelId}/comments`, {
-        text: commentText.trim(),
-      });
+      const requestBody: any = { text: commentText.trim() };
+      if (parentCommentId) {
+        requestBody.parentCommentId = parentCommentId;
+      }
+      
+      const response = await api.post(`/api/content/videos/${reelId}/comments`, requestBody);
       return response.data;
     } catch (error: any) {
       console.error('Error posting comment:', {
@@ -230,6 +247,218 @@ export const videoService = {
         throw new Error('Comment feature not available. Please try again later.');
       }
       throw new Error(error.response?.data?.message || 'Failed to post comment. Please try again.');
+    }
+  },
+
+  async getReplies(commentId: string, page: number = 1, limit: number = 20) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      const response = await api.get(`/api/content/comments/${commentId}/replies`, {
+        params: { page, limit },
+      });
+      return response.data;
+    } catch (error: any) {
+      // Graceful fallback: if 404 or any error, return empty replies
+      if (error.response?.status === 404) {
+        console.warn('Replies endpoint not found, returning empty list');
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      if (error.response?.status === 401) {
+        // Not authenticated - return empty list
+        return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+      }
+      console.error('Error getting replies:', error);
+      // Return safe default on any error
+      return { success: true, data: [], pagination: { page, limit, total: 0, hasMore: false } };
+    }
+  },
+
+  async editComment(commentId: string, commentText: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      if (!commentText || !commentText.trim()) {
+        throw new Error('Comment text is required');
+      }
+      
+      const response = await api.put(`/api/content/comments/${commentId}`, {
+        text: commentText.trim(),
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('Error editing comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to edit comment');
+      }
+      if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || 'Invalid comment text');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot edit comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to edit comment. Please try again.');
+    }
+  },
+
+  async deleteComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.delete(`/api/content/comments/${commentId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error deleting comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to delete comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot delete comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to delete comment. Please try again.');
+    }
+  },
+
+  async likeComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.post(`/api/content/comments/${commentId}/like`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error liking comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to like comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot like comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to like comment. Please try again.');
+    }
+  },
+
+  async unlikeComment(commentId: string) {
+    try {
+      if (!commentId) {
+        throw new Error('Comment ID is required');
+      }
+      
+      const response = await api.post(`/api/content/comments/${commentId}/unlike`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error unliking comment:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url,
+        commentId,
+      });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required to unlike comment');
+      }
+      if (error.response?.status === 404) {
+        throw new Error('Comment not found. Cannot unlike comment.');
+      }
+      throw new Error(error.response?.data?.message || 'Failed to unlike comment. Please try again.');
+    }
+  },
+
+  // ========== OTT Experience Methods ==========
+  async getWebseriesWithEpisodes(webseriesId: string) {
+    try {
+      const response = await api.get(`/api/content/webseries/${webseriesId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching webseries with episodes:', error);
+      throw error;
+    }
+  },
+
+  async getSeasonEpisodes(seasonId: string) {
+    try {
+      const response = await api.get(`/api/content/seasons/${seasonId}/episodes`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching season episodes:', error);
+      throw error;
+    }
+  },
+
+  async getAllEpisodes(webseriesId: string) {
+    try {
+      // Fetch all seasons for the webseries
+      const webseriesResponse = await this.getWebseriesWithEpisodes(webseriesId);
+      if (webseriesResponse.success && webseriesResponse.data) {
+        const episodes: any[] = [];
+        const seasons = webseriesResponse.data.seasons || [];
+        
+        for (const season of seasons) {
+          if (season.episodes && Array.isArray(season.episodes)) {
+            episodes.push(...season.episodes);
+          }
+        }
+        
+        return { success: true, data: episodes };
+      }
+      return { success: false, data: [] };
+    } catch (error: any) {
+      console.error('Error fetching all episodes:', error);
+      return { success: false, data: [] };
+    }
+  },
+
+  async getEpisodeDetails(episodeId: string) {
+    try {
+      const response = await api.get(`/api/content/episodes/${episodeId}/details`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching episode details:', error);
+      throw error;
+    }
+  },
+
+  async preloadEpisodeVideo(episodeId: string) {
+    try {
+      // This would trigger video caching on the server side if implemented
+      const response = await api.post(`/api/content/episodes/${episodeId}/preload`);
+      return response.data;
+    } catch (error: any) {
+      // Non-critical operation, silently fail
+      console.warn('Could not preload episode video:', error);
+      return { success: false };
     }
   },
 };

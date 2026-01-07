@@ -34,6 +34,7 @@ interface CommentInputProps {
   sendButtonTextStyle?: any;
   sendButtonTextDisabledStyle?: any;
   placeholder?: string;
+  parentCommentId?: string; // Parent comment ID for replies
 }
 
 /**
@@ -55,7 +56,13 @@ interface CommentInputProps {
  *   sendButtonTextDisabledStyle={styles.commentSendTextDisabled}
  * />
  */
-export const CommentInputOptimized: React.FC<CommentInputProps> = ({
+export interface CommentInputOptimizedHandles {
+  setText: (text: string) => void;
+  getText: () => string;
+  clear: () => void;
+}
+
+export const CommentInputOptimized = React.forwardRef<CommentInputOptimizedHandles, CommentInputProps>(({
   postId,
   onCommentAdded,
   visible,
@@ -65,7 +72,22 @@ export const CommentInputOptimized: React.FC<CommentInputProps> = ({
   sendButtonTextStyle,
   sendButtonTextDisabledStyle,
   placeholder = 'Join the conversation...',
-}) => {
+  parentCommentId,
+}, ref) => {
+  
+  // Expose methods to parent component via ref
+  React.useImperativeHandle(ref, () => ({
+    setText: (text: string) => {
+      setCommentText(text);
+      inputRef.current?.focus();
+    },
+    getText: () => {
+      return commentText;
+    },
+    clear: () => {
+      setCommentText('');
+    },
+  }));
   // State
   const [commentText, setCommentText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,7 +127,7 @@ export const CommentInputOptimized: React.FC<CommentInputProps> = ({
 
     try {
       // Call API to post comment
-      const response = await videoService.postComment(postId, trimmedText);
+      const response = await videoService.postComment(postId, trimmedText, parentCommentId);
       
       // Check if API call was successful
       if (response?.success !== false) {
@@ -204,5 +226,7 @@ export const CommentInputOptimized: React.FC<CommentInputProps> = ({
       </TouchableOpacity>
     </>
   );
-};
+});
+
+CommentInputOptimized.displayName = 'CommentInputOptimized';
 

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import {
   PanResponder,
   ScrollView,
   AppState,
+  
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +55,11 @@ type ReelItemProps = {
   screenFocused?: boolean; // Whether the Reels screen is focused
   onEpisodeSelect?: (episodeId: string) => void; // Callback when episode is selected
   shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
+  onStartWatching?: () => void; // Callback when user wants to start watching full series
+  onVideoEnd?: () => void; // Callback when video ends
+  onOverlayToggle?: (shouldHide: boolean) => void; // Callback to handle overlay visibility
+  onVideoTap?: () => void; // Callback when video is tapped
+  onSheetStateChange?: (isOpen: boolean) => void; // Callback when any sheet/modal opens/closes
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -80,6 +86,7 @@ const formatTime = (seconds: number): string => {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
 
 // ActionButton Component - Professional press animation and haptic feedback
 // Control Layer - Blocks video tap propagation
@@ -143,9 +150,28 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
   const insets = useSafeAreaInsets();
-  const { keyboardHeight } = useKeyboard();
+  
+  
+const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+useEffect(() => {
+  const showSub = Keyboard.addListener(
+    Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+    (e) => setKeyboardHeight(e.endCoordinates.height)
+  );
+
+  const hideSub = Keyboard.addListener(
+    Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+    () => setKeyboardHeight(0)
+  );
+
+  return () => {
+    showSub.remove();
+    hideSub.remove();
+  };
+}, []);
   
   // Swipe gestures removed - only vertical scrolling for reels navigation (YouTube Shorts-style)
   // #region agent log
@@ -261,9 +287,61 @@ const [showMore, setShowMore] = useState(false);
     timeAgo: string;
     isLiked: boolean;
     avatar?: string;
+    replyCount?: number;
+    replies?: Array<{
+      id: string;
+      username: string;
+      text: string;
+      likes: number;
+      timeAgo: string;
+      isLiked: boolean;
+      avatar?: string;
+    }>;
   }>>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentCount, setCommentCount] = useState(reel.comments || 0);
+  const [replyingTo, setReplyingTo] = useState<{commentId: string, username: string} | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<{[commentId: string]: boolean}>({});
+  const commentInputRef = useRef<any>(null);
+
+  // Load comment count when reel becomes active
+  useEffect(() => {
+    if (isActive && reel.id) {
+      const loadCommentCount = async () => {
+        try {
+          const response = await videoService.getComments(reel.id, 1, 1); // Just get count
+          if (response?.success && response.pagination) {
+            setCommentCount(response.pagination.total || 0);
+          }
+        } catch (error) {
+          console.log('Could not load comment count:', error);
+          // Keep the initial value from reel if loading fails
+        }
+      };
+      loadCommentCount();
+    }
+  }, [isActive, reel.id]);
+  
+  // Load comment count when reel becomes active
+  useEffect(() => {
+    if (isActive && reel.id) {
+      const loadCommentCount = async () => {
+        try {
+          // Get a small page of comments just to get the total count
+          const response = await videoService.getComments(reel.id, 1, 1);
+          if (response?.success && response.pagination) {
+            setCommentCount(response.pagination.total || 0);
+          }
+        } catch (error) {
+          console.log('Could not load comment count:', error);
+          // Keep initial value if loading fails
+        }
+      };
+      loadCommentCount();
+    }
+  }, [isActive, reel.id]);
 
   // Load comments function
   const loadComments = useCallback(async () => {
@@ -276,10 +354,12 @@ const [showMore, setShowMore] = useState(false);
           id: comment.id || comment._id,
           username: comment.user?.username || comment.user?.name || 'User',
           text: comment.text,
-          likes: 0,
+          likes: comment.likesCount || comment.likes || 0,
           timeAgo: formatTimeAgo(comment.createdAt),
-          isLiked: false,
+          isLiked: comment.isLiked || comment.liked || false,
           avatar: comment.user?.avatar || comment.user?.profilePicture,
+          replyCount: comment.replyCount || 0,
+          replies: [], // Initially empty, will be populated when expanded
         }));
         setComments(formattedComments);
         if (response.pagination?.total !== undefined) {
@@ -291,7 +371,7 @@ const [showMore, setShowMore] = useState(false);
     } finally {
       setLoadingComments(false);
     }
-  }, [reel.id, loadingComments]);
+  }, [reel.id]);
 
   // Load comments when comment sheet opens
   useEffect(() => {
@@ -525,12 +605,22 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       const loadLikeStatus = async () => {
         try {
           const response = await videoService.getLikeStatus(reel.id);
-          if (response?.success && response.data) {
-            // Handle both old format (likedByUser, likes) and new format (liked, likeCount)
-            const liked = response.data.liked !== undefined ? response.data.liked : (response.data.likedByUser || false);
-            const likeCount = response.data.likeCount !== undefined ? response.data.likeCount : (response.data.likes || reel.initialLikes || 0);
+          if (response?.success !== false && response.data) {
+            // Handle multiple possible response formats from backend
+            const liked = response.data.liked !== undefined ? response.data.liked :
+                      response.data.isLiked !== undefined ? response.data.isLiked :
+                      response.data.likedByUser !== undefined ? response.data.likedByUser : false;
+            
+            const likeCount = response.data.likeCount !== undefined ? response.data.likeCount :
+                          response.data.likes !== undefined ? response.data.likes :
+                          response.data.count !== undefined ? response.data.count : reel.initialLikes || 0;
+            
             setIsLiked(liked);
             setLikeCount(likeCount);
+          } else {
+            // If no specific like status returned, use initial value
+            setIsLiked(false);
+            setLikeCount(reel.initialLikes || 0);
           }
         } catch (error) {
           // Silently fail - user might not be authenticated
@@ -542,7 +632,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       };
       loadLikeStatus();
     }
-  }, [isActive, reel.id, reel.initialLikes]);
+  }, [isActive, reel.id]);
 
   // Initialize video and seek to initial time when video becomes active
   useEffect(() => {
@@ -603,6 +693,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 openEpisodes called');
     // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
     isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
     if (isActive && videoRef.current) {
       videoRef.current.pauseAsync().catch(() => {});
       videoRef.current.setIsMutedAsync(true).catch(() => {});
@@ -1326,6 +1419,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 closeEpisodes called');
     setShowEpisodes(false);
     isAnySheetOpenRef.current = showComments || showMore || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showMore || showDescSheet);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showMore && !showDescSheet) {
       if (videoRef.current) {
@@ -1341,6 +1437,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 openMore called');
     // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
     isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
     if (isActive && videoRef.current) {
       videoRef.current.pauseAsync().catch(() => {});
       videoRef.current.setIsMutedAsync(true).catch(() => {});
@@ -1354,6 +1453,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 closeMore called');
     setShowMore(false);
     isAnySheetOpenRef.current = showComments || showEpisodes || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showEpisodes || showDescSheet);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showDescSheet) {
       if (videoRef.current) {
@@ -1433,8 +1535,45 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // #endregion
     setShowDescSheet(false);
     isAnySheetOpenRef.current = showComments || showEpisodes || showMore;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showEpisodes || showMore);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showMore) {
+      if (videoRef.current) {
+        videoRef.current.setIsMutedAsync(false).catch(() => {});
+        videoRef.current.playAsync().catch(() => {});
+        actualPlayStateRef.current = 'playing';
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  const openComments = () => {
+    console.log('🎯 openComments called');
+    // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
+    isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
+    if (isActive && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+      videoRef.current.setIsMutedAsync(true).catch(() => {});
+      setIsPlaying(false);
+      setIsPausedByUser(true);
+    }
+    setShowComments(true);
+  };
+
+  const closeComments = () => {
+    console.log('🎯 closeComments called');
+    setShowComments(false);
+    isAnySheetOpenRef.current = showEpisodes || showMore || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showEpisodes || showMore || showDescSheet);
+    }
+    // Resume only if user didn't manually pause
+    if (isActive && !isPausedByUserRef.current && !showEpisodes && !showMore && !showDescSheet) {
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(false).catch(() => {});
         videoRef.current.playAsync().catch(() => {});
@@ -1480,13 +1619,35 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     } catch {}
 
     try {
-      const response = await videoService.toggleLike(reel.id);
-      if (response?.success && response.data) {
-        // Sync with server response - handle both formats for backward compatibility
-        const liked = response.data.liked !== undefined ? response.data.liked : (response.data.likedByUser ?? newLiked);
-        const likeCountValue = response.data.likeCount !== undefined ? response.data.likeCount : (response.data.likes ?? newCount);
-        setIsLiked(liked);
-        setLikeCount(likeCountValue);
+      let response;
+      if (newLiked) {
+        // Like the video
+        response = await videoService.likeVideo(reel.id);
+      } else {
+        // Unlike the video
+        response = await videoService.unlikeVideo(reel.id);
+      }
+      
+      if (response?.success !== false) {
+        // Try to get the updated status from the server response
+        // Some backends return the updated status, others may return success confirmation only
+        if (response.data) {
+          const updatedLiked = response.data.liked !== undefined ? response.data.liked : 
+                      response.data.likedByUser !== undefined ? response.data.likedByUser : 
+                      response.data.isLiked !== undefined ? response.data.isLiked : newLiked;
+          
+          const updatedLikeCount = response.data.likeCount !== undefined ? response.data.likeCount :
+                              response.data.likes !== undefined ? response.data.likes : 
+                              response.data.count !== undefined ? response.data.count : newCount;
+          
+          // Update UI with server response to ensure accuracy
+          setIsLiked(updatedLiked);
+          setLikeCount(updatedLikeCount);
+        } else {
+          // If no data returned, rely on our optimistic update
+          setIsLiked(newLiked);
+          setLikeCount(newCount);
+        }
       } else {
         // Revert on failure
         setIsLiked(previousLiked);
@@ -1497,7 +1658,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       // Revert on error
       setIsLiked(previousLiked);
       setLikeCount(previousCount);
-      console.error('Error toggling like:', error);
+      console.error('Error updating like:', error);
       
       // Only show alert for non-authentication errors
       if (error.message !== 'Authentication required' && error.response?.status !== 401) {
@@ -1509,6 +1670,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   };
 
   // Episodes array is now loaded from API in openEpisodes
+const [isFocused, setIsFocused] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -1678,7 +1840,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           onPress={(e) => {
             e.stopPropagation();
             showUI();
-            setShowComments(true);
+            openComments();
           }}
         />
 
@@ -1800,6 +1962,18 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             </View>
           );
         })()}
+        
+        {/* Start Watching Button - Only show for webseries */}
+        {/* {reel.seasonId && onStartWatching && (
+          <TouchableOpacity
+            style={styles.startWatchingButton}
+            onPress={onStartWatching}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
+            <Text style={styles.startWatchingButtonText}>Start Watching</Text>
+          </TouchableOpacity>
+        )} */}
         
         </Animated.View>
       )}
@@ -1961,7 +2135,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             style={styles.sheetBackdrop}
             onPress={() => {
               Keyboard.dismiss();
-              setShowComments(false);
+              closeComments();
             }}
             pointerEvents="auto"
           />
@@ -1989,7 +2163,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 <View style={styles.commentHeader}>
                   <Text style={styles.commentHeaderTitle}>Comments</Text>
                   <TouchableOpacity
-                    onPress={() => setShowComments(false)}
+                    onPress={() => closeComments()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Ionicons name="close" size={24} color="#fff" />
@@ -1997,116 +2171,527 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
                 </View>
 
                 {/* Comments List - Scrollable */}
-                <FlatList
-                  data={comments}
-                  keyExtractor={(item) => item.id}
+                <ScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={{ paddingBottom: 16 }}
                   keyboardShouldPersistTaps="handled"
-                  renderItem={({ item }) => (
-                  <View style={styles.commentItem}>
-                    {/* Avatar */}
-                    <View style={styles.commentAvatar}>
-                      {item.avatar ? (
-                        <Image source={{ uri: item.avatar }} style={styles.commentAvatarImage} />
-                      ) : (
-                        <View style={styles.commentAvatarPlaceholder}>
-                          <Text style={styles.commentAvatarText}>{item.username.charAt(0).toUpperCase()}</Text>
+                >
+                  {comments.map((item) => (
+                    <View key={item.id}>
+                      <TouchableOpacity 
+                        style={styles.commentItem}
+                        onPress={() => {
+                          // When clicking on a comment, return focus to the input at the bottom
+                          setInputFocused(true);
+                        }}
+                      >
+                        {/* Avatar */}
+                        <View style={styles.commentAvatar}>
+                          {item.avatar ? (
+                            <Image source={{ uri: item.avatar }} style={styles.commentAvatarImage} />
+                          ) : (
+                            <View style={styles.commentAvatarPlaceholder}>
+                              <Text style={styles.commentAvatarText}>{item.username.charAt(0).toUpperCase()}</Text>
+                            </View>
+                          )}
                         </View>
-                      )}
-                    </View>
-
-                    {/* Comment Content */}
-                    <View style={styles.commentContent}>
-                      <View style={styles.commentBubble}>
-                        <Text style={styles.commentText}>
-                          <Text style={styles.commentUsername}>{item.username} </Text>
-                          {item.text}
-                        </Text>
-                      </View>
-                      
-                      {/* Comment Actions */}
-                      <View style={styles.commentActions}>
-                        <Text style={styles.commentTime}>{item.timeAgo}</Text>
+              
+                        {/* Comment Content */}
+                        <View style={styles.commentContent}>
+                          <View style={styles.commentBubble}>
+                            <Text style={styles.commentText}>
+                              <Text style={styles.commentUsername}>{item.username} </Text>
+                              {item.text}
+                            </Text>
+                          </View>
+                                      
+                          {/* Comment Actions */}
+                          <View style={styles.commentActions}>
+                            <Text style={styles.commentTime}>{item.timeAgo}</Text>
+                            <TouchableOpacity
+                              onPress={async () => {
+                                // Toggle like locally for immediate feedback
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                    : c
+                                ));
+                                            
+                                try {
+                                  let response;
+                                  if (item.isLiked) {
+                                    // Unlike the comment
+                                    response = await videoService.unlikeComment(item.id);
+                                  } else {
+                                    // Like the comment
+                                    response = await videoService.likeComment(item.id);
+                                  }
+                                              
+                                  if (response?.success) {
+                                    // Update UI based on server response
+                                    setComments(comments.map(c => 
+                                      c.id === item.id 
+                                        ? { 
+                                            ...c, 
+                                            isLiked: !item.isLiked, 
+                                            likes: response.data?.likes !== undefined 
+                                              ? response.data.likes 
+                                              : (item.isLiked ? item.likes - 1 : item.likes + 1)
+                                          } 
+                                        : c
+                                    ));
+                                  } else {
+                                    // Revert if API call failed
+                                    setComments(comments.map(c => 
+                                      c.id === item.id 
+                                        ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                        : c
+                                    ));
+                                  }
+                                } catch (error: any) {
+                                  console.error('Error toggling comment like:', error);
+                                  // Check if it's a duplicate like error
+                                  if (error.message && error.message.includes('already liked')) {
+                                    // Server says already liked, so update UI to reflect that it is liked
+                                    setComments(comments.map(c => 
+                                      c.id === item.id 
+                                        ? { ...c, isLiked: true, likes: c.likes + (c.isLiked ? 0 : 1) } 
+                                        : c
+                                    ));
+                                  } else {
+                                    // Revert on other errors
+                                    setComments(comments.map(c => 
+                                      c.id === item.id 
+                                        ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                        : c
+                                    ));
+                                  }
+                                }
+                              }}
+                              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                            >
+                              <Text style={styles.commentActionText}>
+                                {item.isLiked ? 'Liked' : 'Like'}
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                              onPress={() => {
+                                // Set the comment ID to reply to and populate input with @username
+                                setReplyingTo({commentId: item.id, username: item.username});
+                                                            
+                                // Update the CommentInputOptimized to include @username in the input
+                                if (commentInputRef?.current) {
+                                  commentInputRef.current.setText(`@${item.username} `);
+                                }
+                                                            
+                                // Make sure the parent comment is expanded so the user sees where they're replying to
+                                setExpandedReplies(prev => ({
+                                  ...prev,
+                                  [item.id]: true
+                                }));
+                              }}
+                            >
+                              <Text style={styles.commentActionText}>Reply</Text>
+                            </TouchableOpacity>
+                            {item.likes > 0 && (
+                              <View style={styles.commentLikesContainer}>
+                                <Ionicons name="heart" size={12} color="#FFD54A" style={{ marginRight: 4 }} />
+                                <Text style={styles.commentLikes}>{item.likes}</Text>
+                              </View>
+                            )}
+                            {item.replyCount && item.replyCount > 0 && (
+                              <TouchableOpacity 
+                                style={styles.commentRepliesContainer}
+                                onPress={async () => {
+                                  // Toggle expanded state for this comment
+                                  setExpandedReplies(prev => ({
+                                    ...prev,
+                                    [item.id]: !prev[item.id]
+                                  }));
+                                                            
+                                  // If expanding and replies are empty, fetch them
+                                  if (!expandedReplies[item.id]) {
+                                    try {
+                                      // Fetch replies for this comment
+                                      const response = await videoService.getReplies(item.id, 1, 50); // Fetch all replies at once
+                                                                    
+                                      if (response?.success && Array.isArray(response.data)) {
+                                        const formattedReplies = response.data.map((reply: any) => ({
+                                          id: reply.id || reply._id,
+                                          username: reply.user?.username || reply.user?.name || 'User',
+                                          text: reply.text,
+                                          likes: reply.likesCount || reply.likes || 0,
+                                          timeAgo: formatTimeAgo(reply.createdAt),
+                                          isLiked: reply.isLiked || reply.liked || false,
+                                          avatar: reply.user?.avatar || reply.user?.profilePicture,
+                                        }));
+                                                                      
+                                        // Update the comment with its replies
+                                        setComments(prev => prev.map(comment => {
+                                          if (comment.id === item.id) {
+                                            return {
+                                              ...comment,
+                                              replies: formattedReplies
+                                            };
+                                          }
+                                          return comment;
+                                        }));
+                                      }
+                                    } catch (error) {
+                                      console.error('Error fetching replies:', error);
+                                    }
+                                  }
+                                }}
+                              >
+                                <Ionicons name="chatbubble-outline" size={12} color="#888" style={{ marginRight: 4 }} />
+                                <Text style={styles.commentReplies}>{item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+              
+                        {/* Like Button */}
                         <TouchableOpacity
-                          onPress={() => {
+                          onPress={async () => {
+                            // Toggle like locally for immediate feedback
                             setComments(comments.map(c => 
                               c.id === item.id 
                                 ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
                                 : c
                             ));
+                                        
+                            try {
+                              let response;
+                              if (item.isLiked) {
+                                // Unlike the comment
+                                response = await videoService.unlikeComment(item.id);
+                              } else {
+                                // Like the comment
+                                response = await videoService.likeComment(item.id);
+                              }
+                                          
+                              if (response?.success) {
+                                // Update UI based on server response
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { 
+                                        ...c, 
+                                        isLiked: !item.isLiked, 
+                                        likes: response.data?.likes !== undefined 
+                                          ? response.data.likes 
+                                          : (item.isLiked ? item.likes - 1 : item.likes + 1)
+                                      } 
+                                    : c
+                                ));
+                              } else {
+                                // Revert if API call failed
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                    : c
+                                ));
+                              }
+                            } catch (error: any) {
+                              console.error('Error toggling comment like:', error);
+                              // Check if it's a duplicate like error
+                              if (error.message && error.message.includes('already liked')) {
+                                // Server says already liked, so update UI to reflect that it is liked
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: true, likes: c.likes + (c.isLiked ? 0 : 1) } 
+                                    : c
+                                ));
+                              } else {
+                                // Revert on other errors
+                                setComments(comments.map(c => 
+                                  c.id === item.id 
+                                    ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
+                                    : c
+                                ));
+                              }
+                            }
                           }}
-                          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                          style={styles.commentLikeBtn}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
-                          <Text style={styles.commentActionText}>
-                            {item.isLiked ? 'Liked' : 'Like'}
-                          </Text>
+                          <Ionicons 
+                            name={item.isLiked ? "heart" : "heart-outline"} 
+                            size={16} 
+                            color={item.isLiked ? "#ff3040" : "#fff"} 
+                          />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                        >
-                          <Text style={styles.commentActionText}>Reply</Text>
-                        </TouchableOpacity>
-                        {item.likes > 0 && (
-                          <View style={styles.commentLikesContainer}>
-                            <Ionicons name="heart" size={12} color="#FFD54A" style={{ marginRight: 4 }} />
-                            <Text style={styles.commentLikes}>{item.likes}</Text>
-                          </View>
-                        )}
-                      </View>
+                      </TouchableOpacity>
+                                  
+                      {/* Replies Section - Show only when expanded */}
+                      {expandedReplies[item.id] && item.replies && item.replies.length > 0 && (
+                        <View style={styles.repliesContainer}>
+                          {item.replies.map((reply) => (
+                            <View key={reply.id} style={[styles.commentItem, styles.replyItem]}>
+                              {/* Reply Avatar */}
+                              <View style={styles.commentAvatar}>
+                                {reply.avatar ? (
+                                  <Image source={{ uri: reply.avatar }} style={styles.commentAvatarImage} />
+                                ) : (
+                                  <View style={styles.commentAvatarPlaceholder}>
+                                    <Text style={styles.commentAvatarText}>{reply.username.charAt(0).toUpperCase()}</Text>
+                                  </View>
+                                )}
+                              </View>
+                                          
+                              {/* Reply Content */}
+                              <View style={styles.commentContent}>
+                                <View style={styles.commentBubble}>
+                                  <Text style={styles.commentText}>
+                                    <Text style={styles.commentUsername}>{reply.username} </Text>
+                                    {reply.text}
+                                  </Text>
+                                </View>
+                                            
+                                {/* Reply Actions */}
+                                <View style={styles.commentActions}>
+                                  <Text style={styles.commentTime}>{reply.timeAgo}</Text>
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      // Toggle like for reply
+                                      setComments(comments.map(c => {
+                                        if (c.id === item.id && c.replies) {
+                                          return {
+                                            ...c,
+                                            replies: c.replies.map(r => 
+                                              r.id === reply.id 
+                                                ? { ...r, isLiked: !r.isLiked, likes: r.isLiked ? r.likes - 1 : r.likes + 1 }
+                                                : r
+                                            )
+                                          };
+                                        }
+                                        return c;
+                                      }));
+                                                  
+                                      try {
+                                        let response;
+                                        if (reply.isLiked) {
+                                          // Unlike the reply
+                                          response = await videoService.unlikeComment(reply.id);
+                                        } else {
+                                          // Like the reply
+                                          response = await videoService.likeComment(reply.id);
+                                        }
+                                                    
+                                        if (response?.success) {
+                                          // Update UI based on server response
+                                          setComments(comments.map(c => {
+                                            if (c.id === item.id && c.replies) {
+                                              return {
+                                                ...c,
+                                                replies: c.replies.map(r => 
+                                                  r.id === reply.id 
+                                                    ? { 
+                                                        ...r, 
+                                                        isLiked: !reply.isLiked, 
+                                                        likes: response.data?.likes !== undefined 
+                                                          ? response.data.likes 
+                                                          : (reply.isLiked ? reply.likes - 1 : reply.likes + 1)
+                                                      } 
+                                                    : r
+                                                )
+                                              };
+                                            }
+                                            return c;
+                                          }));
+                                        } else {
+                                          // Revert if API call failed
+                                          setComments(comments.map(c => {
+                                            if (c.id === item.id && c.replies) {
+                                              return {
+                                                ...c,
+                                                replies: c.replies.map(r => 
+                                                  r.id === reply.id 
+                                                    ? { ...r, isLiked: !r.isLiked, likes: r.isLiked ? r.likes - 1 : r.likes + 1 }
+                                                    : r
+                                                )
+                                              };
+                                            }
+                                            return c;
+                                          }));
+                                        }
+                                      } catch (error: any) {
+                                        console.error('Error toggling reply like:', error);
+                                      }
+                                    }}
+                                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                                  >
+                                    <Text style={styles.commentActionText}>
+                                      {reply.isLiked ? 'Liked' : 'Like'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                  {reply.likes > 0 && (
+                                    <View style={styles.commentLikesContainer}>
+                                      <Ionicons name="heart" size={12} color="#FFD54A" style={{ marginRight: 4 }} />
+                                      <Text style={styles.commentLikes}>{reply.likes}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                                          
+                              {/* Reply Like Button */}
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  // Toggle like for reply
+                                  setComments(comments.map(c => {
+                                    if (c.id === item.id && c.replies) {
+                                      return {
+                                        ...c,
+                                        replies: c.replies.map(r => 
+                                          r.id === reply.id 
+                                            ? { ...r, isLiked: !r.isLiked, likes: r.isLiked ? r.likes - 1 : r.likes + 1 }
+                                            : r
+                                        )
+                                      };
+                                    }
+                                    return c;
+                                  }));
+                                              
+                                  try {
+                                    let response;
+                                    if (reply.isLiked) {
+                                      // Unlike the reply
+                                      response = await videoService.unlikeComment(reply.id);
+                                    } else {
+                                      // Like the reply
+                                      response = await videoService.likeComment(reply.id);
+                                    }
+                                                
+                                    if (response?.success) {
+                                      // Update UI based on server response
+                                      setComments(comments.map(c => {
+                                        if (c.id === item.id && c.replies) {
+                                          return {
+                                            ...c,
+                                            replies: c.replies.map(r => 
+                                              r.id === reply.id 
+                                                ? { 
+                                                    ...r, 
+                                                    isLiked: !reply.isLiked, 
+                                                    likes: response.data?.likes !== undefined 
+                                                      ? response.data.likes 
+                                                      : (reply.isLiked ? reply.likes - 1 : reply.likes + 1)
+                                                  } 
+                                                : r
+                                            )
+                                          };
+                                        }
+                                        return c;
+                                      }));
+                                    } else {
+                                      // Revert if API call failed
+                                      setComments(comments.map(c => {
+                                        if (c.id === item.id && c.replies) {
+                                          return {
+                                            ...c,
+                                            replies: c.replies.map(r => 
+                                              r.id === reply.id 
+                                                ? { ...r, isLiked: !r.isLiked, likes: r.isLiked ? r.likes - 1 : r.likes + 1 }
+                                                : r
+                                            )
+                                          };
+                                        }
+                                        return c;
+                                      }));
+                                    }
+                                  } catch (error: any) {
+                                    console.error('Error toggling reply like:', error);
+                                  }
+                                }}
+                                style={styles.commentLikeBtn}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              >
+                                <Ionicons 
+                                  name={reply.isLiked ? "heart" : "heart-outline"} 
+                                  size={16} 
+                                  color={reply.isLiked ? "#ff3040" : "#fff"} 
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
+                  ))}
+                  {comments.length === 0 && (
+                    <View style={styles.commentEmpty}>
+                      <Text style={styles.commentEmptyText}>No comments yet</Text>
+                      <Text style={styles.commentEmptySubtext}>Be the first to comment!</Text>
+                    </View>
+                  )}
+                </ScrollView>
 
-                    {/* Like Button */}
-                    <TouchableOpacity
-                      onPress={() => {
-                        setComments(comments.map(c => 
-                          c.id === item.id 
-                            ? { ...c, isLiked: !c.isLiked, likes: c.isLiked ? c.likes - 1 : c.likes + 1 }
-                            : c
-                        ));
-                      }}
-                      style={styles.commentLikeBtn}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons 
-                        name={item.isLiked ? "heart" : "heart-outline"} 
-                        size={16} 
-                        color={item.isLiked ? "#ff3040" : "#fff"} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                ListEmptyComponent={
-                  <View style={styles.commentEmpty}>
-                    <Text style={styles.commentEmptyText}>No comments yet</Text>
-                    <Text style={styles.commentEmptySubtext}>Be the first to comment!</Text>
-                  </View>
-                }
-              />
 
+                
                 {/* Input Section - Optimized with API integration */}
-                <View style={[styles.commentInputSection, { paddingBottom: keyboardHeight ? keyboardHeight + 12 : Math.max(insets.bottom, 12) }]}>
-                  <View style={styles.commentInputAvatar}>
-                    <View style={styles.commentInputAvatarPlaceholder}>
-                      <Text style={styles.commentInputAvatarText}>Y</Text>
-                    </View>
+                <View
+                  style={[
+                    styles.commentInputSection,
+                    {
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: keyboardHeight > 0 ? keyboardHeight : 0,
+                      paddingBottom: Math.max(insets.bottom, 12),
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 12,
+                    },
+                  ]}
+                >
+                  <View style={styles.commentInputAvatarPlaceholder}>
+                    <Text style={styles.commentInputAvatarText}>Y</Text>
                   </View>
-                  <CommentInputOptimized
-                    postId={reel.id}
-                    visible={showComments}
-                    onCommentAdded={(newComment) => {
-                      // Optimistic update: add comment to list and increment count
-                      setComments(prev => [newComment, ...prev]); // Newest first
-                      setCommentCount(prev => prev + 1);
-                    }}
-                    inputStyle={styles.commentInput}
-                    sendButtonStyle={styles.commentSendBtn}
-                    sendButtonDisabledStyle={styles.commentSendBtnDisabled}
-                    sendButtonTextStyle={styles.commentSendText}
-                    sendButtonTextDisabledStyle={styles.commentSendTextDisabled}
-                    placeholder="Join the conversation..."
-                  />
+                  <View style={{ flex: 1, marginLeft: 8, flexDirection: 'row', alignItems: 'center' }}>
+                    <CommentInputOptimized
+                      postId={reel.id}
+                      visible={showComments}
+                      onCommentAdded={(newComment) => {
+                        // If we were replying to a comment, add it to the parent comment's replies
+                        if (replyingTo) {
+                          setReplyingTo(null);
+                          
+                          // Update the parent comment to reflect the new reply count and add to replies if expanded
+                          setComments(prev => prev.map(comment => {
+                            if (comment.id === replyingTo.commentId) {
+                              const updatedComment = {
+                                ...comment,
+                                replyCount: (comment.replyCount || 0) + 1
+                              };
+                              
+                              // If the parent comment is expanded, add the reply to its replies array
+                              if (expandedReplies[comment.id]) {
+                                const newReplies = comment.replies ? [newComment, ...comment.replies] : [newComment];
+                                updatedComment.replies = newReplies;
+                              }
+                              
+                              return updatedComment;
+                            }
+                            return comment;
+                          }));
+                        } else {
+                          // Regular comment - add to main list
+                          setComments(prev => [newComment, ...prev]); // Newest first
+                          setCommentCount(prev => prev + 1);
+                        }
+                      }}
+                      inputStyle={styles.commentInput}
+                      sendButtonStyle={styles.commentSendBtn}
+                      sendButtonDisabledStyle={styles.commentSendBtnDisabled}
+                      sendButtonTextStyle={styles.commentSendText}
+                      sendButtonTextDisabledStyle={styles.commentSendTextDisabled}
+                      placeholder="Join the conversation..."
+                      parentCommentId={replyingTo?.commentId}
+                      ref={commentInputRef}
+                    />
+                  </View>
                 </View>
+
               </View>
             </KeyboardAvoidingView>
           </Animated.View>
@@ -3159,6 +3744,16 @@ infoValue: {
     alignItems: 'center',
     marginLeft: 4,
   },
+  commentRepliesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  commentReplies: {
+    color: '#999',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   commentLikes: {
     color: '#fff',
     fontSize: 12,
@@ -3167,6 +3762,21 @@ infoValue: {
   commentLikeBtn: {
     padding: 4,
     marginLeft: 8,
+  },
+  
+  repliesContainer: {
+    marginLeft: 44, // Indent replies under the parent comment
+    marginTop: 8,
+    paddingLeft: 16,
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  
+  replyItem: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 8,
+    marginTop: 8,
+    paddingVertical: 8,
   },
   commentEmpty: {
     alignItems: 'center',
@@ -3193,6 +3803,85 @@ infoValue: {
     borderTopColor: 'rgba(255,255,255,0.1)',
     backgroundColor: '#0E0E0E', // Solid background so it stays visible
     // paddingBottom handled dynamically: keyboardHeight + 12 when open, Math.max(insets.bottom, 12) when closed
+  },
+  
+  // Reply Input Section
+  replyInputSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingTop: 12,
+    paddingHorizontal: 0,
+    backgroundColor: '#22212a',
+    borderRadius: 10,
+    marginTop: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  
+  replyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1b1a23',
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    width: '100%',
+  },
+  
+  replyHeaderText: {
+    color: '#FFD54A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  
+  replyInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1b1a23',
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    flex: 1,
+  },
+  
+  replyInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+    maxHeight: 100,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
+  },
+  
+  replyActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1b1a23',
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+  },
+  
+  replyButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 10,
+  },
+  
+  replyButtonText: {
+    color: '#FFD54A',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  replyButtonDisabled: {
+    color: '#666',
   },
   commentInputAvatar: {
     marginRight: 12,
@@ -3369,6 +4058,28 @@ infoValue: {
     shadowRadius: 8,
     elevation: 10,
   },
-
+  
+  startWatchingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD54A',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  startWatchingButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+    letterSpacing: 0.3,
+  },
 
 });

@@ -721,15 +721,19 @@ export default function HomeScreen() {
           const sorted = [...episodesResponse.data].sort(
             (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
           );
-          navigation.navigate('Reels', { targetVideoId: sorted[0]._id });
+          navigation.navigate('EpisodePlayer' as any, { 
+            targetVideoId: sorted[0]._id 
+          });
         }
       } else if (actualItem.contentType === 'reels' && actualItem.contentId) {
-        navigation.navigate('Reels', { targetVideoId: actualItem.contentId });
+        navigation.navigate('EpisodePlayer' as any, { 
+          targetVideoId: actualItem.contentId 
+        });
       } else {
-        navigation.navigate('Reels');
+        navigation.navigate('EpisodePlayer' as any);
       }
     } catch (error) {
-      navigation.navigate('Reels');
+      navigation.navigate('EpisodePlayer' as any);
     }
   };
 
@@ -737,20 +741,36 @@ export default function HomeScreen() {
     const targetVideoId = videoData.videoId?._id || videoData.videoId;
     if (!targetVideoId) return;
 
-    navigation.navigate('Reels', {
+    navigation.navigate('EpisodePlayer' as any, {
       targetVideoId: String(targetVideoId).trim(),
       resumeTime: videoData.currentTime || 0,
       progress: videoData.progress,
     });
   };
 
-  const handleVideoPress = (videoItem: { _id: string }) => {
+  const handleVideoPress = (videoItem: { _id: string; seasonId?: any }) => {
     if (!videoItem._id) return;
 
-    navigation.navigate('Reels', {
-      targetVideoId: String(videoItem._id).trim(),
-      resumeTime: 0,
-    });
+    // Check if this video is part of a webseries to load all episodes
+    const seasonId = videoItem.seasonId 
+      ? (typeof videoItem.seasonId === 'string' 
+          ? videoItem.seasonId 
+          : (videoItem.seasonId as any)._id)
+      : null;
+
+    if (seasonId) {
+      // Navigate to EpisodePlayer with the first episode of the webseries
+      navigation.navigate('EpisodePlayer' as any, {
+        targetVideoId: String(videoItem._id).trim(),
+        resumeTime: 0,
+      });
+    } else {
+      // For standalone videos/reels
+      navigation.navigate('EpisodePlayer' as any, {
+        targetVideoId: String(videoItem._id).trim(),
+        resumeTime: 0,
+      });
+    }
   };
 
   const handleMuteToggle = useCallback(() => {

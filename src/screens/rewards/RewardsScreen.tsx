@@ -411,20 +411,45 @@ const CoinsScreen = ({ navigation }: any) => {
           <Text style={styles.sectionTitle}>Recent Activity</Text>
 
           {loadingHistory ? (
-            <ActivityIndicator color="#FFC107" />
+            <View style={styles.historyLoadingContainer}>
+              <ActivityIndicator color="#FFC107" size="large" />
+              <Text style={styles.historyLoadingText}>Loading activity...</Text>
+            </View>
           ) : history.length === 0 ? (
-            <Text style={styles.empty}>No transactions yet</Text>
+            <View style={styles.emptyHistoryContainer}>
+              <Ionicons name="receipt-outline" size={48} color="#666" />
+              <Text style={styles.emptyHistoryText}>No transactions yet</Text>
+              <Text style={styles.emptyHistorySubtext}>
+                Start earning coins to see your activity here
+              </Text>
+            </View>
           ) : (
             history.map(h => (
-              <View key={h._id} style={styles.history}>
-                <View>
-                  <Text style={styles.historyTitle}>{getSourceName(h.source)}</Text>
-                  <Text style={styles.historyDesc}>{h.description}</Text>
-                  <Text style={{ color: '#999', fontSize: 11 }}>{formatDate(h.createdAt)}</Text>
+              <View key={h._id} style={styles.historyItem}>
+                <View style={styles.historyItemLeft}>
+                  <View style={[
+                    styles.historyIconContainer,
+                    h.type === 'earned' ? styles.historyIconEarned : styles.historyIconRedeemed
+                  ]}>
+                    <Ionicons 
+                      name={getSourceIcon(h.source, h.type)} 
+                      size={20} 
+                      color={h.type === 'earned' ? '#10B981' : '#EF4444'} 
+                    />
+                  </View>
+                  
+                  <View style={styles.historyItemContent}>
+                    <Text style={styles.historyItemTitle}>{getSourceName(h.source)}</Text>
+                    <Text style={styles.historyItemDescription}>{h.description}</Text>
+                    <Text style={styles.historyItemDate}>{formatDate(h.createdAt)}</Text>
+                  </View>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Ionicons name={getSourceIcon(h.source, h.type)} size={16} color="#FFC107" />
-                  <Text style={{ color: h.type === 'earned' ? '#10B981' : '#EF4444', fontWeight: '700' }}>
+
+                <View style={styles.historyItemRight}>
+                  <Text style={[
+                    styles.historyItemAmount,
+                    h.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed
+                  ]}>
                     {h.type === 'earned' ? '+' : '-'}{h.amount}
                   </Text>
                 </View>
@@ -525,9 +550,99 @@ const styles = StyleSheet.create({
   buyTitle: { fontSize: 16, fontWeight: '800', color: '#FFF', marginBottom: 4 },
   buySubtitle: { fontSize: 12, fontWeight: '600', color: '#999' },
 
-  history: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#252525', padding: 16, borderRadius: 14, marginBottom: 10 },
-  historyTitle: { color: '#FFF', fontWeight: '700', marginBottom: 3 },
-  historyDesc: { fontSize: 12, color: '#CCC', marginBottom: 4 },
-
-  empty: { color: '#999', textAlign: 'center', marginTop: 12 },
+  // Enhanced History Styles
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  historyItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  historyIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    backgroundColor: '#252525',
+  },
+  historyIconEarned: {
+    backgroundColor: '#10B98120',
+  },
+  historyIconRedeemed: {
+    backgroundColor: '#EF444420',
+  },
+  historyItemContent: {
+    flex: 1,
+  },
+  historyItemTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  historyItemDescription: {
+    fontSize: 13,
+    color: '#CCC',
+    marginBottom: 4,
+  },
+  historyItemDate: {
+    fontSize: 11,
+    color: '#999',
+  },
+  historyItemRight: {
+    alignItems: 'flex-end',
+  },
+  historyItemAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  historyAmountEarned: {
+    color: '#10B981',
+  },
+  historyAmountRedeemed: {
+    color: '#EF4444',
+  },
+  historyLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+  },
+  historyLoadingText: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 12,
+  },
+  emptyHistoryContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+  },
+  emptyHistoryText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyHistorySubtext: {
+    fontSize: 13,
+    color: '#999',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
 });

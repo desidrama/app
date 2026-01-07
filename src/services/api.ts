@@ -432,6 +432,32 @@ export interface CoinPurchaseHistoryResponse {
   }>;
 }
 
+// ========================================
+// COIN AD-SKIPPING API FUNCTIONS
+// ========================================
+
+export interface SkipAdWithCoinsResponse {
+  success: boolean;
+  data: {
+    coinsBalance: number;
+  };
+  message?: string;
+}
+
+export const skipAdWithCoins = async (amount: number): Promise<SkipAdWithCoinsResponse> => {
+  try {
+    const response = await api.post('/api/user/skip-ad', { amount });
+    return response.data;
+  } catch (error: any) {
+    console.error('Skip Ad With Coins Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
 // Create coin purchase order
 export const createCoinPurchaseOrder = async (
   params: CreateCoinPurchaseParams

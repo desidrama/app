@@ -144,11 +144,14 @@ export default function SearchScreen() {
     }
   }, [loadTrendingVideos, hasSearched, allVideos.length]);
 
+  // Real-time search with debounce - combining both branches
   useEffect(() => {
+    // Clear any existing timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
+    // If search query is empty, clear results immediately and restore categories
     if (!searchQuery.trim()) {
       setSearchResults([]);
       setHasSearched(false);
@@ -158,10 +161,12 @@ export default function SearchScreen() {
       return;
     }
 
+    // Debounce the search - wait 400ms after user stops typing
     searchTimeoutRef.current = setTimeout(() => {
       performSearch(searchQuery);
     }, 400);
 
+    // Cleanup function
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -170,6 +175,7 @@ export default function SearchScreen() {
   }, [searchQuery, performSearch, allVideos]);
 
   const handleSearch = () => {
+    // Clear timeout and search immediately when Enter is pressed
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -178,6 +184,7 @@ export default function SearchScreen() {
 
   const handleMostSearchedPress = (term: string) => {
     setSearchQuery(term);
+    // The useEffect will handle the search automatically
   };
 
   const handleVideoPress = (video: VideoType) => {
@@ -423,7 +430,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: '#0A0A0A',
   },
-
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
