@@ -22,6 +22,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import type { TabParamList } from '../../navigation/TabNavigator';
 import { Video, ResizeMode } from 'expo-av';
@@ -44,8 +45,16 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Updated dimensions to match screenshot exactly
 const HERO_HEIGHT = SCREEN_HEIGHT * 0.49;
 const HERO_WIDTH = SCREEN_WIDTH * 0.75;
-const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3.15;
-const CARD_HEIGHT = 240;
+
+// Card dimensions: 2:3 aspect ratio, showing 3 cards at a time
+// Screen width - padding (16px each side = 32px) - gaps (12px * 2 = 24px) = available width
+// Card width = available width / 3
+const HORIZONTAL_PADDING = 32; // 16px on each side
+const CARD_GAP = 12;
+const AVAILABLE_WIDTH = SCREEN_WIDTH - HORIZONTAL_PADDING - (CARD_GAP * 2); // Gap between 3 cards = 2 gaps
+const CARD_WIDTH = AVAILABLE_WIDTH / 3;
+const CARD_IMAGE_HEIGHT = CARD_WIDTH * 1.5; // 2:3 aspect ratio (width:height)
+const CARD_HEIGHT = CARD_IMAGE_HEIGHT + 60; // Image height + text content space
 
 type CarouselBannerItem = {
   id: string;
@@ -119,7 +128,7 @@ function CarouselVideoPlayer({ videoUrl, style, isMuted, isActive }: { videoUrl:
       source={{ uri: videoUrl }}
       style={style}
       resizeMode={ResizeMode.COVER}
-      shouldPlay={false}
+      shouldPlay={isActive}
       isLooping
       isMuted={isMuted}
       useNativeControls={false}
@@ -141,6 +150,7 @@ const extractSeriesName = (title: string): string => {
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const rootNavigation = useNavigation<NativeStackNavigationProp<any>>();
   const dispatch = useDispatch();
   const { colors } = useTheme();
   const { continueWatching, continueWatchingLoading } = useSelector(
@@ -162,20 +172,13 @@ export default function HomeScreen() {
 
   const scrollX = useRef(new Animated.Value(0)).current;
   const carouselRef = useRef<FlatList<CarouselBannerItem>>(null);
+
   const fetchVideoUrlForCarouselItem = useCallback(async (item: CarouselItem): Promise<string | null> => {
     try {
       const possibleVideoFields = [
-        'videoUrl',
-        'video',
-        'trailerUrl',
-        'trailer',
-        'previewUrl',
-        'preview',
-        'url',
-        'videoPath',
-        'path',
-        'videoLink',
-        'link'
+        'videoUrl', 'video', 'trailerUrl', 'trailer', 
+        'previewUrl', 'preview', 'url', 'videoPath', 
+        'path', 'videoLink', 'link'
       ];
 
       for (const field of possibleVideoFields) {
@@ -208,7 +211,7 @@ export default function HomeScreen() {
             }
             if (firstEpisode.variants[0]?.url) return firstEpisode.variants[0].url;
           }
-
+          
           for (const field of possibleVideoFields) {
             if (firstEpisode[field]) {
               let videoUrl = firstEpisode[field];
@@ -233,7 +236,7 @@ export default function HomeScreen() {
               }
               if (videoResponse.data.variants[0]?.url) return videoResponse.data.variants[0].url;
             }
-
+            
             for (const field of possibleVideoFields) {
               if (videoResponse.data[field]) {
                 let videoUrl = videoResponse.data[field];
@@ -294,6 +297,7 @@ export default function HomeScreen() {
       try {
         setCarouselLoading(true);
         setCarouselError(null);
+        
         const items = await carouselService.getActiveCarouselItems();
 
         const transformedPromises = items
@@ -367,6 +371,7 @@ export default function HomeScreen() {
       clearTimeout(autoPlayTimerRef.current);
       autoPlayTimerRef.current = null;
     }
+
     setActiveVideoIndex(null);
 
     if (!carouselItems || carouselItems.length === 0) {
@@ -377,7 +382,6 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = carouselIndex % originalLength;
       const currentItem = carouselItems[actualIndex];
-
       if (currentItem && currentItem.videoUrl) {
         setActiveVideoIndex(carouselIndex);
       }
@@ -451,8 +455,8 @@ export default function HomeScreen() {
       }
     };
     load();
-    return () => {
-      isMounted = false;
+    return () => { 
+      isMounted = false; 
     };
   }, [dispatch]);
 
@@ -466,7 +470,7 @@ export default function HomeScreen() {
   // Enhanced infinite scroll with smooth transitions
   const onCarouselScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (carouselItems.length === 0) return;
-
+    
     const originalLength = carouselItems.length;
     const index = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
     setCarouselIndex(index);
@@ -496,10 +500,10 @@ export default function HomeScreen() {
       const originalLength = carouselItems.length;
       const actualIndex = displayIndex % originalLength;
       const actualItem = carouselItems[actualIndex];
-
+      
       if (actualItem.contentType === 'webseries' && actualItem.contentId) {
         const episodesResponse = await videoService.getEpisodes(actualItem.contentId);
-          if (episodesResponse.success && episodesResponse.data?.length > 0) {
+        if (episodesResponse.success && episodesResponse.data?.length > 0) {
           const sorted = [...episodesResponse.data].sort(
             (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
           );
@@ -512,44 +516,26 @@ export default function HomeScreen() {
       }
       navigation.navigate('Reels');
     } catch (error) {
-      navigation.navigate('EpisodePlayer' as any);
+      navigation.navigate('Reels');
     }
   };
 
   const handleContinueWatchingPress = (item: any) => {
     const targetVideoId = item.videoId?._id || item.videoId;
     if (!targetVideoId) return;
-
-    navigation.navigate('EpisodePlayer' as any, {
+    navigation.navigate('Reels', {
       targetVideoId: String(targetVideoId).trim(),
       resumeTime: item.currentTime || 0,
       progress: item.progress,
     });
   };
 
-  const handleVideoPress = (videoItem: { _id: string; seasonId?: any }) => {
+  const handleVideoPress = (videoItem: { _id: string }) => {
     if (!videoItem._id) return;
-
-    // Check if this video is part of a webseries to load all episodes
-    const seasonId = videoItem.seasonId 
-      ? (typeof videoItem.seasonId === 'string' 
-          ? videoItem.seasonId 
-          : (videoItem.seasonId as any)._id)
-      : null;
-
-    if (seasonId) {
-      // Navigate to EpisodePlayer with the first episode of the webseries
-      navigation.navigate('EpisodePlayer' as any, {
-        targetVideoId: String(videoItem._id).trim(),
-        resumeTime: 0,
-      });
-    } else {
-      // For standalone videos/reels
-      navigation.navigate('EpisodePlayer' as any, {
-        targetVideoId: String(videoItem._id).trim(),
-        resumeTime: 0,
-      });
-    }
+    navigation.navigate('Reels', {
+      targetVideoId: String(videoItem._id).trim(),
+      resumeTime: 0,
+    });
   };
 
   const handleMuteToggle = useCallback(() => {
@@ -595,7 +581,10 @@ export default function HomeScreen() {
               resizeMode="contain"
             />
             <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.searchButton}>
+              <TouchableOpacity 
+                style={styles.searchButton}
+                onPress={() => rootNavigation.navigate('Search' as never)}
+              >
                 <Ionicons name="search" size={26} color="#FFCB00" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.coinButton}>
@@ -809,120 +798,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Hindi Bullet */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Hindi Bullet</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.cardRow}
-              >
-                {latestTrendingData.slice(0, 8).map((item, i) => (
-                  <TouchableOpacity
-                    key={item._id || `hindi-${i}`}
-                    onPress={() => handleVideoPress(item)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.contentCardWrapper}>
-                      <View style={styles.imageContainer}>
-                        <Image
-                          source={{ uri: item.imageUrl }}
-                          style={styles.contentCardImage}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View style={styles.textContent}>
-                        <Text style={styles.contentCardTitle} numberOfLines={1}>
-                          {extractSeriesName(item.title)}
-                        </Text>
-                        {(item.genres || item.languages) && (
-                          <Text style={styles.contentCardGenre} numberOfLines={1}>
-                            {item.genres?.[0]}, {item.languages}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Bengali Bullet */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Bengali Bullet</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.cardRow}
-              >
-                {latestTrendingData.slice(0, 8).map((item, i) => (
-                  <TouchableOpacity
-                    key={item._id || `bengali-${i}`}
-                    onPress={() => handleVideoPress(item)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.contentCardWrapper}>
-                      <View style={styles.imageContainer}>
-                        <Image
-                          source={{ uri: item.imageUrl }}
-                          style={styles.contentCardImage}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View style={styles.textContent}>
-                        <Text style={styles.contentCardTitle} numberOfLines={1}>
-                          {extractSeriesName(item.title)}
-                        </Text>
-                        {(item.genres || item.languages) && (
-                          <Text style={styles.contentCardGenre} numberOfLines={1}>
-                            {item.genres?.[0]}, {item.languages}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Kannada Bullet */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Kannada Bullet</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.cardRow}
-              >
-                {latestTrendingData.slice(0, 8).map((item, i) => (
-                  <TouchableOpacity
-                    key={item._id || `kannada-${i}`}
-                    onPress={() => handleVideoPress(item)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.contentCardWrapper}>
-                      <View style={styles.imageContainer}>
-                        <Image
-                          source={{ uri: item.imageUrl }}
-                          style={styles.contentCardImage}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View style={styles.textContent}>
-                        <Text style={styles.contentCardTitle} numberOfLines={1}>
-                          {item.title}
-                        </Text>
-                        {(item.genres || item.languages) && (
-                          <Text style={styles.contentCardGenre} numberOfLines={1}>
-                            {item.genres?.[0]}, {item.languages}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
             <View style={{ height: 100 }} />
           </ScrollView>
         </View>
@@ -995,7 +870,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   content: {
-    paddingBottom: 20,
+    flex: 1,
   },
   heroSection: {
     marginTop: -6,
@@ -1119,27 +994,29 @@ const styles = StyleSheet.create({
   },
   continueWatchingWrapper: {
     marginTop: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingTop: 16,
     paddingBottom: 16,
     marginBottom: 8,
-    marginHorizontal: 16,
+    marginHorizontal: 8,
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
   },
   section: {
     marginTop: 20,
-    paddingLeft: 16,
+    paddingLeft: 0,
   },
   sectionTitle: {
     fontSize: 21,
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 14,
+    paddingLeft: 16,
   },
   cardRow: {
-    gap: 12,
+    gap: CARD_GAP,
     paddingRight: 16,
+    paddingLeft: 16,
   },
   contentCardWrapper: {
     width: CARD_WIDTH,
@@ -1149,7 +1026,7 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    height: 200,
+    height: CARD_IMAGE_HEIGHT,
     backgroundColor: '#2A2A2A',
     borderRadius: 12,
     overflow: 'hidden',

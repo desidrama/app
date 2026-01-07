@@ -16,10 +16,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Enhanced card dimensions for better content display
-const CARD_WIDTH = 140;
-const CARD_IMAGE_HEIGHT = 180;
-const CARD_HEIGHT = 220; // Increased for better content display
+// Card dimensions: 2:3 aspect ratio, showing 3 cards at a time
+// Screen width - padding (16px each side = 32px) - gaps (12px * 2 = 24px) = available width
+// Card width = available width / 3
+const HORIZONTAL_PADDING = 32; // 16px on each side
+const CARD_GAP = 12;
+const AVAILABLE_WIDTH = SCREEN_WIDTH - HORIZONTAL_PADDING - (CARD_GAP * 2); // Gap between 3 cards = 2 gaps
+const CARD_WIDTH = AVAILABLE_WIDTH / 3;
+const CARD_IMAGE_HEIGHT = CARD_WIDTH * 1.5; // 2:3 aspect ratio (width:height)
+const CARD_HEIGHT = CARD_IMAGE_HEIGHT + 60; // Image height + text content space
 
 interface ContinueWatchingItem {
   _id?: string;
@@ -101,41 +106,56 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
           },
         ]}
       >
-        <Image
-          source={{ uri: thumbnail }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-
-        {/* Episode Badge - Centered at bottom middle of image */}
-        {episodeNumber && (
-          <Text style={styles.episodeBadgeText}>
-            E{episodeNumber}
-          </Text>
-        )}
-        
-        {/* Progress Bar - At bottom of image */}
-        <View style={styles.progressBarContainer}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${Math.min(progress * 100, 100)}%` },
-            ]}
+        {/* Image Container */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ uri: thumbnail }}
+            style={styles.thumbnail}
+            resizeMode="cover"
           />
+          {/* Episode Badge - Centered at bottom middle of image */}
+          <Text style={styles.episodeBadgeText}>
+            S{seasonNumber} • E{episodeNumber}
+          </Text>
+          {/* Progress Bar - At bottom of image */}
+          <View style={styles.progressBarContainer}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.min(progress * 100, 100)}%` },
+              ]}
+            />
+          </View>
         </View>
 
         {/* Text Content Section - BELOW the image */}
         <View style={styles.textContent}>
           {/* Title */}
           <Text style={styles.cardTitle} numberOfLines={2}>
-            {videoData.title || 'Untitled'}
+            {title}
           </Text>
 
-          {/* Genre */}
-          {videoData.genre && (
-            <Text style={styles.metaText} numberOfLines={1}>
-              {videoData.genre}
-            </Text>
+          {/* Genre and Language */}
+          {(videoData.genres || videoData.genre || videoData.languages) && (
+            <View style={styles.metaInfo}>
+              {(videoData.genres || videoData.genre) && (
+                <>
+                  <Text style={styles.metaText} numberOfLines={1}>
+                    {Array.isArray(videoData.genres) 
+                      ? videoData.genres[0] 
+                      : videoData.genre}
+                  </Text>
+                  {videoData.languages && (
+                    <Text style={[styles.metaText, { marginHorizontal: 4 }]}>•</Text>
+                  )}
+                </>
+              )}
+              {videoData.languages && (
+                <Text style={styles.metaText} numberOfLines={1}>
+                  {videoData.languages}
+                </Text>
+              )}
+            </View>
           )}
         </View>
       </Animated.View>
@@ -194,7 +214,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 12,
-    paddingLeft: 0,
+    paddingLeft: 8,
   },
   loadingContainer: {
     height: CARD_HEIGHT + 20,
@@ -202,22 +222,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scrollContainer: {
-    gap: 10,
+    gap: CARD_GAP,
     paddingRight: 16,
-    paddingLeft: 0,
+    paddingLeft: 8,
   },
   cardWrapper: {
     marginRight: 0,
   },
   card: {
-    width: 140,
+    width: CARD_WIDTH,
     borderRadius: 12,
     backgroundColor: 'transparent',
     flexDirection: 'column',
   },
   imageContainer: {
     width: '100%',
-    height: 180,
+    height: CARD_IMAGE_HEIGHT,
     position: 'relative',
     borderRadius: 12,
     overflow: 'hidden',
