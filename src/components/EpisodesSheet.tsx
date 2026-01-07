@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { rp, rf, getSpacing, getBorderRadius, getDeviceCategory, SCREEN_HEIGHT, SCREEN_WIDTH } from '../utils/responsive';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 
 
 // Type for a single episode
@@ -65,8 +66,21 @@ const EpisodesSheet: React.FC<Props> = ({
   onSelectEpisode,
   totalEpisodesFallback = 18,
 }) => {
-  const sheetY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  
+  const sheetY = useRef(new Animated.Value(dimensions.height)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  
+  const spacing = getSpacing();
+  const borderRadius = getBorderRadius();
+  const deviceCategory = getDeviceCategory();
 
   // Local active range state (if caller doesn't control it)
   const activeRangeId = activeRangeProp ?? (initialActiveRangeId ?? ranges[0].id);
@@ -76,7 +90,7 @@ const EpisodesSheet: React.FC<Props> = ({
     if (visible) {
       Animated.parallel([
         Animated.timing(sheetY, {
-          toValue: SCREEN_HEIGHT * 0.2,
+          toValue: dimensions.height * (deviceCategory === 'mobile' ? 0.2 : deviceCategory === 'tablet' ? 0.25 : 0.3),
           duration: 260,
           useNativeDriver: true,
         }),
@@ -89,7 +103,7 @@ const EpisodesSheet: React.FC<Props> = ({
     } else {
       Animated.parallel([
         Animated.timing(sheetY, {
-          toValue: SCREEN_HEIGHT,
+          toValue: dimensions.height,
           duration: 240,
           useNativeDriver: true,
         }),
@@ -100,7 +114,7 @@ const EpisodesSheet: React.FC<Props> = ({
         }),
       ]).start();
     }
-  }, [visible, sheetY, backdropOpacity]);
+  }, [visible, sheetY, backdropOpacity, dimensions.height, deviceCategory]);
 
   // Create a numeric array from active range when episodes not available
   const mockEpisodeNumbers = useMemo(() => {
@@ -108,6 +122,9 @@ const EpisodesSheet: React.FC<Props> = ({
     const arr = Array.from({ length: r.end - r.start + 1 }, (_, i) => r.start + i);
     return arr;
   }, [activeRangeId, ranges]);
+
+  // Get responsive styles (recreate on dimension changes)
+  const styles = useMemo(() => createEpisodesSheetStyles(), [dimensions.width, dimensions.height]);
 
   // Helpers for closing and selecting episodes
   const handleBackdropPress = () => {
@@ -198,7 +215,17 @@ const EpisodesSheet: React.FC<Props> = ({
             ) : (
               // mock numbers for placeholder
               mockEpisodeNumbers.map((n) => (
-                <TouchableOpacity key={n} style={styles.epChip} onPress={() => handleEpisodePress(n)}>
+                <TouchableOpacity 
+                  key={n} 
+                  style={styles.epChip} 
+                  onPress={() => handleEpisodePress(n)}
+                  hitSlop={{
+                    top: spacing.xs,
+                    bottom: spacing.xs,
+                    left: spacing.xs,
+                    right: spacing.xs,
+                  }}
+                >
                   <Text style={styles.epText}>{n}</Text>
                 </TouchableOpacity>
               ))
@@ -215,10 +242,15 @@ export default EpisodesSheet;
 /* ------------------------
    Local styles (sheet)
    ------------------------ */
-const EPISODES_PER_ROW = 6;
-const EPISODE_CHIP_SIZE = Math.floor((SCREEN_WIDTH - 40 - (EPISODES_PER_ROW - 1) * 10) / EPISODES_PER_ROW);
+// Responsive styles generator
+const createEpisodesSheetStyles = () => {
+  const spacing = getSpacing();
+  const borderRadius = getBorderRadius();
+  const deviceCategory = getDeviceCategory();
+  const EPISODES_PER_ROW = deviceCategory === 'mobile' ? 6 : deviceCategory === 'tablet' ? 8 : 10;
+  const EPISODE_CHIP_SIZE = Math.floor((SCREEN_WIDTH - rp(32, 40, 48) - (EPISODES_PER_ROW - 1) * rp(8, 10, 12)) / EPISODES_PER_ROW);
 
-const styles = StyleSheet.create({
+  return StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -228,13 +260,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: SCREEN_HEIGHT * 0.8,
+    height: SCREEN_HEIGHT * (deviceCategory === 'mobile' ? 0.8 : deviceCategory === 'tablet' ? 0.75 : 0.70),
     backgroundColor: '#120606',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    // ensure sheet is above nav and other UI
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingHorizontal: rp(16, 20, 24),
+    paddingTop: spacing.md,
     zIndex: 999,
     elevation: Platform.select({ android: 30, ios: 999 }),
   },
@@ -242,22 +273,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   sheetTitle: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: rf(20, 24, 22),
     fontWeight: '800',
   },
   sheetCloseBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.md,
     backgroundColor: 'transparent',
+    minHeight: getTouchTargetSize(),
+    minWidth: getTouchTargetSize(),
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sheetCloseText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: rf(13, 15, 14),
     fontWeight: '700',
   },
   sheetContent: {
@@ -266,17 +301,18 @@ const styles = StyleSheet.create({
 
   rangeRow: {
     flexDirection: 'row',
-    marginTop: 6,
-    marginBottom: 12,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
   },
   rangeChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: rp(12, 14, 16),
+    paddingVertical: spacing.xs,
     borderRadius: 999,
     backgroundColor: '#1b1419',
     borderWidth: 1,
     borderColor: '#2c222a',
-    marginRight: 10,
+    marginRight: spacing.sm,
+    minHeight: getTouchTargetSize(),
   },
   rangeChipActive: {
     backgroundColor: '#FFD54A',
@@ -285,7 +321,7 @@ const styles = StyleSheet.create({
   rangeChipText: {
     color: '#f5f5f5',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: rf(13, 15, 14),
   },
   rangeChipTextActive: {
     color: '#000',
@@ -294,17 +330,19 @@ const styles = StyleSheet.create({
   episodesGridWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   epChip: {
     width: EPISODE_CHIP_SIZE,
     height: EPISODE_CHIP_SIZE,
-    borderRadius: 14,
+    borderRadius: borderRadius.lg,
     backgroundColor: '#252027',
-    marginRight: 8,
-    marginBottom: 12,
+    marginRight: spacing.xs,
+    marginBottom: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: getTouchTargetSize(),
+    minHeight: getTouchTargetSize(),
   },
   epChipLocked: {
     backgroundColor: '#18141a',
@@ -312,7 +350,7 @@ const styles = StyleSheet.create({
   epText: {
     color: '#fff',
     fontWeight: '800',
-    fontSize: 14,
+    fontSize: rf(13, 15, 14),
   },
   epTextLocked: {
     color: '#6c6c73',
@@ -320,12 +358,16 @@ const styles = StyleSheet.create({
 
   loadingWrap: {
     width: '100%',
-    paddingVertical: 40,
+    paddingVertical: rp(32, 40, 48),
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
     color: '#fff',
-    marginTop: 10,
+    marginTop: spacing.sm,
+    fontSize: rf(13, 15, 14),
   },
-});
+  });
+};
+
+// Styles are now generated dynamically in the component using useMemo

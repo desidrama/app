@@ -78,7 +78,21 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  const ITEM_HEIGHT = SCREEN_HEIGHT;
+  // HARD RULE: Each reel must occupy exactly one full screen height
+  // Formula: screenHeight - safeAreaTop - safeAreaBottom
+  // This ensures NO overlap, NO next reel visible, exact snap-to behavior
+  const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
+
+
+// =========================
+// REDUX COINS (FIX 1)
+// =========================
+const dispatch = useDispatch();
+const user = useSelector((state: RootState) => state.user.profile);
+const SKIP_COST = 30;
+const coins = user?.coinsBalance ?? user?.coins ?? 0;
+
+const coinAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     StatusBar.setHidden(true);
@@ -665,6 +679,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         <ReelItem
           key={item.id}
           reel={item}
+          containerHeight={ITEM_HEIGHT}
           isActive={index === currentIndex}
           initialTime={initialTime}
           screenFocused={isScreenFocused}
@@ -738,12 +753,17 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     );
   }
 
+  // Android StatusBar height for manual offset (REQUIRED for Android)
+  const ANDROID_TOP_OFFSET = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
+
   return (
     <View style={styles.safeArea}>
       <View style={[backButtonStyles.topHeader, {
-        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
-        left: insets.left + 16,
-        right: insets.right + 16,
+        top: Platform.OS === 'android'
+          ? ANDROID_TOP_OFFSET + 12
+          : insets.top + 8,
+        left: 16,
+        right: 16,
       }]}>
         <TouchableOpacity
           onPress={handleBackPress}
@@ -773,6 +793,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         snapToInterval={ITEM_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
+        disableIntervalMomentum={true}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
@@ -797,6 +818,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
             <ActivityIndicator size="small" color={colors.yellow} />
           </View>
         ) : null}
+        contentContainerStyle={{}}
       />
 
       {/* 🔒 GLOBAL Persistent Overlay */}

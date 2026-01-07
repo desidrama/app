@@ -101,51 +101,41 @@ const ContinueWatchingCard = ({ item, onPress }: { item: ContinueWatchingItem; o
           },
         ]}
       >
-        {/* Image Container */}
-        <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: thumbnail }}
-            style={styles.thumbnail}
-            resizeMode="cover"
-          />
-          {/* Episode Badge - Centered at bottom middle of image */}
+        <Image
+          source={{ uri: thumbnail }}
+          style={styles.thumbnail}
+          resizeMode="cover"
+        />
+
+        {/* Episode Badge - Centered at bottom middle of image */}
+        {episodeNumber && (
           <Text style={styles.episodeBadgeText}>
-            S{seasonNumber} • E{episodeNumber}
+            E{episodeNumber}
           </Text>
-          {/* Progress Bar - At bottom of image */}
-          <View style={styles.progressBarContainer}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${Math.min(progress * 100, 100)}%` },
-              ]}
-            />
-          </View>
+        )}
+        
+        {/* Progress Bar - At bottom of image */}
+        <View style={styles.progressBarContainer}>
+          <View
+            style={[
+              styles.progressFill,
+              { width: `${Math.min(progress * 100, 100)}%` },
+            ]}
+          />
         </View>
 
         {/* Text Content Section - BELOW the image */}
         <View style={styles.textContent}>
           {/* Title */}
           <Text style={styles.cardTitle} numberOfLines={2}>
-            {title}
+            {videoData.title || 'Untitled'}
           </Text>
 
-          {/* Genre and Language */}
-          {(videoData.genres || videoData.genre || videoData.languages) && (
-            <View style={styles.metaInfo}>
-              {(videoData.genres || videoData.genre) && (
-                <Text style={styles.metaText} numberOfLines={1}>
-                  {Array.isArray(videoData.genres) 
-                    ? videoData.genres[0] 
-                    : videoData.genre}
-                </Text>
-              )}
-              {videoData.languages && (
-                <Text style={styles.metaText} numberOfLines={1}>
-                  {videoData.languages}
-                </Text>
-              )}
-            </View>
+          {/* Genre */}
+          {videoData.genre && (
+            <Text style={styles.metaText} numberOfLines={1}>
+              {videoData.genre}
+            </Text>
           )}
         </View>
       </Animated.View>
@@ -197,13 +187,14 @@ export default function ContinueWatching({ items, loading, onItemPress }: Contin
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginBottom: 12,
+    marginBottom: 0,
   },
   sectionTitle: {
     fontSize: 21,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 16,
+    marginBottom: 12,
+    paddingLeft: 0,
   },
   loadingContainer: {
     height: CARD_HEIGHT + 20,
@@ -213,34 +204,33 @@ const styles = StyleSheet.create({
   scrollContainer: {
     gap: 10,
     paddingRight: 16,
+    paddingLeft: 0,
   },
   cardWrapper: {
     marginRight: 0,
   },
   card: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    width: 140,
     borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'transparent',
     flexDirection: 'column',
   },
   imageContainer: {
     width: '100%',
-    height: CARD_IMAGE_HEIGHT,
+    height: 180,
     position: 'relative',
     borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: '#1A1A1A',
   },
   thumbnail: {
     width: '100%',
     height: '100%',
   },
   textContent: {
-    flex: 1,
-    padding: 10,
-    justifyContent: 'flex-start',
-    gap: 4,
+    paddingHorizontal: 0,
+    paddingTop: 6,
+    paddingBottom: 0,
   },
   progressBarContainer: {
     position: 'absolute',
@@ -269,19 +259,18 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: 2,
-    lineHeight: 16,
+    marginBottom: 3,
   },
   metaInfo: {
-    flexDirection: 'column',
-    gap: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   metaText: {
     fontSize: 10,
     fontWeight: '400',
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255, 255, 255, 0.65)',
   },
 });

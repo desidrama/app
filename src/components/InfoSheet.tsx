@@ -1,5 +1,5 @@
 // src/screens/home/components/InfoSheet.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   TouchableOpacity,
@@ -15,8 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../screens/home/styles/ReelPlayerStyles';
 import { Video as VideoType } from '../types';
+import { rp, rf, getSpacing, getBorderRadius, getDeviceCategory, SCREEN_HEIGHT, SCREEN_WIDTH } from '../utils/responsive';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 
 type Reel = {
   id: string;
@@ -39,7 +40,16 @@ const InfoSheet: React.FC<{
   onLike: () => void;
 }> = ({ visible, onClose, reel, seasonEpisodes, loadingEpisodes, onPressEpisode, onLike }) => {
   const insets = useSafeAreaInsets();
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  
+  const slideAnim = useRef(new Animated.Value(dimensions.height)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -51,7 +61,7 @@ const InfoSheet: React.FC<{
       fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'InfoSheet.tsx:useEffect',message:'InfoSheet opening - starting animation',data:{reelId:reel.id,screenHeight:SCREEN_HEIGHT},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet-animation'})}).catch(()=>{});
       // #endregion
       // Reset animations to initial state before animating
-      slideAnim.setValue(SCREEN_HEIGHT);
+      slideAnim.setValue(dimensions.height);
       opacityAnim.setValue(0);
       Animated.parallel([
         Animated.timing(slideAnim, {
@@ -73,7 +83,7 @@ const InfoSheet: React.FC<{
     } else {
       Animated.parallel([
         Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
+          toValue: dimensions.height,
           duration: 250,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
@@ -85,7 +95,7 @@ const InfoSheet: React.FC<{
         }),
       ]).start();
     }
-  }, [visible, slideAnim, opacityAnim, reel.id]);
+  }, [visible, slideAnim, opacityAnim, reel.id, dimensions.height]);
 
   // #region agent log
   useEffect(() => {

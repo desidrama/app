@@ -196,6 +196,9 @@ export const CommentInputOptimized = React.forwardRef<CommentInputOptimizedHandl
     if (error) setError(null);
   }, [error]);
 
+  const spacing = getSpacing();
+  const touchTarget = getTouchTargetSize();
+
   return (
     <>
       <TextInput
@@ -204,7 +207,14 @@ export const CommentInputOptimized = React.forwardRef<CommentInputOptimizedHandl
         onChangeText={handleTextChange}
         placeholder={placeholder}
         placeholderTextColor="#888"
-        style={inputStyle}
+        style={[
+          inputStyle,
+          {
+            fontSize: rf(13, 15, 14),
+            paddingVertical: spacing.xs,
+            minHeight: touchTarget,
+          },
+        ]}
         multiline
         maxLength={2200}
         blurOnSubmit={false}
@@ -215,13 +225,30 @@ export const CommentInputOptimized = React.forwardRef<CommentInputOptimizedHandl
       <TouchableOpacity
         onPress={handleSubmit}
         disabled={isButtonDisabled}
-        style={buttonStyles}
+        style={[
+          buttonStyles,
+          {
+            minHeight: touchTarget,
+            minWidth: touchTarget,
+          },
+        ]}
         activeOpacity={0.7}
+        hitSlop={{
+          top: spacing.xs,
+          bottom: spacing.xs,
+          left: spacing.xs,
+          right: spacing.xs,
+        }}
       >
         {isSubmitting ? (
           <ActivityIndicator size="small" color="#fff" />
         ) : (
-          <Text style={buttonTextStyles}>Post</Text>
+          <Text style={[
+            buttonTextStyles,
+            {
+              fontSize: rf(13, 15, 14),
+            },
+          ]}>Post</Text>
         )}
       </TouchableOpacity>
     </>
