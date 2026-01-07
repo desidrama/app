@@ -1,4 +1,3 @@
-// FILE: src/screens/rewards/CoinsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -10,6 +9,8 @@ import {
   Platform,
   StatusBar,
   RefreshControl,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
@@ -19,26 +20,13 @@ import { setUser } from '../../redux/slices/userSlice';
 import { getUserProfile, getCoinHistory, claimDailyCheckIn } from '../../services/api';
 import { getToken } from '../../utils/storage';
 import { CoinTransaction } from '../../types';
-import { Alert } from 'react-native';
 import PullToRefreshIndicator from '../../components/PullToRefreshIndicator';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme } from '../../context/ThemeContext';
 
-type DailyReward = {
-  day: number;
-  coins: number;
-};
+const TAB_BAR_SAFE_PADDING = 140;
 
-type Mission = {
-  id: string;
-  title: string;
-  subtitle: string;
-  coins: number;
-  cta: string;
-  iconType: 'instagram' | 'youtube' | 'x' | 'game' | 'ad';
-};
-
-const DAILY_REWARDS: DailyReward[] = [
+const DAILY_REWARDS = [
   { day: 1, coins: 1 },
   { day: 2, coins: 1 },
   { day: 3, coins: 1 },
@@ -48,187 +36,145 @@ const DAILY_REWARDS: DailyReward[] = [
   { day: 7, coins: 1 },
 ];
 
-const MISSIONS: Mission[] = [
-  {
-    id: 'insta1',
-    title: 'Instagram',
-    subtitle: '5 Coins',
-    coins: 5,
-    cta: 'Follow',
-    iconType: 'instagram',
-  },
-  {
-    id: 'yt',
-    title: 'Youtube',
-    subtitle: '5 Coins',
-    coins: 5,
-    cta: 'Subscribe',
-    iconType: 'youtube',
-  },
-  {
-    id: 'insta2',
-    title: 'Twitter',
-    subtitle: '5 Coins',
-    coins: 5,
-    cta: 'Follow',
-    iconType: 'x',
-  },
-  {
-    id: 'game',
-    title: 'Clash Royale',
-    subtitle: '5 Coins',
-    coins: 5,
-    cta: 'Login',
-    iconType: 'game',
-  },
+const MISSIONS = [
+  { id: 'insta1', title: 'Instagram', coins: 5, cta: 'Follow', icon: 'instagram', color: '#E4405F' },
+  { id: 'yt', title: 'Youtube', coins: 5, cta: 'Subscribe', icon: 'youtube-play', color: '#FF0000' },
+  { id: 'tw', title: 'Twitter', coins: 5, cta: 'Follow', icon: 'x-twitter', color: '#000', fa5: true },
+  { id: 'game', title: 'Clash Royale', coins: 5, cta: 'Login', icon: 'gamepad', color: '#3B82F6', fa5: true },
 ];
 
-const TAB_BAR_SAFE_PADDING = 140; // ensure content visible above tab bar / home indicator
-
-const CoinsScreen: React.FC<any> = ({ navigation }) => {
+const CoinsScreen = ({ navigation }: any) => {
   const dispatch = useDispatch();
   const { colors } = useTheme();
-  const user = useSelector((state: RootState) => state.user.profile);
-  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
+
+  const user = useSelector((s: RootState) => s.user.profile);
+  const isAuthenticated = useSelector((s: RootState) => s.auth.isAuthenticated);
+
+  const coins = user?.coinsBalance ?? user?.coins ?? 0;
+
   const [selectedDay, setSelectedDay] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [coinHistory, setCoinHistory] = useState<CoinTransaction[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [claiming, setClaiming] = useState(false);
   const [hasClaimedToday, setHasClaimedToday] = useState(false);
-  const [currentCheckInDay, setCurrentCheckInDay] = useState<number | undefined>(undefined);
+  const [currentDay, setCurrentDay] = useState<number | undefined>();
+  const [claiming, setClaiming] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Get coins from user profile (coinsBalance from backend or coins from frontend)
-  const userCoins = user?.coinsBalance ?? user?.coins ?? 0;
+  const [history, setHistory] = useState<CoinTransaction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Fetch user profile to get latest coins
-  const fetchUserCoins = useCallback(async () => {
+  /* ---------------- USER ---------------- */
+  const fetchUser = useCallback(async () => {
     const token = await getToken();
-    
-    if (!isAuthenticated || !token) {
-      return;
-    }
+    if (!token || !isAuthenticated) return;
 
     try {
       setLoading(true);
-      const response = await getUserProfile();
-      if (response.success && response.data) {
-        dispatch(setUser(response.data));
-        
+      const res = await getUserProfile();
+      if (res?.success && res.data) {
+        dispatch(setUser(res.data));
+
         // Check if user has claimed today
-        const userData = response.data;
-        if (userData.lastDailyCheckInDate) {
-          const lastCheckIn = new Date(userData.lastDailyCheckInDate);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          lastCheckIn.setHours(0, 0, 0, 0);
-          setHasClaimedToday(lastCheckIn.getTime() === today.getTime());
-          
-          // Update selected day based on current check-in day
-          if (userData.currentCheckInDay) {
-            setCurrentCheckInDay(userData.currentCheckInDay);
-            setSelectedDay(userData.currentCheckInDay);
-          }
-        } else {
-          setHasClaimedToday(false);
-          setCurrentCheckInDay(undefined);
-        }
+        const lastCheckInDate = res.data.lastDailyCheckInDate
+          ? new Date(res.data.lastDailyCheckInDate)
+          : null;
+
+        const today = new Date();
+        const isSameDay = lastCheckInDate &&
+          lastCheckInDate.getDate() === today.getDate() &&
+          lastCheckInDate.getMonth() === today.getMonth() &&
+          lastCheckInDate.getFullYear() === today.getFullYear();
+
+        setHasClaimedToday(!!isSameDay);
+        
+        // Set current day - this should be the day they're on or need to claim
+        const dayToShow = res.data.currentCheckInDay || 1;
+        setCurrentDay(dayToShow);
+        setSelectedDay(dayToShow);
+
+        console.log('Fetch User - Last Check-in:', lastCheckInDate?.toDateString());
+        console.log('Fetch User - Today:', today.toDateString());
+        console.log('Fetch User - Has claimed today:', isSameDay);
+        console.log('Fetch User - Current day:', dayToShow);
       }
-    } catch (error: any) {
-      console.error('Error fetching user coins:', error);
+    } catch (error) {
+      console.error('Error fetching user:', error);
     } finally {
       setLoading(false);
     }
   }, [dispatch, isAuthenticated]);
 
-  // Fetch coin transaction history
-  const fetchCoinHistory = useCallback(async () => {
-    const token = await getToken();
+  /* ---------------- HISTORY ---------------- */
+  const fetchHistory = useCallback(async () => {
+    if (!isAuthenticated) return;
     
-    if (!isAuthenticated || !token) {
-      return;
-    }
-
     try {
       setLoadingHistory(true);
-      const response = await getCoinHistory(1);
-      if (response.success && response.data) {
-        setCoinHistory(response.data.transactions || []);
-      }
-    } catch (error: any) {
-      console.error('Error fetching coin history:', error);
+      const res = await getCoinHistory(1);
+      if (res?.success) setHistory(res.data.transactions || []);
+    } catch (error) {
+      console.error('Error fetching history:', error);
     } finally {
       setLoadingHistory(false);
     }
   }, [isAuthenticated]);
 
-  // Load coins and history when screen is focused
   useFocusEffect(
-    React.useCallback(() => {
-      fetchUserCoins();
-      fetchCoinHistory();
-    }, [fetchCoinHistory, fetchUserCoins, isAuthenticated])
+    useCallback(() => {
+      fetchUser();
+      fetchHistory();
+    }, [fetchUser, fetchHistory])
   );
 
-  // Also refresh when user profile changes (e.g., coins deducted)
   useEffect(() => {
     if (user) {
-      // Refresh coin history when user profile changes to show latest transactions
-      fetchCoinHistory();
+      fetchHistory();
     }
   }, [user?.coinsBalance]);
 
-  // Also load on mount
   useEffect(() => {
-    fetchUserCoins();
-    fetchCoinHistory();
-  }, [fetchCoinHistory, fetchUserCoins, isAuthenticated]);
+    fetchUser();
+    fetchHistory();
+  }, [fetchUser, fetchHistory, isAuthenticated]);
 
-  const refreshData = useCallback(async () => {
-    await Promise.all([fetchUserCoins(), fetchCoinHistory()]);
-  }, [fetchCoinHistory, fetchUserCoins]);
-
-  const {
-    refreshing,
-    onRefresh,
-    handleScroll: handlePullScroll,
-    pullDistance,
-    threshold,
-  } = usePullToRefresh(refreshData, { completionDelayMs: 800 });
-
+  /* ---------------- CLAIM ---------------- */
   const handleClaim = async () => {
     if (hasClaimedToday) {
-      Alert.alert('Already Claimed', 'You have already claimed your daily reward today. Come back tomorrow!');
+      Alert.alert('Already Claimed', 'You have already claimed your daily reward today. Come back tomorrow! 🎁');
       return;
     }
 
+    setClaiming(true);
     try {
-      setClaiming(true);
-      const response = await claimDailyCheckIn();
+      const res = await claimDailyCheckIn();
+      console.log('Claim response:', res);
       
-      if (response.success) {
-        // Update current check-in day from response
-        if (response.data.currentDay) {
-          setCurrentCheckInDay(response.data.currentDay);
-        }
+      if (res.success) {
+        // Update local state immediately
+        const newDay = res.data.currentDay || (currentDay || 0) + 1;
+        
+        // Reset to day 1 if we've completed all 7 days
+        const nextDay = newDay > 7 ? 1 : newDay;
+        
+        setCurrentDay(nextDay);
+        setSelectedDay(nextDay);
+        setHasClaimedToday(true);
         
         Alert.alert(
-          'Success!',
-          `You earned ${response.data.coins} coins!`,
+          'Success! 🎉',
+          `You earned ${res.data.coins} coin${res.data.coins > 1 ? 's' : ''}!\nCome back tomorrow for Day ${nextDay}.`,
           [
             {
               text: 'OK',
-              onPress: () => {
-                // Refresh coins and history after claim
-                fetchUserCoins();
-                fetchCoinHistory();
+              onPress: async () => {
+                // Fetch updated user data
+                await fetchUser();
+                await fetchHistory();
               },
             },
           ]
         );
       }
     } catch (error: any) {
-      console.error('Error claiming daily check-in:', error);
+      console.error('Error claiming:', error);
       const errorMessage = error.response?.data?.message || 'Failed to claim daily reward. Please try again.';
       Alert.alert('Error', errorMessage);
     } finally {
@@ -236,25 +182,24 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
     }
   };
 
-  // Format date for display
+  /* ---------------- HELPERS ---------------- */
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) {
-      return 'Today';
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-    }
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined 
+    });
   };
 
-  // Get source display name
   const getSourceName = (source: string) => {
     const sourceMap: Record<string, string> = {
       ad_view: 'Ad View',
@@ -267,602 +212,355 @@ const CoinsScreen: React.FC<any> = ({ navigation }) => {
     return sourceMap[source] || source;
   };
 
-  // Get source icon
-  const getSourceIcon = (source: string, type: 'earned' | 'redeemed') => {
-    if (type === 'redeemed') {
-      return 'remove-circle';
-    }
-    switch (source) {
-      case 'ad_view':
-        return 'play-circle';
-      case 'social_follow':
-        return 'people';
-      case 'daily_login':
-        return 'calendar';
-      case 'referral':
-        return 'person-add';
-      case 'signup_bonus':
-        return 'gift';
-      case 'reel_watch':
-        return 'videocam';
-      default:
-        return 'coin';
-    }
+  const getSourceIcon = (source: string, type?: 'earned' | 'redeemed') => {
+    if (type === 'redeemed') return 'arrow-down-circle';
+    
+    const map: Record<string, any> = {
+      ad_view: 'play-circle',
+      social_follow: 'people',
+      daily_login: 'calendar',
+      referral: 'person-add',
+      signup_bonus: 'gift',
+      reel_watch: 'videocam',
+    };
+    return map[source] || 'arrow-up-circle';
   };
 
-  const renderMissionIcon = (mission: Mission) => {
-    switch (mission.iconType) {
-      case 'instagram':
-        return (
-          <View style={[styles.missionIconCircle, { backgroundColor: '#F56040' }]}>
-            <FontAwesome name="instagram" size={18} color="#fff" />
-          </View>
-        );
-      case 'youtube':
-        return (
-          <View style={[styles.missionIconCircle, { backgroundColor: '#FF0000' }]}>
-            <FontAwesome name="youtube-play" size={18} color="#fff" />
-          </View>
-        );
-      case 'x':
-        return (
-          <View style={[styles.missionIconCircle, { backgroundColor: '#111827' }]}>
-            <FontAwesome5 name="x-twitter" size={16} color="#fff" />
-          </View>
-        );
-      case 'game':
-        return (
-          <View style={[styles.missionIconCircle, { backgroundColor: '#2563EB' }]}>
-            <FontAwesome5 name="gamepad" size={16} color="#fff" />
-          </View>
-        );
-      case 'ad':
-      default:
-        return (
-          <View style={[styles.missionIconCircle, { backgroundColor: '#10B981' }]}>
-            <Ionicons name="play-outline" size={16} color="#fff" />
-          </View>
-        );
-    }
+  /* ---------------- PULL REFRESH ---------------- */
+  const refreshData = async () => {
+    await Promise.all([fetchUser(), fetchHistory()]);
   };
 
-  const topOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+  const {
+    refreshing,
+    onRefresh,
+    handleScroll,
+    pullDistance,
+    threshold,
+  } = usePullToRefresh(refreshData, { completionDelayMs: 800 });
+
+  const topOffset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { paddingTop: topOffset, backgroundColor: colors.background }]}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation?.goBack?.()}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
-          </TouchableOpacity>
+    <SafeAreaView style={[styles.safe, { paddingTop: topOffset }]}>
+      <StatusBar barStyle="light-content" backgroundColor='#0A0A0A' />
 
-          <Text
-            style={[styles.headerTitle, { color: colors.textPrimary }]}
-            numberOfLines={1}
-            accessible
-            accessibilityRole="header"
-          >
-            Coins & Rewards
-          </Text>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.back} onPress={() => navigation?.goBack?.()}>
+          <Ionicons name="arrow-back" size={22} color="#FFC107" />
+        </TouchableOpacity>
 
-          <View style={[styles.coinPill, { backgroundColor: colors.surfaceElevated }]} accessible accessibilityLabel={`${userCoins} coins`}>
-            <Text style={[styles.coinText, { color: colors.textPrimary }]}>{loading ? '...' : userCoins}</Text>
-            <FontAwesome5 name="coins" size={14} color={colors.yellow} />
-          </View>
+        <Text style={styles.title}>Rewards</Text>
+
+        <View style={styles.coinBadge}>
+          <FontAwesome5 name="coins" size={18} color="#FFC107" />
+        </View>
+      </View>
+
+      {(pullDistance > 0 || refreshing) && (
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          threshold={threshold}
+          refreshing={refreshing}
+          color="#FFC107"
+          topOffset={topOffset + 60}
+        />
+      )}
+
+      <ScrollView
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#FFC107']}
+            tintColor="#FFC107"
+            progressViewOffset={-1000}
+          />
+        }
+        contentContainerStyle={{ paddingBottom: TAB_BAR_SAFE_PADDING }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* BALANCE */}
+        <View style={styles.balance}>
+          <FontAwesome5 name="coins" size={36} color="#FFC107" />
+          <Text style={styles.balanceText}>{coins} Coins</Text>
+          <Text style={styles.balanceSub}>Spend or earn more daily ✨</Text>
         </View>
 
-        {/* Pull-to-Refresh Indicator */}
-        {(pullDistance > 0 || refreshing) && (
-          <PullToRefreshIndicator
-            pullDistance={pullDistance}
-            threshold={threshold}
-            refreshing={refreshing}
-            color={colors.yellow}
-            topOffset={topOffset + 60}
-          />
-        )}
+        {/* DAILY CHECK-IN */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Daily Check-in</Text>
 
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: TAB_BAR_SAFE_PADDING }]}
-          showsVerticalScrollIndicator={false}
-          onScroll={handlePullScroll}
-          scrollEventThrottle={16}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.yellow}
-              colors={[colors.yellow]}
-              progressViewOffset={-1000}
-            />
-          }
-        >
-          {/* Daily Rewards */}
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Daily Rewards</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {DAILY_REWARDS.map(d => {
+              // A day is "done" if it's less than the current day
+              const done = currentDay ? d.day < currentDay : false;
+              // Today's day is the current day and has been claimed
+              const isToday = d.day === currentDay;
+              const todayAndClaimed = isToday && hasClaimedToday;
 
-          <View style={[styles.dailyCard, { backgroundColor: colors.surface }]}>
-             <ScrollView
-               horizontal
-               showsHorizontalScrollIndicator={false}
-               contentContainerStyle={styles.dailyScrollContent}
-             >
-               {DAILY_REWARDS.map(reward => {
-                 const isSelected = reward.day === selectedDay;
-                 // Day is completed if it's less than or equal to currentCheckInDay (when user has claimed)
-                 const isCompleted = currentCheckInDay !== undefined && reward.day < currentCheckInDay;
-                 const isTodayCompleted = hasClaimedToday && reward.day === currentCheckInDay;
-                 const showCompleted = isCompleted || isTodayCompleted;
-                 
-                 return (
-                   <TouchableOpacity
-                     key={reward.day}
-                     style={[
-                       styles.dayItem,
-                       { borderColor: colors.borderLight, backgroundColor: colors.surface },
-                       isSelected && { borderColor: colors.yellow, backgroundColor: colors.surfaceElevated, borderWidth: 2 },
-                       showCompleted && { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderWidth: 2 },
-                     ]}
-                     onPress={() => !hasClaimedToday && setSelectedDay(reward.day)}
-                     activeOpacity={0.8}
-                     disabled={hasClaimedToday && !showCompleted}
-                   >
-                     {showCompleted && (
-                       <View style={[styles.completedBadge, { backgroundColor: colors.background }]}>
-                         <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                       </View>
-                     )}
-                     <View style={[
-                       styles.dayCoinCircle,
-                       { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
-                       showCompleted && { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' }
-                     ]}>
-                       {showCompleted ? (
-                         <Ionicons name="checkmark" size={18} color="#10B981" />
-                       ) : (
-                         <FontAwesome5
-                           name="coins"
-                           size={16}
-                           color={isSelected ? colors.yellow : colors.textMuted}
-                         />
-                       )}
-                     </View>
-                     <Text
-                       style={[
-                         styles.dayLabel,
-                         { color: colors.textMuted },
-                         isSelected && !showCompleted && { color: colors.yellow, fontWeight: '700' },
-                         showCompleted && { color: '#10B981', fontWeight: '700' },
-                       ]}
-                     >
-                       Day {reward.day}
-                     </Text>
-                   </TouchableOpacity>
-                 );
-               })}
-             </ScrollView>
+              return (
+                <TouchableOpacity
+                  key={d.day}
+                  style={[
+                    styles.day,
+                    d.day === selectedDay && !todayAndClaimed && styles.dayActive,
+                    (done || todayAndClaimed) && styles.dayDone,
+                  ]}
+                  disabled={done || todayAndClaimed}
+                  onPress={() => {
+                    if (!done && !todayAndClaimed) {
+                      setSelectedDay(d.day);
+                    }
+                  }}
+                >
+                  <FontAwesome5
+                    name={done || todayAndClaimed ? 'check' : 'coins'}
+                    size={16}
+                    color={done || todayAndClaimed ? '#10B981' : '#FFC107'}
+                  />
+                  <Text style={styles.dayLabel}>Day {d.day}</Text>
+                  {isToday && !hasClaimedToday && (
+                    <View style={styles.todayBadge}>
+                      <Text style={styles.todayText}>Today</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-            <TouchableOpacity
-              onPress={handleClaim}
-              activeOpacity={0.9}
-              style={[
-                styles.claimButton,
-                { backgroundColor: colors.yellow },
-                (hasClaimedToday || claiming) && styles.claimButtonDisabled
-              ]}
-              disabled={hasClaimedToday || claiming}
-            >
-              <Text style={[styles.claimButtonText, { color: colors.textOnYellow }]}>
-                {claiming 
-                  ? 'Claiming...' 
-                  : hasClaimedToday 
-                    ? 'Already Claimed Today' 
-                    : `Get ${DAILY_REWARDS.find(r => r.day === selectedDay)?.coins ?? 0} Coin`}
-              </Text>
+          <TouchableOpacity
+            onPress={handleClaim}
+            disabled={hasClaimedToday || claiming}
+            style={[styles.claim, (hasClaimedToday || claiming) && styles.claimDisabled]}
+          >
+            <Text style={styles.claimText}>
+              {claiming 
+                ? 'Claiming...' 
+                : hasClaimedToday 
+                  ? '✓ Claimed Today' 
+                  : `Claim ${DAILY_REWARDS.find(d => d.day === selectedDay)?.coins} Coin`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* MISSIONS */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Earn More</Text>
+
+          {/* Watch Ad Mission - First */}
+          <View style={styles.mission}>
+            <View style={[styles.icon, { backgroundColor: '#10B981' }]}>
+              <Ionicons name="play" size={20} color="#FFF" />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.missionTitle}>Watch Ads</Text>
+              <Text style={styles.missionCoins}>+5 Coins</Text>
+            </View>
+
+            <TouchableOpacity style={styles.missionBtn}>
+              <Text style={styles.missionBtnText}>Watch</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Missions */}
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Missions</Text>
-
           {MISSIONS.map(m => (
-            <View key={m.id} style={[styles.missionCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-              <View style={styles.missionLeft}>
-                {renderMissionIcon(m)}
-                <View>
-                  <Text style={[styles.missionTitle, { color: colors.textPrimary }]}>{m.title}</Text>
-                  <Text style={[styles.missionSubtitle, { color: colors.textSecondary }]}>{m.coins} Coins</Text>
-                </View>
+            <View key={m.id} style={styles.mission}>
+              <View style={[styles.icon, { backgroundColor: m.color }]}>
+                {m.fa5 ? (
+                  <FontAwesome5 name={m.icon as any} size={18} color="#FFF" />
+                ) : (
+                  <FontAwesome name={m.icon as any} size={20} color="#FFF" />
+                )}
               </View>
 
-              <TouchableOpacity style={[styles.missionCTA, { backgroundColor: colors.surfaceElevated }]}>
-                <Text style={[styles.missionCTAText, { color: colors.textPrimary }]}>{m.cta}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.missionTitle}>{m.title}</Text>
+                <Text style={styles.missionCoins}>+{m.coins} Coins</Text>
+              </View>
+
+              <TouchableOpacity style={styles.missionBtn}>
+                <Text style={styles.missionBtnText}>{m.cta}</Text>
               </TouchableOpacity>
             </View>
           ))}
+        </View>
 
-          {/* Watch Ad and earn */}
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Watch Ad and earn</Text>
-
-          <View style={[styles.missionCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-            <View style={styles.missionLeft}>
-              {renderMissionIcon({
-                id: 'ad',
-                title: 'Watch Ads',
-                subtitle: '5 Coins',
-                coins: 5,
-                cta: 'Watch',
-                iconType: 'ad',
-              })}
-              <View>
-                <Text style={[styles.missionTitle, { color: colors.textPrimary }]}>Watch Ads</Text>
-                <Text style={[styles.missionSubtitle, { color: colors.textSecondary }]}>5 Coins</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={[styles.missionCTA, { backgroundColor: colors.surfaceElevated }]}>
-              <Text style={[styles.missionCTAText, { color: colors.textPrimary }]}>Watch</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Buy Coins Section */}
-          <View style={styles.buyCoinsContainer}>
-            <View style={styles.buyCoinsContent}>
-              <View style={styles.buyCoinsTextSection}>
-                <Text style={[styles.buyCoinsTitle, { color: colors.textPrimary }]}>Need More Coins?</Text>
-                <Text style={[styles.buyCoinsSubtitle, { color: colors.textSecondary }]}>Buy coins to unlock premium episodes</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('AddCoins')}
-                style={[styles.buyCoinsButton, { backgroundColor: colors.yellow }]}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="coins" size={16} color={colors.textOnYellow} />
-                <Text style={[styles.buyCoinsButtonText, { color: colors.textOnYellow }]}>Buy Coins</Text>
-              </TouchableOpacity>
+        {/* BUY COINS BANNER */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('AddCoins')}
+          style={styles.buyBanner}
+          activeOpacity={0.9}
+        >
+          <View style={styles.buyContent}>
+            <FontAwesome5 name="coins" size={32} color="#FFC107" />
+            <View style={styles.buyInfo}>
+              <Text style={styles.buyTitle}>Need More Coins?</Text>
+              <Text style={styles.buySubtitle}>Buy coins to unlock premium content</Text>
             </View>
           </View>
-          {/* Coin History */}
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Transaction History</Text>
+          <Ionicons name="chevron-forward" size={24} color="#FFC107" />
+        </TouchableOpacity>
+
+        {/* HISTORY */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
 
           {loadingHistory ? (
             <View style={styles.historyLoadingContainer}>
-              <Text style={[styles.historyLoadingText, { color: colors.textSecondary }]}>Loading history...</Text>
+              <ActivityIndicator color="#FFC107" size="large" />
+              <Text style={styles.historyLoadingText}>Loading activity...</Text>
             </View>
-          ) : coinHistory.length === 0 ? (
-            <View style={[styles.emptyHistoryContainer, { backgroundColor: 'transparent' }]}>
-              <Ionicons name="time-outline" size={48} color={colors.textMuted} />
-              <Text style={[styles.emptyHistoryText, { color: colors.textPrimary }]}>No transactions yet</Text>
-              <Text style={[styles.emptyHistorySubtext, { color: colors.textSecondary }]}>Your coin transactions will appear here</Text>
+          ) : history.length === 0 ? (
+            <View style={styles.emptyHistoryContainer}>
+              <Ionicons name="receipt-outline" size={48} color="#666" />
+              <Text style={styles.emptyHistoryText}>No transactions yet</Text>
+              <Text style={styles.emptyHistorySubtext}>
+                Start earning coins to see your activity here
+              </Text>
             </View>
           ) : (
-            <View style={styles.historyContainer}>
-              {coinHistory.map((transaction) => (
-                <View key={transaction._id} style={[styles.historyItem, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-                  <View style={styles.historyItemLeft}>
-                    <View style={[
-                      styles.historyIconContainer,
-                      { backgroundColor: colors.surfaceElevated },
-                      transaction.type === 'earned' ? { backgroundColor: 'rgba(16, 185, 129, 0.15)' } : { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
-                    ]}>
-                      <Ionicons
-                        name={getSourceIcon(transaction.source, transaction.type) as any}
-                        size={20}
-                        color={transaction.type === 'earned' ? '#10B981' : '#EF4444'}
-                      />
-                    </View>
-                    <View style={styles.historyItemContent}>
-                      <Text style={[styles.historyItemTitle, { color: colors.textPrimary }]}>
-                        {transaction.type === 'earned' ? 'Earned' : 'Redeemed'} - {getSourceName(transaction.source)}
-                      </Text>
-                      <Text style={[styles.historyItemDescription, { color: colors.textSecondary }]}>{transaction.description}</Text>
-                      <Text style={[styles.historyItemDate, { color: colors.textMuted }]}>{formatDate(transaction.createdAt)}</Text>
-                    </View>
+            history.map(h => (
+              <View key={h._id} style={styles.historyItem}>
+                <View style={styles.historyItemLeft}>
+                  <View style={[
+                    styles.historyIconContainer,
+                    h.type === 'earned' ? styles.historyIconEarned : styles.historyIconRedeemed
+                  ]}>
+                    <Ionicons 
+                      name={getSourceIcon(h.source, h.type)} 
+                      size={20} 
+                      color={h.type === 'earned' ? '#10B981' : '#EF4444'} 
+                    />
                   </View>
-                  <View style={styles.historyItemRight}>
-                    <Text style={[
-                      styles.historyItemAmount,
-                      transaction.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed,
-                      { color: transaction.type === 'earned' ? '#10B981' : '#EF4444' }
-                    ]}>
-                      {transaction.type === 'earned' ? '+' : '-'}{transaction.amount}
-                    </Text>
-                    <FontAwesome5 name="coins" size={12} color={colors.yellow} />
+                  
+                  <View style={styles.historyItemContent}>
+                    <Text style={styles.historyItemTitle}>{getSourceName(h.source)}</Text>
+                    <Text style={styles.historyItemDescription}>{h.description}</Text>
+                    <Text style={styles.historyItemDate}>{formatDate(h.createdAt)}</Text>
                   </View>
                 </View>
-              ))}
-            </View>
+
+                <View style={styles.historyItemRight}>
+                  <Text style={[
+                    styles.historyItemAmount,
+                    h.type === 'earned' ? styles.historyAmountEarned : styles.historyAmountRedeemed
+                  ]}>
+                    {h.type === 'earned' ? '+' : '-'}{h.amount}
+                  </Text>
+                </View>
+              </View>
+            ))
           )}
-        </ScrollView>
-      </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 export default CoinsScreen;
 
-// ================= STYLES =================
+/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#090407', // Will be overridden by dynamic styles
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#090407', // Will be overridden by dynamic styles
-    paddingHorizontal: 16,
-  },
+  safe: { flex: 1, backgroundColor: '#0A0A0A' },
+  header: { flexDirection: 'row', padding: 16, justifyContent: 'space-between', alignItems: 'center' },
+  back: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#252525', justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 22, fontWeight: '800', color: '#FFF' },
+  coinBadge: { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#252525', borderRadius: 20 },
+  coinText: { color: '#FFC107', fontWeight: '800' },
 
-  headerRow: {
-    flexDirection: 'row',
+  balance: { alignItems: 'center', margin: 16, padding: 24, backgroundColor: '#252525', borderRadius: 20 },
+  balanceText: { fontSize: 28, fontWeight: '900', color: '#FFC107' },
+  balanceSub: { marginTop: 4, color: '#999' },
+
+  section: { marginHorizontal: 16, marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#FFF', marginBottom: 12 },
+
+  day: { 
+    width: 70, 
+    height: 86, 
+    backgroundColor: '#1A1A1A', 
+    borderRadius: 16, 
+    marginRight: 10, 
+    justifyContent: 'center', 
     alignItems: 'center',
-    paddingVertical: 12,
+    position: 'relative',
   },
-  backButton: {
-    width: 42,
-    height: 42,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingLeft: 4,
+  dayActive: { borderWidth: 2, borderColor: '#FFC107' },
+  dayDone: { borderWidth: 2, borderColor: '#10B981' },
+  dayLabel: { fontSize: 12, marginTop: 6, color: '#999' },
+  todayBadge: {
+    position: 'absolute',
+    top: -6,
+    backgroundColor: '#FFC107',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    color: '#ffffff',
-    fontSize: 20,
+  todayText: {
+    fontSize: 9,
     fontWeight: '800',
-    marginLeft: 0,
-  },
-  coinPill: {
-    minWidth: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FDF7EA',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    justifyContent: 'center',
-  },
-  coinText: {
-    marginRight: 6,
-    fontWeight: '700',
-    fontSize: 14,
-    color: '#111827',
+    color: '#1A1A1A',
   },
 
-  scroll: {
-    flex: 1,
-  },
+  claim: { marginTop: 16, backgroundColor: '#FFC107', padding: 16, borderRadius: 16, alignItems: 'center' },
+  claimDisabled: { opacity: 0.5 },
+  claimText: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
 
-  scrollContentContainer: {
-    paddingTop: 6,
-  },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 10,
-    marginTop: 6,
-  },
-
-  // Daily card
-  dailyCard: {
-    backgroundColor: '#1a1012',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    marginBottom: 22,
-  },
-  dailyScrollContent: {
-    paddingHorizontal: 4,
-    paddingBottom: 12,
-  },
-   dayItem: {
-     width: 68,
-     height: 80,
-     borderRadius: 10,
-     borderWidth: 1,
-     borderColor: '#3f3f46',
-     backgroundColor: '#111827',
-     alignItems: 'center',
-     justifyContent: 'center',
-     marginRight: 10,
-     position: 'relative',
-   },
-   dayItemActive: {
-     borderColor: '#FFA500',
-     backgroundColor: '#1d1b10',
-     borderWidth: 2,
-   },
-   dayItemCompleted: {
-     borderColor: '#10B981',
-     backgroundColor: '#0f1f15',
-     borderWidth: 2,
-   },
-   completedBadge: {
-     position: 'absolute',
-     top: -6,
-     right: -6,
-     backgroundColor: '#090407',
-     borderRadius: 12,
-     zIndex: 10,
-     shadowColor: '#10B981',
-     shadowOffset: { width: 0, height: 2 },
-     shadowOpacity: 0.6,
-     shadowRadius: 4,
-     elevation: 5,
-   },
-   dayCoinCircle: {
-     width: 36,
-     height: 36,
-     borderRadius: 18,
-     backgroundColor: '#27272f',
-     alignItems: 'center',
-     justifyContent: 'center',
-     marginBottom: 8,
-     borderWidth: 2,
-     borderColor: 'transparent',
-   },
-   dayCoinCircleCompleted: {
-     backgroundColor: 'rgba(16, 185, 129, 0.15)',
-     borderColor: '#10B981',
-   },
-   dayLabel: {
-     fontSize: 12,
-     color: '#e5e5e5',
-     fontWeight: '600',
-   },
-   dayLabelActive: {
-     color: '#FFA500',
-     fontWeight: '700',
-   },
-   dayLabelCompleted: {
-     color: '#10B981',
-     fontWeight: '700',
-   },
-  claimButton: {
-    marginTop: 10,
-    backgroundColor: '#FFA500',
-    borderRadius: 10,
-    paddingVertical: 12,
+  mission: { flexDirection: 'row', backgroundColor: '#252525', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center' },
+  icon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  missionTitle: { color: '#FFF', fontWeight: '800' },
+  missionCoins: { color: '#FFC107', fontSize: 12, fontWeight: '700' },
+  missionBtn: { 
+    minWidth: 90,
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1.5, 
+    borderColor: '#FFC107',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  claimButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  claimButtonDisabled: {
-    opacity: 0.6,
-    backgroundColor: '#9CA3AF',
-  },
+  missionBtnText: { color: '#FFC107', fontWeight: '800', fontSize: 13 },
 
-  // Missions
-  missionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a20',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  missionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  missionIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  missionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  missionSubtitle: {
-    fontSize: 12,
-    color: '#d4d4d8',
-    marginTop: 2,
-  },
-  // equal-width CTA for Follow / Subscribe / Login / Watch
-  missionCTA: {
-    width: 96,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#F5F5F5',
-  },
-  missionCTAText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-  },
-
-  // Buy Coins Section
-  buyCoinsContainer: {
-    marginVertical: 20,
-    marginHorizontal: -16,
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-  },
-  buyCoinsContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  buyBanner: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
     justifyContent: 'space-between',
-    backgroundColor: 'linear-gradient(135deg, rgba(255, 165, 0, 0.1) 0%, rgba(255, 165, 0, 0.05) 100%)',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 165, 0, 0.2)',
+    backgroundColor: '#252525', 
+    borderRadius: 20, 
+    padding: 20, 
+    marginHorizontal: 16, 
+    marginBottom: 24,
+    borderWidth: 1.5,
+    borderColor: '#FFC107',
   },
-  buyCoinsTextSection: {
-    flex: 1,
-  },
-  buyCoinsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  buyCoinsSubtitle: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    lineHeight: 18,
-  },
-  buyCoinsButton: {
+  buyContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFA500',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginLeft: 12,
-    gap: 6,
-    shadowColor: '#FFA500',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    flex: 1,
+    gap: 16,
   },
-  buyCoinsButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  buyInfo: { flex: 1 },
+  buyTitle: { fontSize: 16, fontWeight: '800', color: '#FFF', marginBottom: 4 },
+  buySubtitle: { fontSize: 12, fontWeight: '600', color: '#999' },
 
-  // Coin History
-  historyContainer: {
-    marginBottom: 20,
-  },
+  // Enhanced History Styles
   historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1a1a20',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 10,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#2a2a30',
+    borderColor: '#2A2A2A',
   },
   historyItemLeft: {
     flexDirection: 'row',
@@ -870,13 +568,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   historyIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-    backgroundColor: '#27272f',
+    marginRight: 14,
+    backgroundColor: '#252525',
   },
   historyIconEarned: {
     backgroundColor: '#10B98120',
@@ -890,25 +588,23 @@ const styles = StyleSheet.create({
   historyItemTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#FFF',
     marginBottom: 4,
   },
   historyItemDescription: {
     fontSize: 13,
-    color: '#d4d4d8',
+    color: '#CCC',
     marginBottom: 4,
   },
   historyItemDate: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: '#999',
   },
   historyItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    alignItems: 'flex-end',
   },
   historyItemAmount: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
   },
   historyAmountEarned: {
@@ -921,29 +617,32 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
   },
   historyLoadingText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#999',
+    marginTop: 12,
   },
   emptyHistoryContainer: {
     paddingVertical: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a20',
-    borderRadius: 12,
-    marginBottom: 20,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
   },
   emptyHistoryText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontWeight: '700',
+    color: '#FFF',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyHistorySubtext: {
     fontSize: 13,
-    color: '#9CA3AF',
+    color: '#999',
     textAlign: 'center',
+    paddingHorizontal: 40,
   },
 });
