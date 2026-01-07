@@ -674,6 +674,25 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           onOverlayToggle={handleOverlayToggle}
           onVideoTap={handleVideoTap}
           onSheetStateChange={handleSheetStateChange}
+          onLockedVideoPlayAttempt={() => {
+            // User tried to play a locked video - check if it's actually locked
+            const currentReel = reels[currentIndex];
+            if (currentReel && currentReel.adStatus === 'locked') {
+              console.log('🔒 ReelsFeedScreen: User tried to play locked video, showing popup');
+              // Keep adHandledRef as true to prevent auto-show, we'll show manually
+              adHandledRef.current = true;
+              setIsAdOpen(true);
+              setShowAdPopup(true);
+              setIsAnySheetOpen(true);
+              setShouldPlayAd(false);
+              return true; // Video is actually locked
+            } else {
+              // Video is unlocked, allow it to play normally
+              console.log('✅ ReelsFeedScreen: Video is unlocked, allowing playback');
+              adHandledRef.current = false;
+              return false; // Video is unlocked, allow playback
+            }
+          }}
         />
         
         {/* Overlay UI - Conditionally Hidden */}
