@@ -40,12 +40,11 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
 import { getToken } from '../../utils/storage';
 
-// 🔥 CRITICAL: Use 'screen' instead of 'window' for true fullscreen
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
 type Reel = {
   id: string;
-  title: string; // Added to match ReelItem expectations
+  title: string;
   webseriesId: string;
   webseriesTitle: string;
   seasonNumber: number;
@@ -79,10 +78,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  // 🔥 CRITICAL: Use full screen height
   const ITEM_HEIGHT = SCREEN_HEIGHT;
 
-  // 🔥 TRUE EDGE-TO-EDGE FULLSCREEN - Hide system UI
   useEffect(() => {
     StatusBar.setHidden(true);
     if (Platform.OS === 'android') {
@@ -98,9 +95,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     };
   }, []);
 
-  // =========================
-  // REDUX COINS
-  // =========================
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.user.profile);
   const SKIP_COST = 10;
@@ -188,6 +182,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const [isAdOpen, setIsAdOpen] = useState(false);
   const [showAdPopup, setShowAdPopup] = useState(false);
   const [shouldPlayAd, setShouldPlayAd] = useState(false);
+  
+  // Track when UI should be hidden
+  const [hideOverlay, setHideOverlay] = useState(false);
+  // 🔥 NEW: track any modal / sheet open
+  const [isAnySheetOpen, setIsAnySheetOpen] = useState(false);
+
 
   useEffect(() => {
     if (adReelIndexRef.current !== null && adReelIndexRef.current !== currentIndex) {
@@ -211,6 +211,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
       setIsAdOpen(true);
       setShowAdPopup(true);
+      setIsAnySheetOpen(true);
       setShouldPlayAd(false);
     }
   }, [currentIndex, reels, isAdOpen]);
@@ -223,14 +224,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const scrollOffsetRef = useRef<number>(0);
   const [isScreenFocused, setIsScreenFocused] = useState(true);
 
-  // 🎬 Transform backend video to Reel format (S1E1 only)
   const transformVideoToReel = useCallback((video: VideoType): Reel | null => {
-    // Only include Season 1 Episode 1
     const seasonNum = (video as any).seasonNumber || 1;
     const episodeNum = (video as any).episodeNumber || 1;
     
     if (seasonNum !== 1 || episodeNum !== 1) {
-      return null; // Skip non-S1E1 videos
+      return null;
     }
 
     let videoUrl = video.masterPlaylistUrl || '';
@@ -257,11 +256,16 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       return `${minutes}m`;
     };
 
+    const webseriesTitle = (video as any).webseriesTitle || 
+                          (video as any).seasonId?.webseriesTitle || 
+                          video.title || 
+                          'Untitled';
+
     return {
       id: (video as any)._id || String(Date.now()),
-      title: video.title || 'Untitled', // Added title field
-      webseriesId: (video as any).webseriesId || (video as any)._id,
-      webseriesTitle: video.title || 'Untitled',
+      title: video.title || 'Untitled',
+      webseriesId: (video as any).webseriesId || (video as any).seasonId?._id || (video as any)._id,
+      webseriesTitle: webseriesTitle,
       seasonNumber: seasonNum,
       episodeNumber: episodeNum,
       year: video.createdAt ? new Date(video.createdAt).getFullYear().toString() : '',
@@ -380,7 +384,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }
   }, [targetVideoId]);
 
-  // 🎬 Load a page and filter for S1E1 only, sorted by latest
   const loadPage = useCallback(
     async (pageToLoad: number, opts?: { replace?: boolean }) => {
       if (loading) return;
@@ -388,19 +391,16 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       try {
         const res = await videoService.getWebseriesFeed(pageToLoad);
         if (res && res.success && Array.isArray(res.data)) {
-          // Transform and filter for S1E1 only
           const transformed = res.data
             .map(transformVideoToReel)
             .filter((reel: Reel | null): reel is Reel => reel !== null);
 
-          // Sort by uploadedAt (latest first)
           transformed.sort((a: Reel, b: Reel) => {
             const dateA = new Date(a.uploadedAt || 0).getTime();
             const dateB = new Date(b.uploadedAt || 0).getTime();
-            return dateB - dateA; // Descending order
+            return dateB - dateA;
           });
 
-          // Remove duplicates by webseriesId (keep only first S1E1 per webseries)
           const uniqueWebseries = new Map<string, Reel>();
           for (const reel of transformed) {
             if (!uniqueWebseries.has(reel.webseriesId)) {
@@ -553,7 +553,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }
   }, [loadPage]);
 
-  // 🎬 Handle episode end - auto-advance to next webseries S1E1
   const handleEpisodeEnd = useCallback(() => {
     console.log('🎬 Episode ended, auto-advancing to next webseries...');
     
@@ -579,7 +578,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         prevIndexRef.current !== null &&
         first.index !== prevIndexRef.current
       ) {
-        // User scrolled away from previous reel
+        // Reset overlay visibility when scrolling to new reel
+        setHideOverlay(false);
       }
 
       prevIndexRef.current = first.index;
@@ -617,7 +617,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     [ITEM_HEIGHT]
   );
 
-  // 🎬 Navigate to webseries player (all episodes)
   const handleStartWatching = useCallback(async (webseriesId: string) => {
     console.log('🎬 Starting webseries:', webseriesId);
     try {
@@ -626,24 +625,36 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         const sorted = [...episodesResponse.data].sort(
           (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
         );
-        // Navigate to the parent stack to access EpisodePlayer
         navigation.getParent()?.navigate('EpisodePlayer', { 
           targetVideoId: sorted[0]._id 
         });
       } else {
-        // If no episodes found, navigate to EpisodePlayer with just the webseriesId
         navigation.getParent()?.navigate('EpisodePlayer', { 
           targetVideoId: webseriesId 
         });
       }
     } catch (error) {
       console.error('Error fetching episodes:', error);
-      // Fallback navigation
       navigation.getParent()?.navigate('EpisodePlayer', { 
         targetVideoId: webseriesId 
       });
     }
   }, [navigation]);
+
+  // Callback to handle overlay visibility from ReelItem
+  const handleOverlayToggle = useCallback((shouldHide: boolean) => {
+    setHideOverlay(shouldHide);
+  }, []);
+
+  // Handle tap on video to toggle overlay
+  const handleVideoTap = useCallback(() => {
+    setHideOverlay(prev => !prev);
+  }, []);
+
+  // Callback to handle when any sheet/modal opens/closes in ReelItem
+  const handleSheetStateChange = useCallback((isOpen: boolean) => {
+    setIsAnySheetOpen(isOpen);
+  }, []);
 
   const renderItem = useCallback(({ item, index }: { item: Reel; index: number }) => {
     const isTargetVideo = targetVideoId && item.id === targetVideoId && index === currentIndex;
@@ -660,37 +671,16 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           shouldPause={showAdPopup}
           onVideoEnd={handleEpisodeEnd}
           onStartWatching={() => handleStartWatching(item.webseriesId)}
+          onOverlayToggle={handleOverlayToggle}
+          onVideoTap={handleVideoTap}
+          onSheetStateChange={handleSheetStateChange}
         />
         
-        {/* Overlay UI for webseries info */}
-        <View style={reelOverlayStyles.overlay}>
-          <View style={reelOverlayStyles.bottomInfo}>
-            <Text style={reelOverlayStyles.title} numberOfLines={2}>
-              {item.webseriesTitle}
-            </Text>
-            <Text style={reelOverlayStyles.episodeLabel}>
-              Season {item.seasonNumber} • Episode {item.episodeNumber}
-            </Text>
-            {item.description && (
-              <Text style={reelOverlayStyles.description} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
-            
-            {/* Start Watching Button */}
-            <TouchableOpacity
-              style={reelOverlayStyles.startButton}
-              onPress={() => handleStartWatching(item.webseriesId)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
-              <Text style={reelOverlayStyles.startButtonText}>Start Watching</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Overlay UI - Conditionally Hidden */}
+       
       </View>
     );
-  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, showAdPopup, handleEpisodeEnd, handleStartWatching, ITEM_HEIGHT]);
+  }, [currentIndex, targetVideoId, resumeTime, isScreenFocused, showAdPopup, handleEpisodeEnd, handleStartWatching, handleOverlayToggle, handleVideoTap, hideOverlay, ITEM_HEIGHT]);
 
   useFocusEffect(
     useCallback(() => {
@@ -731,7 +721,6 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
   return (
     <View style={styles.safeArea}>
-      {/* Top Header - Fixed position with absolute */}
       <View style={[backButtonStyles.topHeader, {
         top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
         left: insets.left + 16,
@@ -790,6 +779,37 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           </View>
         ) : null}
       />
+
+      {/* 🔒 GLOBAL Persistent Overlay */}
+{!hideOverlay && !isAnySheetOpen && reels[currentIndex] && (
+  <View
+    style={reelOverlayStyles.overlay}
+    pointerEvents="box-none"
+  >
+    <View style={reelOverlayStyles.bottomInfo} pointerEvents="box-none">
+      <Text style={reelOverlayStyles.title} numberOfLines={2}>
+        {reels[currentIndex].webseriesTitle}
+      </Text>
+
+      <Text style={reelOverlayStyles.episodeLabel}>
+        Season {reels[currentIndex].seasonNumber} • Episode {reels[currentIndex].episodeNumber}
+      </Text>
+
+      <TouchableOpacity
+        style={reelOverlayStyles.startButton}
+        onPress={() =>
+          handleStartWatching(reels[currentIndex].webseriesId)
+        }
+      >
+        <Ionicons name="play" size={20} color="#000" style={{ marginRight: 6 }} />
+        <Text style={reelOverlayStyles.startButtonText}>
+          Start Watching
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+)}
+
       
       <RewardedEpisodeAd
         show={shouldPlayAd}
@@ -799,13 +819,14 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
               i === currentIndex ? { ...r, adStatus: 'unlocked' } : r
             )
           );
-
-          setShowAdPopup(false);
+      
+          setShowAdPopup(false);  
+          setIsAnySheetOpen(false);
           setIsAdOpen(false);
           setShouldPlayAd(false);
         }}
       />
-
+      
       {showAdPopup && (
         <Modal visible={showAdPopup} transparent animationType="fade">
           <View
@@ -912,6 +933,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
                     );
             
                     setShowAdPopup(false);
+                    setIsAnySheetOpen(false);
                     setIsAdOpen(false);
                     setShouldPlayAd(false);
                     adHandledRef.current = true;
@@ -941,6 +963,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
               <Pressable
                 onPress={() => {
                   setShowAdPopup(false);
+                  
+                  setIsAnySheetOpen(false);
                   setShouldPlayAd(true);
                 }}
                 style={{

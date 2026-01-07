@@ -57,6 +57,9 @@ type ReelItemProps = {
   shouldPause?: boolean; // External control to pause video (e.g., when popup appears)
   onStartWatching?: () => void; // Callback when user wants to start watching full series
   onVideoEnd?: () => void; // Callback when video ends
+  onOverlayToggle?: (shouldHide: boolean) => void; // Callback to handle overlay visibility
+  onVideoTap?: () => void; // Callback when video is tapped
+  onSheetStateChange?: (isOpen: boolean) => void; // Callback when any sheet/modal opens/closes
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -147,7 +150,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   
   
@@ -690,6 +693,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 openEpisodes called');
     // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
     isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
     if (isActive && videoRef.current) {
       videoRef.current.pauseAsync().catch(() => {});
       videoRef.current.setIsMutedAsync(true).catch(() => {});
@@ -1413,6 +1419,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 closeEpisodes called');
     setShowEpisodes(false);
     isAnySheetOpenRef.current = showComments || showMore || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showMore || showDescSheet);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showMore && !showDescSheet) {
       if (videoRef.current) {
@@ -1428,6 +1437,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 openMore called');
     // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
     isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
     if (isActive && videoRef.current) {
       videoRef.current.pauseAsync().catch(() => {});
       videoRef.current.setIsMutedAsync(true).catch(() => {});
@@ -1441,6 +1453,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     console.log('🎯 closeMore called');
     setShowMore(false);
     isAnySheetOpenRef.current = showComments || showEpisodes || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showEpisodes || showDescSheet);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showDescSheet) {
       if (videoRef.current) {
@@ -1520,8 +1535,45 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // #endregion
     setShowDescSheet(false);
     isAnySheetOpenRef.current = showComments || showEpisodes || showMore;
+    if (onSheetStateChange) {
+      onSheetStateChange(showComments || showEpisodes || showMore);
+    }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showMore) {
+      if (videoRef.current) {
+        videoRef.current.setIsMutedAsync(false).catch(() => {});
+        videoRef.current.playAsync().catch(() => {});
+        actualPlayStateRef.current = 'playing';
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  const openComments = () => {
+    console.log('🎯 openComments called');
+    // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
+    isAnySheetOpenRef.current = true;
+    if (onSheetStateChange) {
+      onSheetStateChange(true);
+    }
+    if (isActive && videoRef.current) {
+      videoRef.current.pauseAsync().catch(() => {});
+      videoRef.current.setIsMutedAsync(true).catch(() => {});
+      setIsPlaying(false);
+      setIsPausedByUser(true);
+    }
+    setShowComments(true);
+  };
+
+  const closeComments = () => {
+    console.log('🎯 closeComments called');
+    setShowComments(false);
+    isAnySheetOpenRef.current = showEpisodes || showMore || showDescSheet;
+    if (onSheetStateChange) {
+      onSheetStateChange(showEpisodes || showMore || showDescSheet);
+    }
+    // Resume only if user didn't manually pause
+    if (isActive && !isPausedByUserRef.current && !showEpisodes && !showMore && !showDescSheet) {
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(false).catch(() => {});
         videoRef.current.playAsync().catch(() => {});
@@ -1788,7 +1840,7 @@ const [isFocused, setIsFocused] = useState(false);
           onPress={(e) => {
             e.stopPropagation();
             showUI();
-            setShowComments(true);
+            openComments();
           }}
         />
 
@@ -2083,7 +2135,7 @@ const [isFocused, setIsFocused] = useState(false);
             style={styles.sheetBackdrop}
             onPress={() => {
               Keyboard.dismiss();
-              setShowComments(false);
+              closeComments();
             }}
             pointerEvents="auto"
           />
@@ -2111,7 +2163,7 @@ const [isFocused, setIsFocused] = useState(false);
                 <View style={styles.commentHeader}>
                   <Text style={styles.commentHeaderTitle}>Comments</Text>
                   <TouchableOpacity
-                    onPress={() => setShowComments(false)}
+                    onPress={() => closeComments()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Ionicons name="close" size={24} color="#fff" />
