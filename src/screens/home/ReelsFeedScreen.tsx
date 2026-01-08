@@ -78,21 +78,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const adHandledRef = useRef(false);
   const adReelIndexRef = useRef<number | null>(null);
 
-  // HARD RULE: Each reel must occupy exactly one full screen height
-  // Formula: screenHeight - safeAreaTop - safeAreaBottom
-  // This ensures NO overlap, NO next reel visible, exact snap-to behavior
-  const ITEM_HEIGHT = SCREEN_HEIGHT - insets.top - insets.bottom;
-
-
-// =========================
-// REDUX COINS (FIX 1)
-// =========================
-const dispatch = useDispatch();
-const user = useSelector((state: RootState) => state.user.profile);
-const SKIP_COST = 30;
-const coins = user?.coinsBalance ?? user?.coins ?? 0;
-
-const coinAnim = useRef(new Animated.Value(1)).current;
+  const ITEM_HEIGHT = SCREEN_HEIGHT;
 
   useEffect(() => {
     StatusBar.setHidden(true);
@@ -108,6 +94,13 @@ const coinAnim = useRef(new Animated.Value(1)).current;
       }
     };
   }, []);
+
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.user.profile);
+  const SKIP_COST = 10;
+  const coins = user?.coinsBalance ?? user?.coins ?? 0;
+
+  const coinAnim = useRef(new Animated.Value(1)).current;
 
   const fetchUserProfile = useCallback(async () => {
     try {
@@ -672,7 +665,6 @@ const coinAnim = useRef(new Animated.Value(1)).current;
         <ReelItem
           key={item.id}
           reel={item}
-          containerHeight={ITEM_HEIGHT}
           isActive={index === currentIndex}
           initialTime={initialTime}
           screenFocused={isScreenFocused}
@@ -682,25 +674,6 @@ const coinAnim = useRef(new Animated.Value(1)).current;
           onOverlayToggle={handleOverlayToggle}
           onVideoTap={handleVideoTap}
           onSheetStateChange={handleSheetStateChange}
-          onLockedVideoPlayAttempt={() => {
-            // User tried to play a locked video - check if it's actually locked
-            const currentReel = reels[currentIndex];
-            if (currentReel && currentReel.adStatus === 'locked') {
-              console.log('🔒 ReelsFeedScreen: User tried to play locked video, showing popup');
-              // Keep adHandledRef as true to prevent auto-show, we'll show manually
-              adHandledRef.current = true;
-              setIsAdOpen(true);
-              setShowAdPopup(true);
-              setIsAnySheetOpen(true);
-              setShouldPlayAd(false);
-              return true; // Video is actually locked
-            } else {
-              // Video is unlocked, allow it to play normally
-              console.log('✅ ReelsFeedScreen: Video is unlocked, allowing playback');
-              adHandledRef.current = false;
-              return false; // Video is unlocked, allow playback
-            }
-          }}
         />
         
         {/* Overlay UI - Conditionally Hidden */}
@@ -746,17 +719,12 @@ const coinAnim = useRef(new Animated.Value(1)).current;
     );
   }
 
-  // Android StatusBar height for manual offset (REQUIRED for Android)
-  const ANDROID_TOP_OFFSET = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
-
   return (
     <View style={styles.safeArea}>
       <View style={[backButtonStyles.topHeader, {
-        top: Platform.OS === 'android'
-          ? ANDROID_TOP_OFFSET + 12
-          : insets.top + 8,
-        left: 16,
-        right: 16,
+        top: insets.top + (Platform.OS === 'ios' ? 8 : 12),
+        left: insets.left + 16,
+        right: insets.right + 16,
       }]}>
         <TouchableOpacity
           onPress={handleBackPress}
@@ -786,7 +754,6 @@ const coinAnim = useRef(new Animated.Value(1)).current;
         snapToInterval={ITEM_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
-        disableIntervalMomentum={true}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
@@ -811,7 +778,6 @@ const coinAnim = useRef(new Animated.Value(1)).current;
             <ActivityIndicator size="small" color={colors.yellow} />
           </View>
         ) : null}
-        contentContainerStyle={{}}
       />
 
       {/* 🔒 GLOBAL Persistent Overlay */}
