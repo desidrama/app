@@ -174,6 +174,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   };
 
   const prevIndexRef = useRef<number | null>(null);
+  const isAutoScrollingRef = useRef(false); // Track if we're auto-scrolling (to prevent onViewableItemsChanged from interfering)
   const [reels, setReels] = useState<Reel[]>([]);
   const [page, setPage] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
@@ -619,62 +620,100 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       return;
     }
     
+    // Use currentIndex from state directly (not from closure)
+    const currentIdx = currentIndex;
+    const reelsCount = reels.length;
+    
     console.log('🎬 Episode ended, auto-advancing to next webseries...');
-    console.log('🎬 Current state:', { currentIndex, reelsLength: reels.length, hasMore });
+    console.log('🎬 Current state:', { currentIndex: currentIdx, reelsLength: reelsCount, hasMore });
     
     // Validate current index
-    if (currentIndex < 0 || currentIndex >= reels.length) {
-      console.warn('Invalid currentIndex:', currentIndex, 'reels.length:', reels.length);
+    if (currentIdx < 0 || currentIdx >= reelsCount) {
+      console.warn('Invalid currentIndex:', currentIdx, 'reels.length:', reelsCount);
       return;
     }
     
-    if (currentIndex < reels.length - 1) {
-      const nextIndex = currentIndex + 1;
+    if (currentIdx < reelsCount - 1) {
+      const nextIndex = currentIdx + 1;
       
       // Validate next index
-      if (nextIndex < 0 || nextIndex >= reels.length) {
-        console.warn('Invalid nextIndex:', nextIndex, 'reels.length:', reels.length);
+      if (nextIndex < 0 || nextIndex >= reelsCount) {
+        console.warn('Invalid nextIndex:', nextIndex, 'reels.length:', reelsCount);
         return;
       }
       
-      console.log('🎬 Scrolling to next index:', nextIndex);
+      console.log('🎬 Scrolling to next index:', nextIndex, 'from', currentIdx);
       
+      // Mark that we're auto-scrolling
+      isAutoScrollingRef.current = true;
+      
+      // Update state first
       if (isMountedRef.current) {
         setCurrentIndex(nextIndex);
       }
       
-      // Smooth scroll with easing animation
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          if (isMountedRef.current && flatListRef.current && nextIndex >= 0 && nextIndex < reels.length) {
-            try {
-              console.log('🎬 Attempting scrollToIndex:', nextIndex);
-              flatListRef.current.scrollToIndex({ 
-                index: nextIndex, 
-                animated: true,
-              });
-              console.log('🎬 ScrollToIndex successful');
-            } catch (error) {
-              console.error('Error scrolling to next index:', error);
-              // Fallback to scrollToOffset
-              if (flatListRef.current) {
-                console.log('🎬 Using fallback scrollToOffset');
+      // Use multiple attempts with increasing delays to ensure scroll happens
+      const attemptScroll = (attempt: number = 0) => {
+        if (!isMountedRef.current || !flatListRef.current) {
+          if (attempt < 3) {
+            setTimeout(() => attemptScroll(attempt + 1), 100 * (attempt + 1));
+          } else {
+            console.warn('🎬 Failed to scroll after 3 attempts');
+            isAutoScrollingRef.current = false;
+          }
+          return;
+        }
+        
+        if (nextIndex >= 0 && nextIndex < reelsCount) {
+          try {
+            console.log(`🎬 Attempting scrollToIndex (attempt ${attempt + 1}):`, nextIndex);
+            flatListRef.current.scrollToIndex({ 
+              index: nextIndex, 
+              animated: true,
+            });
+            console.log('🎬 ScrollToIndex successful');
+            // Reset flag after successful scroll
+            setTimeout(() => {
+              isAutoScrollingRef.current = false;
+            }, 500);
+          } catch (error) {
+            console.error('Error scrolling to next index:', error);
+            // Fallback to scrollToOffset
+            if (flatListRef.current && attempt < 2) {
+              console.log('🎬 Using fallback scrollToOffset');
+              try {
                 flatListRef.current.scrollToOffset({ 
                   offset: nextIndex * ITEM_HEIGHT, 
                   animated: true 
                 });
+                setTimeout(() => {
+                  isAutoScrollingRef.current = false;
+                }, 500);
+              } catch (offsetError) {
+                console.error('Error with scrollToOffset:', offsetError);
+                if (attempt < 2) {
+                  setTimeout(() => attemptScroll(attempt + 1), 150);
+                } else {
+                  isAutoScrollingRef.current = false;
+                }
               }
+            } else {
+              isAutoScrollingRef.current = false;
             }
-          } else {
-            console.warn('🎬 Cannot scroll - conditions not met:', {
-              isMounted: isMountedRef.current,
-              hasFlatList: !!flatListRef.current,
-              nextIndex,
-              reelsLength: reels.length
-            });
           }
-        }, 200);
-      });
+        } else {
+          console.warn('🎬 Cannot scroll - invalid index:', {
+            nextIndex,
+            reelsLength: reelsCount
+          });
+          isAutoScrollingRef.current = false;
+        }
+      };
+      
+      // Start scroll attempts after a short delay to allow state update
+      setTimeout(() => {
+        attemptScroll(0);
+      }, 50);
     } else if (hasMore) {
       console.log('🎬 No more reels, loading more...');
       loadMore();
@@ -685,6 +724,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: any) => {
+      // Don't update if we're auto-scrolling (to prevent interference)
+      if (isAutoScrollingRef.current) {
+        console.log('🎬 Skipping onViewableItemsChanged during auto-scroll');
+        return;
+      }
+      
       if (!viewableItems || viewableItems.length === 0 || !isMountedRef.current) return;
 
       const first = viewableItems[0];
@@ -761,7 +806,13 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const handleStartWatching = useCallback(async (webseriesId: string) => {
     console.log('🎬 Starting webseries:', webseriesId);
     try {
-      const episodesResponse = await videoService.getEpisodes(webseriesId);
+      // Validate webseriesId before making API call
+      if (!webseriesId || webseriesId === 'undefined' || webseriesId === 'null') {
+        console.warn('Invalid webseriesId, skipping episode fetch:', webseriesId);
+        return;
+      }
+      
+      const episodesResponse = await videoService.getEpisodes(String(webseriesId).trim());
       if (episodesResponse.success && episodesResponse.data?.length > 0) {
         const sorted = [...episodesResponse.data].sort(
           (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
@@ -802,9 +853,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     const initialTime = isTargetVideo ? resumeTime : 0;
     
     return (
-      <View style={{ height: ITEM_HEIGHT, removeClippedSubviews: true }}>
+      <View style={{ height: ITEM_HEIGHT }} collapsable={false}>
         <ReelItem
-          key={item.id}
+          key={`reel-${item.id}`}
           reel={item}
           isActive={index === currentIndex}
           initialTime={initialTime}
@@ -948,10 +999,15 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         viewabilityConfig={viewabilityConfig}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        removeClippedSubviews
+        removeClippedSubviews={true}
         maxToRenderPerBatch={1}
-        windowSize={3}
-        initialNumToRender={2}
+        windowSize={2}
+        initialNumToRender={1}
+        updateCellsBatchingPeriod={100}
+        getItemLayout={getItemLayout}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+        }}
         onEndReached={loadMore}
         onScrollToIndexFailed={onScrollToIndexFailed}
         onEndReachedThreshold={0.3}

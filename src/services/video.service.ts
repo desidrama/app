@@ -43,8 +43,18 @@ export const videoService = {
   },
 
   async getEpisodes(seasonId: string) {
+    // Validate seasonId before making request
+    if (!seasonId || seasonId === 'undefined' || seasonId === 'null' || seasonId.trim() === '') {
+      console.warn('Invalid seasonId provided to getEpisodes:', seasonId);
+      return {
+        success: false,
+        message: 'Invalid season ID',
+        data: [],
+      };
+    }
+    
     try {
-      const response = await api.get(`/api/content/episodes/${seasonId}`);
+      const response = await api.get(`/api/content/episodes/${String(seasonId).trim()}`);
       return response.data;
     } catch (error: any) {
       // Handle 401 gracefully - return empty episodes

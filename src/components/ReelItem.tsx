@@ -743,8 +743,18 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     if (reel.seasonId) {
       setLoadingEpisodesSheet(true);
       try {
-        const seasonId = typeof reel.seasonId === 'string' ? reel.seasonId : (reel.seasonId as any)?._id || reel.seasonId;
-        const response = await videoService.getEpisodes(seasonId);
+        const seasonId = typeof reel.seasonId === 'string' 
+          ? reel.seasonId 
+          : (reel.seasonId as any)?._id || (reel.seasonId as any)?.id || reel.seasonId;
+        
+        // Validate seasonId before making API call
+        if (!seasonId || seasonId === 'undefined' || seasonId === 'null') {
+          console.warn('Invalid seasonId, skipping episode fetch:', seasonId);
+          setLoadingEpisodesSheet(false);
+          return;
+        }
+        
+        const response = await videoService.getEpisodes(String(seasonId).trim());
         if (response.success && response.data) {
           setEpisodesSheetEpisodes(response.data);
         }
@@ -753,6 +763,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       } finally {
         setLoadingEpisodesSheet(false);
       }
+    } else {
+      console.warn('No seasonId available for reel:', reel.id);
     }
   };
 
@@ -901,6 +913,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   // 1️⃣ SINGLE ACTIVE REEL RULE - Strict play/pause based on isActive
   useEffect(() => {
+    // Early return if unmounted
+    if (!isMountedRef.current) return;
+    
     // Update isActive ref
     isActiveRef.current = isActive;
     
@@ -910,11 +925,15 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       if (!hasPausedForInactiveRef.current) {
         hasPausedForInactiveRef.current = true;
         
-        if (videoRef.current) {
+        if (videoRef.current && isMountedRef.current) {
+          // Aggressive cleanup for memory management
           videoRef.current.setIsMutedAsync(true).catch(() => {});
           videoRef.current.pauseAsync().catch(() => {});
+          videoRef.current.unloadAsync().catch(() => {}); // Unload video to free memory
           actualPlayStateRef.current = 'stopped';
-          setIsPlaying(false);
+          if (isMountedRef.current) {
+            setIsPlaying(false);
+          }
           isPausedByUserRef.current = false;
           // Don't call setIsPausedByUser here - it would trigger re-render
         }
@@ -957,15 +976,18 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     hasPausedForInactiveRef.current = false;
     
     // If reel is locked, pause immediately and prevent auto-play
-    if (reel.adStatus === 'locked' && videoRef.current) {
+    if (reel.adStatus === 'locked' && videoRef.current && isMountedRef.current) {
       console.log(`🔒 ReelItem: Reel ${reel.title} is locked, pausing video immediately`);
       const pauseLockedVideo = async () => {
+        if (!isMountedRef.current) return;
         try {
-          if (videoRef.current) {
+          if (videoRef.current && isMountedRef.current) {
             const status = await videoRef.current.getStatusAsync();
-            if (status.isLoaded && videoRef.current) {
+            if (status.isLoaded && videoRef.current && isMountedRef.current) {
               await videoRef.current.pauseAsync();
-              setIsPlaying(false);
+              if (isMountedRef.current) {
+                setIsPlaying(false);
+              }
               isPausedByUserRef.current = true;
               console.log(`✅ ReelItem: Successfully paused locked video ${reel.title}`);
             }
@@ -978,17 +1000,24 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       return;
     }
 
-    // Only play if: isActive AND screenFocused AND no sheets open AND user hasn't paused AND not locked AND not shouldPause
-    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering && reel.adStatus !== 'locked' && !shouldPause) {
+    // Only play if: isActive AND screenFocused AND no sheets open AND user hasn't paused AND not locked AND not shouldPause AND mounted
+    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering && reel.adStatus !== 'locked' && !shouldPause && isMountedRef.current) {
       const playVideo = async () => {
+        // Double check mounted before playing
+        if (!isMountedRef.current || !isActiveRef.current) return;
+        
         try {
           // Use retry function with exponential backoff for audio focus errors
           const success = await playVideoWithRetry();
-          if (success) {
+          if (success && isMountedRef.current) {
             actualPlayStateRef.current = 'playing';
-            setIsPlaying(true);
+            if (isMountedRef.current) {
+              setIsPlaying(true);
+            }
             isPausedByUserRef.current = false;
-            setIsPausedByUser(false);
+            if (isMountedRef.current) {
+              setIsPausedByUser(false);
+            }
             
             // Auto-hide UI after 2.5 seconds when video starts
             setTimeout(() => {
@@ -1186,46 +1215,70 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   // Handle playback status updates with buffering detection
   const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) {
-      setIsBuffering(true);
+    // Early return if component is unmounted or not active
+    if (!isMountedRef.current || !isActiveRef.current) {
       return;
     }
     
-    // Update buffering state
-    setIsBuffering(status.isBuffering || false);
+    if (!status.isLoaded) {
+      if (isMountedRef.current) {
+        setIsBuffering(true);
+      }
+      return;
+    }
+    
+    // Update buffering state (with mounted check)
+    if (isMountedRef.current) {
+      setIsBuffering(status.isBuffering || false);
+    }
     
     // Update duration
     if (status.durationMillis && status.durationMillis > 0) {
       const durationSeconds = status.durationMillis / 1000;
       videoDurationRef.current = durationSeconds;
-      setTotalDuration(durationSeconds);
+      if (isMountedRef.current) {
+        setTotalDuration(durationSeconds);
+      }
     }
     
     // Only update progress and current time if not actively scrubbing
-    if (!isScrubbingRef.current) {
+    if (!isScrubbingRef.current && isMountedRef.current) {
       const currentTimeSeconds = (status.positionMillis || 0) / 1000;
-      setCurrentTime(currentTimeSeconds);
+      if (isMountedRef.current) {
+        setCurrentTime(currentTimeSeconds);
+      }
       if (videoDurationRef.current > 0) {
         const progressPercent = (currentTimeSeconds / videoDurationRef.current) * 100;
-        setProgress(progressPercent);
+        if (isMountedRef.current) {
+          setProgress(progressPercent);
+        }
         progressBarWidth.setValue(progressPercent);
         
         // Check if video reached end (99% or more) as fallback if didJustFinish doesn't fire
-        if (progressPercent >= 99 && isActive && onVideoEnd && !videoEndDebounceRef.current && status.isPlaying === false) {
+        if (progressPercent >= 99 && isActive && onVideoEnd && !videoEndDebounceRef.current && status.isPlaying === false && isMountedRef.current) {
           console.log('🎬 Video reached 99% completion, triggering end callback');
+          // Immediately pause to prevent restart
+          if (videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+          }
           videoEndDebounceRef.current = setTimeout(() => {
             videoEndDebounceRef.current = null;
             if (isActive && onVideoEnd && isMountedRef.current) {
               console.log('🎬 Executing onVideoEnd callback (progress-based)');
               onVideoEnd();
             }
-          }, 500);
+          }, 200); // Reduced delay for faster response
         }
       }
     }
     
     // Check if video ended (with debouncing to prevent multiple calls)
-    if (status.didJustFinish && isActive && onVideoEnd) {
+    if (status.didJustFinish && isActive && onVideoEnd && isMountedRef.current) {
+      // Immediately pause the video to prevent looping/restarting
+      if (videoRef.current) {
+        videoRef.current.pauseAsync().catch(() => {});
+      }
+      
       // Clear any existing debounce first
       if (videoEndDebounceRef.current) {
         clearTimeout(videoEndDebounceRef.current);
@@ -1233,28 +1286,37 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       }
       
       console.log('🎬 Video finished (didJustFinish=true), calling onVideoEnd');
-      // Debounce the callback to prevent rapid multiple calls
-      videoEndDebounceRef.current = setTimeout(() => {
-        videoEndDebounceRef.current = null;
-        if (isActive && onVideoEnd && isMountedRef.current) {
-          console.log('🎬 Executing onVideoEnd callback');
-          onVideoEnd();
-        }
-      }, 300);
+      // Call onVideoEnd immediately without debounce for faster response
+      // The debounce was causing delays in auto-scroll
+      if (isActive && onVideoEnd && isMountedRef.current) {
+        console.log('🎬 Executing onVideoEnd callback immediately');
+        // Use a small timeout to ensure video is paused first
+        setTimeout(() => {
+          if (isActive && onVideoEnd && isMountedRef.current) {
+            onVideoEnd();
+          }
+        }, 50);
+      }
     }
     
-    // Update playing state (sync ref with actual state)
-    setIsPlaying(status.isPlaying);
+    // Update playing state (sync ref with actual state) - only if mounted
+    if (isMountedRef.current) {
+      setIsPlaying(status.isPlaying);
+    }
     actualPlayStateRef.current = status.isPlaying ? 'playing' : 'paused';
     
-    // Only auto-resume if: active, focused, no sheets, not user-paused, not buffering
+    // Only auto-resume if: active, focused, no sheets, not user-paused, not buffering, mounted, and video hasn't ended
+    // IMPORTANT: Don't auto-resume if video just finished (didJustFinish) to allow onVideoEnd to handle auto-scroll
     if (isActive && screenFocused && !isAnySheetOpenRef.current && 
         !status.isPlaying && status.didJustFinish === false && 
-        !isPausedByUserRef.current && !isBuffering) {
+        !isPausedByUserRef.current && !isBuffering && isMountedRef.current &&
+        status.positionMillis !== status.durationMillis) { // Don't resume if at the end
       // Video stopped unexpectedly, try to resume
-      if (videoRef.current && !isBuffering) {
+      if (videoRef.current && !isBuffering && isMountedRef.current) {
         videoRef.current.playAsync().then(() => {
-          actualPlayStateRef.current = 'playing';
+          if (isMountedRef.current) {
+            actualPlayStateRef.current = 'playing';
+          }
         }).catch(() => {});
       }
     }
@@ -1775,42 +1837,56 @@ const [isFocused, setIsFocused] = useState(false);
           LAYER 1: VIDEO LAYER (No UI, No Touch)
           ======================================== */}
       <View style={styles.videoLayer} pointerEvents={showEpisodes || showMore ? "none" : "none"}>
-        <Video
-          ref={videoRef}
-          source={{ uri: currentVideoUrl }}
-          style={StyleSheet.absoluteFill}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={false}
-          isLooping
-          isMuted={true} // Always start muted, will be unmuted when active
-          onPlaybackStatusUpdate={onPlaybackStatusUpdate}
-          useNativeControls={false}
-          progressUpdateIntervalMillis={100}
-          onLoadStart={() => {
-            console.log(`🎥 Video loading started: ${reel.title}`);
-            // Immediately mute on load start to prevent audio overlap
-            if (videoRef.current) {
-              videoRef.current.setIsMutedAsync(true).catch(() => {});
-            }
-          }}
-          onLoad={(status) => {
-            console.log(`✅ Video loaded: ${reel.title}`, status.isLoaded);
-            // Ensure muted on load
-            if (videoRef.current) {
-              videoRef.current.setIsMutedAsync(true).catch(() => {});
-            }
-            // Only unmute and play if this video is active
-            if (isActive && screenFocused && videoRef.current && status.isLoaded) {
-              // Use retry function to handle audio focus conflicts
-              playVideoWithRetry().catch((error) => {
-                console.error(`Error playing video on load for ${reel.title}:`, error);
-              });
-            }
-          }}
-          onError={(error) => {
-            console.error(`❌ Video error for ${reel.title}:`, error);
-          }}
-        />
+        {/* Only render Video when active to save memory */}
+        {isActive ? (
+          <Video
+            ref={videoRef}
+            source={{ uri: currentVideoUrl }}
+            style={StyleSheet.absoluteFill}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={false}
+            isLooping={false} // Disable looping to allow auto-scroll to next reel
+            isMuted={true} // Always start muted, will be unmuted when active
+            onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+            useNativeControls={false}
+            progressUpdateIntervalMillis={100}
+            onLoadStart={() => {
+              if (!isMountedRef.current) return;
+              console.log(`🎥 Video loading started: ${reel.title}`);
+              // Immediately mute on load start to prevent audio overlap
+              if (videoRef.current && isMountedRef.current) {
+                videoRef.current.setIsMutedAsync(true).catch(() => {});
+              }
+            }}
+            onLoad={(status) => {
+              if (!isMountedRef.current) return;
+              console.log(`✅ Video loaded: ${reel.title}`, status.isLoaded);
+              // Ensure muted on load
+              if (videoRef.current && isMountedRef.current) {
+                videoRef.current.setIsMutedAsync(true).catch(() => {});
+              }
+              // Only unmute and play if this video is active
+              if (isActive && screenFocused && videoRef.current && status.isLoaded && isMountedRef.current) {
+                // Use retry function to handle audio focus conflicts
+                playVideoWithRetry().catch((error) => {
+                  console.error(`Error playing video on load for ${reel.title}:`, error);
+                });
+              }
+            }}
+            onError={(error) => {
+              console.error(`❌ Video error for ${reel.title}:`, error);
+            }}
+          />
+        ) : (
+          // Show thumbnail when not active to save memory
+          reel.thumbnailUrl && (
+            <Image
+              source={{ uri: reel.thumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+          )
+        )}
         {/* Visual overlays only (no interaction) */}
         <LinearGradient
           colors={['transparent', 'transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
@@ -2174,11 +2250,11 @@ const [isFocused, setIsFocused] = useState(false);
                 >
                   {episodesSheetEpisodes
                     .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0))
-                    .map((item) => {
+                    .map((item, index) => {
                       const isActive = item._id === reel.id;
                       return (
                         <TouchableOpacity
-                          key={item._id}
+                          key={item._id ? `episode-${item._id}` : `episode-fallback-${index}`}
                           onPress={() => {
                             // #region agent log
                             fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:episodeSelect',message:'Episode selected from sheet',data:{reelId:reel.id,episodeId:item._id,episodeNumber:item.episodeNumber,episodeTitle:item.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'episodes'})}).catch(()=>{});
@@ -2273,8 +2349,8 @@ const [isFocused, setIsFocused] = useState(false);
                   contentContainerStyle={{ paddingBottom: 16 }}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {comments.map((item) => (
-                    <View key={item.id}>
+                  {comments.map((item, index) => (
+                    <View key={item.id ? `comment-${item.id}` : `comment-fallback-${index}`}>
                       <TouchableOpacity 
                         style={styles.commentItem}
                         onPress={() => {
@@ -2522,9 +2598,9 @@ const [isFocused, setIsFocused] = useState(false);
                                   
                       {/* Replies Section - Show only when expanded */}
                       {expandedReplies[item.id] && item.replies && item.replies.length > 0 && (
-                        <View style={styles.repliesContainer}>
-                          {item.replies.map((reply) => (
-                            <View key={reply.id} style={[styles.commentItem, styles.replyItem]}>
+                        <View key={`replies-${item.id}`} style={styles.repliesContainer}>
+                          {item.replies.map((reply, replyIndex) => (
+                            <View key={reply.id ? `reply-${reply.id}` : `reply-${item.id}-${replyIndex}`} style={[styles.commentItem, styles.replyItem]}>
                               {/* Reply Avatar */}
                               <View style={styles.commentAvatar}>
                                 {reply.avatar ? (
