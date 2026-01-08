@@ -60,7 +60,6 @@ type ReelItemProps = {
   onOverlayToggle?: (shouldHide: boolean) => void; // Callback to handle overlay visibility
   onVideoTap?: () => void; // Callback when video is tapped
   onSheetStateChange?: (isOpen: boolean) => void; // Callback when any sheet/modal opens/closes
-  onLockedVideoPlayAttempt?: () => boolean | void; // Callback when user tries to play a locked video. Returns true if video is actually locked, false/undefined if unlocked
   // Swipe gestures removed - only vertical scrolling for navigation
 };
 
@@ -151,7 +150,7 @@ const ActionButton = React.memo(({
   );
 });
 
-export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange, onLockedVideoPlayAttempt }: ReelItemProps) {
+export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
   const insets = useSafeAreaInsets();
   
   
@@ -831,8 +830,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         if (videoRef.current) {
           videoRef.current.setIsMutedAsync(true).catch(() => {});
           videoRef.current.pauseAsync().catch(() => {});
-          // Reset position to 0 when inactive (prevents audio leak from previous position)
-          videoRef.current.setPositionAsync(0).catch(() => {});
           actualPlayStateRef.current = 'stopped';
           setIsPlaying(false);
           isPausedByUserRef.current = false;
@@ -1372,26 +1369,6 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         const status = await videoRef.current.getStatusAsync();
         if (!status.isLoaded || isBuffering) return;
         
-        // Check if video is locked before attempting to play
-        let isVideoUnlocked = reel.adStatus !== 'locked';
-        
-        if (reel.adStatus === 'locked' && !status.isPlaying) {
-          // Video appears locked - check with parent to see actual state
-          console.log(`🔒 ReelItem: User tried to play video ${reel.title}, checking if actually locked`);
-          if (onLockedVideoPlayAttempt) {
-            const isActuallyLocked = onLockedVideoPlayAttempt();
-            // If callback returns false, video is actually unlocked (state updated but prop hasn't)
-            if (isActuallyLocked === false) {
-              console.log(`✅ ReelItem: Video is actually unlocked, allowing playback`);
-              isVideoUnlocked = true; // Override the prop check
-            } else {
-              return; // Don't attempt to play locked video
-            }
-          } else {
-            return; // Don't attempt to play locked video
-          }
-        }
-        
         // Idempotent toggle: check actual state, then act
         if (status.isPlaying && actualPlayStateRef.current === 'playing') {
           // Actually playing → pause
@@ -1401,16 +1378,13 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           actualPlayStateRef.current = 'paused';
           setIsPlaying(false);
         } else if (!status.isPlaying && actualPlayStateRef.current !== 'playing') {
-          // Actually paused → play (only if not locked)
-          if (isVideoUnlocked) {
-            isPausedByUserRef.current = false;
-            setIsPausedByUser(false);
-            await videoRef.current.setIsMutedAsync(false);
-            await videoRef.current.playAsync();
-            actualPlayStateRef.current = 'playing';
-            setIsPlaying(true);
-          }
-          // If video is locked, we already handled it above and returned early
+          // Actually paused → play
+          isPausedByUserRef.current = false;
+          setIsPausedByUser(false);
+          await videoRef.current.setIsMutedAsync(false);
+          await videoRef.current.playAsync();
+          actualPlayStateRef.current = 'playing';
+          setIsPlaying(true);
         }
         // If state is inconsistent, sync it (shouldn't happen, but safety check)
       } catch (error) {
@@ -1418,7 +1392,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         // Don't throw - gracefully handle errors
       }
     }, 300);
-  }, [isActive, isBuffering, showUI, reel.adStatus, reel.title, onLockedVideoPlayAttempt]);
+  }, [isActive, isBuffering, showUI]);
 
   // Long-press handler for 2x speed (replaces onPressIn)
   const handleLongPress = () => {
@@ -1699,7 +1673,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <View style={[styles.container, { height: containerHeight }]}>
+    <View style={styles.container}>
       {/* ========================================
           LAYER 1: VIDEO LAYER (No UI, No Touch)
           ======================================== */}
@@ -1770,8 +1744,6 @@ const [isFocused, setIsFocused] = useState(false);
             styles.centerPlayIcon,
             {
               opacity: uiOpacity,
-              marginTop: -40, // Half of 80px background size
-              marginLeft: -40, // Half of 80px background size
             }
           ]}
           pointerEvents="none"
@@ -1789,15 +1761,12 @@ const [isFocused, setIsFocused] = useState(false);
       {/* Share button is now in ReelsFeedScreen topHeader container */}
 
       {/* PROGRESS BAR - Bottom edge, draggable (Control Layer) */}
-      {/* HARD RULE: Progress bar sits EXACTLY at safeAreaBottom + 12dp */}
       <Animated.View 
         style={[
           styles.progressBarContainer,
           {
             opacity: uiOpacity,
-            bottom: insets.bottom + 8, // CRITICAL: 8dp above safe area (flush to bottom)
-            left: 16,
-            right: 16,
+            bottom: Math.max(insets.bottom, 16),
           }
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1846,8 +1815,7 @@ const [isFocused, setIsFocused] = useState(false);
           styles.rightActions,
           {
             opacity: uiOpacity,
-            bottom: insets.bottom + 120, // CRITICAL: 120dp above safe area (above bottom metadata)
-            right: 16,
+            bottom: Math.max(insets.bottom, 80),
           }
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1913,9 +1881,7 @@ const [isFocused, setIsFocused] = useState(false);
             styles.bottomInfo,
             {
               opacity: uiOpacity,
-              bottom: insets.bottom + 48, // CRITICAL: 48dp above safe area (40dp above progress bar)
-              left: 16,
-              right: 100, // Fixed space for right action buttons
+              bottom: Math.max(insets.bottom, 16) + 20, // Moved up by 20dp to avoid overlapping with progress bar
             }
           ]}
           pointerEvents={uiVisible ? 'auto' : 'none'}
@@ -1937,15 +1903,10 @@ const [isFocused, setIsFocused] = useState(false);
                       openDesc();
                     }}
                     style={styles.seriesInfoIcon}
-                    hitSlop={{ 
-                      top: 10, // Fixed hitSlop
-                      bottom: 10, 
-                      left: 10, 
-                      right: 10 
-                    }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     activeOpacity={0.6}
                   >
-                    <Ionicons name="information-circle" size={18} color="#FFFFFF" />
+                    <Ionicons name="information-circle" size={20} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
                 
@@ -1982,7 +1943,7 @@ const [isFocused, setIsFocused] = useState(false);
           
           return (
             <View style={styles.descriptionRow}>
-              <Text style={styles.descriptionText} numberOfLines={2}>
+              <Text style={styles.descriptionText} numberOfLines={1}>
                 {truncatedDescription}
               </Text>
               {isTruncated && (
@@ -2915,27 +2876,17 @@ const [isFocused, setIsFocused] = useState(false);
   );
 }
 
-// Create responsive styles function
-const createResponsiveStyles = () => {
-  // Fixed spacing and border radius values for fullscreen Reels
-  const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
-  const borderRadius = { sm: 4, md: 8, lg: 12, xl: 16, full: 999 };
-  const touchTargetSize = 44; // Fixed touch target size
-  
-  return StyleSheet.create({
+const styles = StyleSheet.create({
   container: { 
     width: '100%', 
+    flex: 1,
     backgroundColor: '#0E0E0E',
     overflow: 'hidden',
   },
   
-  // LAYER 1: VIDEO LAYER (No UI, No Touch) - Full bleed, edge to edge
+  // LAYER 1: VIDEO LAYER (No UI, No Touch)
   videoLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     zIndex: 1,
   },
   
@@ -2943,9 +2894,9 @@ const createResponsiveStyles = () => {
   gestureLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
-    // Exclude right side (action buttons) and bottom (metadata) from gesture area - Fixed
-    paddingRight: 70, // Fixed: Exclude right action rail
-    paddingBottom: 100, // Fixed: Exclude bottom metadata
+    // Exclude right side (action buttons) and bottom (metadata) from gesture area
+    paddingRight: 80, // Exclude right action rail
+    paddingBottom: 120, // Exclude bottom metadata
   },
   
   // LAYER 3: CONTROL LAYER (Buttons - Highest Priority for Taps)
@@ -2989,10 +2940,10 @@ const createResponsiveStyles = () => {
 
   rightActions: {
     position: 'absolute',
-    right: 0, // Set dynamically in inline style
-    bottom: 0, // Set dynamically in inline style
+    right: 16,
+    bottom: Math.max(80, 80), // Respect bottom safe area
     alignItems: 'center',
-    zIndex: 500,
+    zIndex: 500, // High zIndex for action buttons
   },
   
   // Episode button position for sheet alignment
@@ -3000,27 +2951,27 @@ const createResponsiveStyles = () => {
     bottom: 80 + (20 * 2), // bottom of rightActions + spacing for two buttons (like + comments)
   },
   
-  // Premium Glassmorphism Action Buttons - Fixed spacing
+  // Premium Glassmorphism Action Buttons - Professional spacing (16dp between buttons)
   premiumActionBtn: {
     alignItems: 'center',
-    marginBottom: spacing.md, // Fixed spacing between buttons
-    minWidth: touchTargetSize, // Fixed minimum touch target size
+    marginBottom: 16, // 16dp spacing (Instagram/YouTube Shorts standard)
+    minWidth: 44,
   },
   premiumIconContainer: {
-    width: touchTargetSize,
-    height: touchTargetSize,
-    borderRadius: touchTargetSize / 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4, // Fixed spacing
-    borderWidth: Platform.OS === 'ios' ? 1 : 1.5,
+    marginBottom: 6,
+    borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 }, // Fixed shadow offset
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
-    shadowRadius: 6, // Fixed shadow radius
-    elevation: Platform.OS === 'android' ? 8 : 0, // Fixed elevation
+    shadowRadius: 6,
+    elevation: 6,
     // Glassmorphism effect
     ...Platform.select({
       ios: {
@@ -3034,7 +2985,7 @@ const createResponsiveStyles = () => {
   },
   premiumCountLabel: {
     color: '#E5E5E5',
-    fontSize: 11, // Fixed font size
+    fontSize: 11,
     fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
@@ -3223,9 +3174,9 @@ infoValue: {
   // BOTTOM INFO - Title/Metadata (Control Layer)
   bottomInfo: {
     position: 'absolute',
-    left: 0, // Set dynamically in inline style
-    right: 0, // Set dynamically in inline style
-    zIndex: 4000,
+    left: 16,
+    right: 100, // Leave space for right action rail
+    zIndex: 4000, // Control Layer - Above gesture, blocks video tap
   },
   tagsRow: {
     flexDirection: 'row',
@@ -3260,36 +3211,36 @@ infoValue: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 0,
-    marginBottom: spacing.xs, // Responsive gap before description
+    marginBottom: 6, // 6dp gap before description
   },
   seriesNameText: {
     color: '#FFFFFF',
-    fontSize: 16, // Fixed font size
-    fontWeight: '700',
+    fontSize: 18, // Slightly larger than description
+    fontWeight: '700', // Bold
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4, // Fixed shadow radius
+    textShadowRadius: 4,
     letterSpacing: 0.2,
   },
   seriesInfoIcon: {
-    marginLeft: 6, // Fixed spacing
-    alignSelf: 'center',
+    marginLeft: 7, // 7dp gap from title (slight horizontal spacing)
+    alignSelf: 'center', // Align with text baseline
   },
   descriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 0,
-    marginBottom: 0, // No extra spacing below description
+    marginBottom: 6,
   },
   descriptionText: {
     color: '#FFFFFF',
-    fontSize: 14, // Fixed font size
+    fontSize: 14, // Decreased from 16
     flex: 1,
-    lineHeight: 20, // Fixed line height
-    fontWeight: '500',
+    lineHeight: 18, // Reduced from 22 for compact look
+    fontWeight: '500', // Reduced from 600 to make it secondary
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4, // Fixed shadow radius
+    textShadowRadius: 4,
     letterSpacing: 0.15,
   },
   moreButton: {
@@ -3323,26 +3274,26 @@ infoValue: {
     marginTop: 6,
   },
 
-  // PROGRESS BAR - Bottom edge, draggable (Responsive)
+  // PROGRESS BAR - Bottom edge, draggable (no shadow/border)
   progressBarContainer: {
     position: 'absolute',
-    left: 0, // Set dynamically
-    right: 0, // Set dynamically
-    zIndex: 4000,
-    alignItems: 'flex-start',
+    left: 16,
+    right: 16,
+    zIndex: 4000, // Control Layer
+    alignItems: 'flex-start', // Align timer to left
   },
   progressBarBackground: {
     width: '100%',
-    height: 3, // Fixed height
+    height: 3,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 2, // Fixed border radius
-    overflow: 'visible',
+    borderRadius: 1.5,
+    overflow: 'visible', // Allow thumb to be visible
     position: 'relative',
   },
   progressBarFill: { 
-    height: 3, // Fixed height
-    backgroundColor: '#FFD54A',
-    borderRadius: 2, // Fixed border radius
+    height: 3,
+    backgroundColor: '#FFD54A', // Yellow color for progress bar
+    borderRadius: 1.5,
   },
   scrubberThumb: {
     position: 'absolute',
@@ -3362,19 +3313,19 @@ infoValue: {
   },
   playbackTimer: {
     color: '#FFFFFF',
-    fontSize: 11, // Fixed font size
+    fontSize: 12,
     fontWeight: '500',
-    marginBottom: spacing.xs,
+    marginBottom: 6,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   seasonEpisodeLabel: {
-    color: '#FFD54A',
-    fontSize: 13, // Fixed font size
-    fontWeight: '700',
-    marginTop: spacing.xs,
-    marginBottom: spacing.xs,
+    color: '#FFD54A', // Golden color (OTT/web-series style)
+    fontSize: 14, // Slightly larger than description (14 vs 13)
+    fontWeight: '700', // Bold
+    marginTop: 5, // 5dp gap after series name (tight spacing)
+    marginBottom: 6, // 6dp gap before description
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
@@ -3461,14 +3412,14 @@ infoValue: {
     left: 0,
     right: 0,
     bottom: 0,
-    height: height * 0.65, // Fixed height (65% of window height)
+    height: height * 0.65, // 65% of screen height (increased from 40%)
     maxHeight: height * 0.65,
     width: '100%',
     backgroundColor: '#0E0E0E',
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    paddingTop: spacing.md,
-    paddingHorizontal: 16, // Fixed padding
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
     zIndex: 10001, // Above backdrop (same as commentSheet)
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -3502,16 +3453,16 @@ infoValue: {
   },
   episodeSheetTitle: {
     color: '#FFFFFF',
-    fontSize: 17, // Fixed font size
+    fontSize: 17,
     fontWeight: '600',
     letterSpacing: 0.5,
     flex: 1,
-    marginRight: spacing.md,
+    marginRight: 12,
   },
   episodeSheetCloseBtn: {
-    width: touchTargetSize,
-    height: touchTargetSize,
-    borderRadius: touchTargetSize / 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3562,26 +3513,25 @@ infoValue: {
   rangeText: { color: '#ccc', fontWeight: '700' },
   rangeTextActive: { color: '#000' },
 
-  // Netflix-style Episode Pills - Premium OTT Design - Fixed values
+  // Netflix-style Episode Pills - Premium OTT Design
   episodeScrollContainer: {
-    paddingLeft: 16, // Fixed padding
-    paddingRight: 16, // Fixed padding
-    paddingVertical: spacing.xs,
+    paddingLeft: 20,
+    paddingRight: 20, // Extra padding on right to prevent cut-off
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
   netflixEpisodePill: {
-    paddingHorizontal: 16, // Fixed padding
-    paddingVertical: spacing.sm,
-    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999, // Fully rounded
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 60, // Fixed min width
-    minHeight: touchTargetSize,
-    marginRight: spacing.md,
+    minWidth: 70,
+    marginRight: 12, // Spacing between pills
   },
   netflixEpisodePillActive: {
     backgroundColor: '#F5C451',
@@ -3589,14 +3539,14 @@ infoValue: {
   },
   netflixEpisodeText: {
     color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 13, // Fixed font size
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '500', // Regular weight for inactive
     letterSpacing: 0.2,
   },
   netflixEpisodeTextActive: {
     color: '#000000',
-    fontSize: 13, // Fixed font size
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '600', // SemiBold for active
     letterSpacing: 0.2,
   },
   
@@ -3616,14 +3566,14 @@ infoValue: {
   epTextActive: { color: '#000', fontWeight: '800' },
   episodesLoadingContainer: {
     width: '100%',
-    paddingVertical: 40, // Fixed padding
+    paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   episodesLoadingText: {
     color: '#fff',
-    marginTop: spacing.md,
-    fontSize: 14, // Fixed font size
+    marginTop: 12,
+    fontSize: 14,
   },
 
   // COMMENT SHEET - Full Bottom Sheet (Overlay Layer) - REFERENCE IMPLEMENTATION
@@ -3632,18 +3582,18 @@ infoValue: {
     left: 0,
     right: 0,
     bottom: 0,
-    height: height * 0.85, // Fixed height (85% of window height)
+    height: height * 0.85, // 85% height (full bottom sheet)
     maxHeight: height * 0.85,
     width: '100%',
-    zIndex: 10001,
+    zIndex: 10001, // Above backdrop
   },
   commentSheet: {
     flex: 1,
     backgroundColor: '#0E0E0E',
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    paddingTop: spacing.md,
-    paddingHorizontal: 16, // Fixed padding
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
     paddingBottom: 0, // Remove bottom padding - let KeyboardAvoidingView handle it
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -3706,52 +3656,52 @@ infoValue: {
     }),
   },
   commentHandleBar: {
-    width: 36, // Fixed width
-    height: 4, // Fixed height
+    width: 36,
+    height: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: borderRadius.sm,
+    borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: spacing.md,
+    marginBottom: 12,
   },
   commentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingBottom: spacing.md,
+    marginBottom: 20,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   commentHeaderTitle: {
     color: '#FFFFFF',
-    fontSize: 20, // Fixed font size
+    fontSize: 20,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   commentItem: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
-    paddingRight: spacing.xs,
+    marginBottom: 16,
+    paddingRight: 8,
   },
   commentAvatar: {
-    marginRight: spacing.md,
+    marginRight: 12,
   },
   commentAvatarPlaceholder: {
-    width: 32, // Fixed width
-    height: 32, // Fixed height
-    borderRadius: 16, // Fixed border radius
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#FFD54A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   commentAvatarImage: {
-    width: 32, // Fixed width
-    height: 32, // Fixed height
-    borderRadius: 16, // Fixed border radius
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   commentAvatarText: {
     color: '#000',
-    fontSize: 14, // Fixed font size
+    fontSize: 14,
     fontWeight: '700',
   },
   commentContent: {
@@ -3762,31 +3712,31 @@ infoValue: {
   },
   commentUsername: {
     color: '#fff',
-    fontSize: 14, // Fixed font size
+    fontSize: 14,
     fontWeight: '700',
-    marginRight: spacing.xs,
+    marginRight: 6,
   },
   commentText: {
     color: '#FFFFFF',
-    fontSize: 15, // Fixed font size
-    lineHeight: 22, // Fixed line height
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: '400',
     letterSpacing: 0.1,
   },
   commentActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.xs,
+    marginTop: 4,
   },
   commentTime: {
     color: '#999',
-    fontSize: 12, // Fixed font size
-    marginRight: spacing.md,
+    fontSize: 12,
+    marginRight: 12,
   },
   commentActionText: {
     color: '#999',
-    fontSize: 12, // Fixed font size
-    marginRight: spacing.md,
+    fontSize: 12,
+    marginRight: 12,
     fontWeight: '600',
   },
   commentLikesContainer: {
@@ -3843,15 +3793,16 @@ infoValue: {
     color: '#999',
     fontSize: 14,
   },
-  // COMMENT INPUT - Fixed at bottom (Instagram Style) - Responsive
+  // COMMENT INPUT - Fixed at bottom (Instagram Style)
   commentInputSection: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingTop: spacing.md,
-    paddingHorizontal: 0,
+    paddingTop: 12,
+    paddingHorizontal: 0, // Already handled by parent paddingHorizontal: 20
     borderTopWidth: 0.5,
     borderTopColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: '#0E0E0E',
+    backgroundColor: '#0E0E0E', // Solid background so it stays visible
+    // paddingBottom handled dynamically: keyboardHeight + 12 when open, Math.max(insets.bottom, 12) when closed
   },
   
   // Reply Input Section
@@ -3933,13 +3884,13 @@ infoValue: {
     color: '#666',
   },
   commentInputAvatar: {
-    marginRight: spacing.md,
-    marginBottom: spacing.xs,
+    marginRight: 12,
+    marginBottom: 8,
   },
   commentInputAvatarPlaceholder: {
-    width: 40, // Fixed width
-    height: 40, // Fixed height
-    borderRadius: 20, // Fixed border radius
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F5C451',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3948,32 +3899,31 @@ infoValue: {
   },
   commentInputAvatarText: {
     color: '#000000',
-    fontSize: 16, // Fixed font size
+    fontSize: 16,
     fontWeight: '700',
   },
   commentInput: {
     flex: 1,
     backgroundColor: 'transparent',
     color: '#fff',
-    fontSize: 14, // Fixed font size
-    maxHeight: 100, // Fixed max height
-    paddingVertical: spacing.xs,
+    fontSize: 14,
+    maxHeight: 100,
+    paddingVertical: 8,
     paddingHorizontal: 0,
   },
   commentSendBtn: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    marginLeft: spacing.xs,
-    marginBottom: spacing.xs,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginLeft: 8,
+    marginBottom: 4,
     alignSelf: 'flex-end',
-    minHeight: touchTargetSize, // Fixed touch target size
   },
   commentSendBtnDisabled: {
     opacity: 0.5,
   },
   commentSendText: {
     color: '#FFD54A',
-    fontSize: 14, // Fixed font size
+    fontSize: 14,
     fontWeight: '700',
   },
   commentSendTextDisabled: {
@@ -3987,27 +3937,27 @@ infoValue: {
     paddingBottom: 12,
   },
   moreHandleBar: {
-    width: 36, // Fixed width
-    height: 4, // Fixed height
+    width: 36,
+    height: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: borderRadius.sm,
+    borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: spacing.md,
+    marginBottom: 12,
   },
   moreSheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
-    marginBottom: spacing.xl,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    marginBottom: 24,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   moreSheetTitle: {
     color: '#FFFFFF',
-    fontSize: 20, // Fixed font size
+    fontSize: 20,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -4017,14 +3967,14 @@ infoValue: {
     justifyContent: 'center',
   },
   moreSection: {
-    marginBottom: spacing.xl, // Fixed spacing (xl instead of xxl)
+    marginBottom: 32,
   },
   moreSectionTitle: {
     color: '#B0B0B0',
-    fontSize: 13, // Fixed font size
+    fontSize: 13,
     fontWeight: '600',
     letterSpacing: 0.5,
-    marginBottom: spacing.md,
+    marginBottom: 12,
     textTransform: 'uppercase',
   },
   moreOptionsRow: {
@@ -4051,13 +4001,13 @@ infoValue: {
   },
   moreOptionChipText: {
     color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 14, // Fixed font size
+    fontSize: 14,
     fontWeight: '600',
     letterSpacing: 0.2,
   },
   moreOptionChipTextActive: {
     color: '#000000',
-    fontSize: 14, // Fixed font size
+    fontSize: 14,
     fontWeight: '700',
   },
   moreDivider: {
@@ -4079,9 +4029,9 @@ infoValue: {
   },
   moreActionText: {
     color: '#fff',
-    fontSize: 16, // Fixed font size
+    fontSize: 16,
     fontWeight: '500',
-    marginLeft: spacing.md,
+    marginLeft: 16,
   },
   moreItem: { paddingVertical: 14 },
   moreText: { color: '#fff', fontSize: 16 },
@@ -4091,20 +4041,22 @@ infoValue: {
     position: 'absolute',
     top: '50%',
     left: '50%',
+    marginTop: -40, // Half of background size (80/2)
+    marginLeft: -40, // Half of background size (80/2)
     zIndex: 50,
   },
   centerPlayIconBackground: {
-    width: 80, // Fixed play icon size
+    width: 80,
     height: 80,
     borderRadius: 40,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 }, // Fixed shadow offset
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
-    shadowRadius: 8, // Fixed shadow radius
-    elevation: Platform.OS === 'android' ? 10 : 0, // Fixed elevation
+    shadowRadius: 8,
+    elevation: 10,
   },
   
   startWatchingButton: {

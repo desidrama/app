@@ -109,13 +109,6 @@ const coinAnim = useRef(new Animated.Value(1)).current;
     };
   }, []);
 
-  const dispatch = useDispatch();
-  const user = useSelector((state: RootState) => state.user.profile);
-  const SKIP_COST = 10;
-  const coins = user?.coinsBalance ?? user?.coins ?? 0;
-
-  const coinAnim = useRef(new Animated.Value(1)).current;
-
   const fetchUserProfile = useCallback(async () => {
     try {
       const token = await getToken();
