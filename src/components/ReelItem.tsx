@@ -745,6 +745,32 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   }, [showEpisodes, episodeSheetY, height]);
 
+  // CLEANUP: Properly unload video when component unmounts or becomes inactive
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (videoRef.current) {
+        videoRef.current.pauseAsync().catch(() => {});
+        videoRef.current.stopAsync().catch(() => {});
+        videoRef.current.unloadAsync().catch(() => {});
+      }
+      
+      // Clear all timeouts
+      if (progressSaveTimeoutRef.current) clearTimeout(progressSaveTimeoutRef.current);
+      if (progressSaveIntervalRef.current) clearInterval(progressSaveIntervalRef.current);
+      if (tapDebounceRef.current) clearTimeout(tapDebounceRef.current);
+      if (uiHideTimeoutRef.current) clearTimeout(uiHideTimeoutRef.current);
+      
+      // Clear sheets state
+      setShowComments(false);
+      setShowEpisodes(false);
+      setShowDescSheet(false);
+      setShowMore(false);
+      
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Pause video when screen loses focus
   useEffect(() => {
     // #region agent log
@@ -1680,7 +1706,7 @@ const [isFocused, setIsFocused] = useState(false);
       <View style={styles.videoLayer} pointerEvents={showEpisodes || showMore ? "none" : "none"}>
         <Video
           ref={videoRef}
-          source={{ uri: reel.videoUrl }}
+          source={{ uri: reel.videoUrl.replace(/720p/, '480p') }}
           style={StyleSheet.absoluteFill}
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}

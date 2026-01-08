@@ -661,13 +661,13 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     const initialTime = isTargetVideo ? resumeTime : 0;
     
     return (
-      <View style={{ height: ITEM_HEIGHT }}>
+      <View style={{ height: ITEM_HEIGHT, removeClippedSubviews: true }}>
         <ReelItem
           key={item.id}
           reel={item}
           isActive={index === currentIndex}
           initialTime={initialTime}
-          screenFocused={isScreenFocused}
+          screenFocused={isScreenFocused && index === currentIndex}
           shouldPause={showAdPopup}
           onVideoEnd={handleEpisodeEnd}
           onStartWatching={() => handleStartWatching(item.webseriesId)}
@@ -759,8 +759,8 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         onScroll={handleScroll}
         scrollEventThrottle={16}
         removeClippedSubviews
-        maxToRenderPerBatch={3}
-        windowSize={5}
+        maxToRenderPerBatch={1}
+        windowSize={3}
         initialNumToRender={2}
         onEndReached={loadMore}
         onScrollToIndexFailed={onScrollToIndexFailed}
