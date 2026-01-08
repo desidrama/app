@@ -16,7 +16,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { videoService } from '../../services/video.service';
@@ -27,11 +27,9 @@ import { useTheme } from '../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const HORIZONTAL_PADDING = 16;
-const CARD_GAP = 8;
-const NUM_COLUMNS = 3;
-const CARD_WIDTH = (width - (HORIZONTAL_PADDING * 2) - (CARD_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
-const HORIZONTAL_CARD_WIDTH = 130;
-const HORIZONTAL_CARD_GAP = 12;
+const CARD_GAP = 12;
+const NUM_COLUMNS = 2;
+const CARD_WIDTH = (width - (HORIZONTAL_PADDING * 2) - CARD_GAP) / NUM_COLUMNS;
 
 type RootStackParamList = {
   Main: undefined;
@@ -40,18 +38,19 @@ type RootStackParamList = {
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Search'>;
 
-interface CategorySection {
-  title: string;
-  data: VideoType[];
+interface SeriesGroup {
+  seriesName: string;
+  videos: VideoType[];
+  thumbnail: string;
+  totalEpisodes: number;
 }
 
 export default function SearchScreen() {
   const navigation = useNavigation<SearchScreenNavigationProp>();
   const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
-  const [allVideos, setAllVideos] = useState<VideoType[]>([]);
-  const [searchResults, setSearchResults] = useState<VideoType[]>([]);
-  const [categorizedResults, setCategorizedResults] = useState<CategorySection[]>([]);
+  const [trendingSeries, setTrendingSeries] = useState<SeriesGroup[]>([]);
+  const [searchResults, setSearchResults] = useState<SeriesGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -66,34 +65,30 @@ export default function SearchScreen() {
     'Machine',
   ];
 
-  const CATEGORIES = ['Horror', 'Thriller', 'Comedy', 'Drama', 'Action', 'Romance', 'Sci-Fi'];
+  // Group videos by series name
+  const groupVideosBySeries = (videos: VideoType[]): SeriesGroup[] => {
+    const seriesMap = new Map<string, VideoType[]>();
 
-  const categorizeVideos = (videos: VideoType[]): CategorySection[] => {
-    const categoryMap: { [key: string]: VideoType[] } = {};
-    
-    CATEGORIES.forEach(cat => {
-      categoryMap[cat] = [];
-    });
-
-    CATEGORIES.forEach(category => {
-      for (let i = 0; i < 4 && i < videos.length; i++) {
-        categoryMap[category].push(videos[i]);
+    videos.forEach(video => {
+      const seriesName = video.seasonId?.title || video.seriesName || video.title;
+      if (!seriesMap.has(seriesName)) {
+        seriesMap.set(seriesName, []);
       }
+      seriesMap.get(seriesName)?.push(video);
     });
 
-    return CATEGORIES.map(category => ({
-      title: category,
-      data: categoryMap[category],
-    })).filter(section => section.data.length > 0);
+    return Array.from(seriesMap.entries()).map(([seriesName, videos]) => ({
+      seriesName,
+      videos,
+      thumbnail: videos[0].thumbnailUrl || videos[0].thumbnail || 'https://picsum.photos/200/300',
+      totalEpisodes: videos.length,
+    }));
   };
 
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
       setHasSearched(false);
-      if (allVideos.length > 0) {
-        setCategorizedResults(categorizeVideos(allVideos));
-      }
       return;
     }
 
@@ -104,22 +99,20 @@ export default function SearchScreen() {
     try {
       const response = await videoService.searchVideos(query, 1);
       if (response.success && response.data) {
-        setSearchResults(response.data);
-        setCategorizedResults([]);
+        const groupedSeries = groupVideosBySeries(response.data);
+        setSearchResults(groupedSeries);
       } else {
         setSearchResults([]);
-        setCategorizedResults([]);
         setError('No results found');
       }
     } catch (err: any) {
       console.error('Search error:', err);
       setError('Failed to search. Please try again.');
       setSearchResults([]);
-      setCategorizedResults([]);
     } finally {
       setLoading(false);
     }
-  }, [allVideos]);
+  }, []);
 
   const loadTrendingVideos = useCallback(async () => {
     setLoading(true);
@@ -128,8 +121,9 @@ export default function SearchScreen() {
     try {
       const response = await videoService.searchVideos(' ', 1);
       if (response.success && response.data) {
-        setAllVideos(response.data);
-        setCategorizedResults(categorizeVideos(response.data));
+        const groupedSeries = groupVideosBySeries(response.data);
+        // Take top 10 series
+        setTrendingSeries(groupedSeries.slice(0, 10));
       }
     } catch (err) {
       console.error('Trending load error:', err);
@@ -139,43 +133,35 @@ export default function SearchScreen() {
   }, []);
 
   useEffect(() => {
-    if (!hasSearched && allVideos.length === 0) {
+    if (!hasSearched && trendingSeries.length === 0) {
       loadTrendingVideos();
     }
-  }, [loadTrendingVideos, hasSearched, allVideos.length]);
+  }, [loadTrendingVideos, hasSearched, trendingSeries.length]);
 
-  // Real-time search with debounce - combining both branches
+  // Real-time search with debounce
   useEffect(() => {
-    // Clear any existing timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    // If search query is empty, clear results immediately and restore categories
     if (!searchQuery.trim()) {
       setSearchResults([]);
       setHasSearched(false);
-      if (allVideos.length > 0) {
-        setCategorizedResults(categorizeVideos(allVideos));
-      }
       return;
     }
 
-    // Debounce the search - wait 400ms after user stops typing
     searchTimeoutRef.current = setTimeout(() => {
       performSearch(searchQuery);
     }, 400);
 
-    // Cleanup function
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, performSearch, allVideos]);
+  }, [searchQuery, performSearch]);
 
   const handleSearch = () => {
-    // Clear timeout and search immediately when Enter is pressed
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -184,109 +170,74 @@ export default function SearchScreen() {
 
   const handleMostSearchedPress = (term: string) => {
     setSearchQuery(term);
-    // The useEffect will handle the search automatically
   };
 
-  const handleVideoPress = (video: VideoType) => {
+  const handleSeriesPress = (series: SeriesGroup) => {
+    // Navigate to first episode of the series
+    const firstVideo = series.videos[0];
     (navigation as any).navigate('Main', {
       screen: 'Reels',
       params: {
-        targetVideoId: video._id,
+        targetVideoId: firstVideo._id,
       },
     });
   };
 
-  const renderHorizontalVideoItem = ({ item }: { item: VideoType }) => {
-    const imageUrl = item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/110/160?random=1';
+  const renderTrendingItem = ({ item, index }: { item: SeriesGroup; index: number }) => {
+    const imageUrl = item.thumbnail;
     const fullImageUrl = imageUrl.startsWith('http') 
       ? imageUrl 
       : `${API_BASE_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
 
     return (
       <TouchableOpacity
-        style={styles.horizontalCard}
-        onPress={() => handleVideoPress(item)}
+        style={styles.trendingCard}
+        onPress={() => handleSeriesPress(item)}
         activeOpacity={0.9}
       >
-        <View style={styles.horizontalCardWrapper}>
-          <View style={styles.horizontalThumbnailContainer}>
-            <Image
-              source={{ uri: fullImageUrl }}
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          </View>
-          
-          <View style={styles.horizontalTitleContainer}>
-            <Text
-              style={styles.horizontalVideoTitle}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {item.title}
-            </Text>
-          </View>
+        <Image
+          source={{ uri: fullImageUrl }}
+          style={styles.trendingThumbnail}
+          resizeMode="cover"
+        />
+
+        <View style={styles.trendingInfo}>
+          <Text style={styles.trendingTitle} numberOfLines={2}>
+            {item.seriesName}
+          </Text>
+          <Text style={styles.trendingEpisodes}>{item.totalEpisodes} Episodes</Text>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderGridVideoItem = ({ item, index }: { item: VideoType; index: number }) => {
-    const imageUrl = item.thumbnailUrl || item.thumbnail || 'https://picsum.photos/110/160?random=1';
+  const renderSearchResultItem = ({ item, index }: { item: SeriesGroup; index: number }) => {
+    const imageUrl = item.thumbnail;
     const fullImageUrl = imageUrl.startsWith('http') 
       ? imageUrl 
       : `${API_BASE_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
 
     return (
       <TouchableOpacity
-        style={styles.videoCard}
-        onPress={() => handleVideoPress(item)}
+        style={styles.searchCard}
+        onPress={() => handleSeriesPress(item)}
         activeOpacity={0.9}
       >
-        <View style={styles.cardWrapper}>
-          <View style={styles.thumbnailContainer}>
-            <Image
-              source={{ uri: fullImageUrl }}
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          </View>
-          
-          <View style={styles.titleContainer}>
-            <Text
-              style={styles.videoTitle}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {item.title}
-            </Text>
-          </View>
+        <Image
+          source={{ uri: fullImageUrl }}
+          style={styles.searchThumbnail}
+          resizeMode="cover"
+        />
+        
+        <View style={styles.searchInfo}>
+          <Text style={styles.searchTitle} numberOfLines={2}>
+            {item.seriesName}
+          </Text>
+          <Text style={styles.searchEpisodes}>{item.totalEpisodes} Episodes</Text>
         </View>
       </TouchableOpacity>
     );
   };
-
-  const renderCategorySection = (section: CategorySection) => (
-    <View key={section.title} style={styles.categorySection}>
-      <View style={styles.categoryHeader}>
-        <View style={styles.categoryTitleRow}>
-          <View style={styles.categoryDot} />
-          <Text style={styles.categoryTitle}>{section.title}</Text>
-        </View>
-        <Text style={styles.categoryCount}>{section.data.length}</Text>
-      </View>
-      
-      <FlatList
-        data={section.data}
-        renderItem={renderHorizontalVideoItem}
-        keyExtractor={(item) => `${section.title}-${item._id}`}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.horizontalList}
-        ItemSeparatorComponent={() => <View style={{ width: HORIZONTAL_CARD_GAP }} />}
-      />
-    </View>
-  );
 
   const renderEmptyState = () => {
     if (loading) {
@@ -329,22 +280,18 @@ export default function SearchScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
+      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
       
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.searchContainer}>
             <View style={styles.searchIconWrapper}>
-              <Ionicons
-                name="search"
-                size={22}
-                color="#888888"
-              />
+              <Ionicons name="search" size={20} color="#999" />
             </View>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search videos, movies, shows..."
-              placeholderTextColor="#555555"
+              placeholder="Search series, movies..."
+              placeholderTextColor="#666"
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
@@ -357,11 +304,10 @@ export default function SearchScreen() {
                   setSearchQuery('');
                   setSearchResults([]);
                   setHasSearched(false);
-                  setCategorizedResults(categorizeVideos(allVideos));
                 }}
                 style={styles.clearButton}
               >
-                <Ionicons name="close-circle" size={22} color="#888888" />
+                <Ionicons name="close-circle" size={20} color="#999" />
               </TouchableOpacity>
             )}
           </View>
@@ -369,7 +315,10 @@ export default function SearchScreen() {
 
         {!hasSearched && searchQuery.length === 0 && (
           <View style={styles.mostSearchedSection}>
-            <Text style={styles.sectionTitle}>Most Searched</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="flash" size={16} color="#FFC107" />
+              <Text style={styles.sectionTitle}>Trending Searches</Text>
+            </View>
             <View style={styles.chipsContainer}>
               {MOST_SEARCHED.map((item) => (
                 <TouchableOpacity
@@ -378,7 +327,6 @@ export default function SearchScreen() {
                   onPress={() => handleMostSearchedPress(item)}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="trending-up" size={12} color="#999999" style={styles.chipIcon} />
                   <Text style={styles.chipText}>{item}</Text>
                 </TouchableOpacity>
               ))}
@@ -389,21 +337,30 @@ export default function SearchScreen() {
         {hasSearched && searchResults.length > 0 ? (
           <FlatList
             data={searchResults}
-            renderItem={renderGridVideoItem}
-            keyExtractor={(item, index) => `${item._id}-${index}`}
-            key="three-columns"
+            renderItem={renderSearchResultItem}
+            keyExtractor={(item, index) => `${item.seriesName}-${index}`}
+            key="two-columns"
             numColumns={NUM_COLUMNS}
             contentContainerStyle={styles.gridContainer}
             showsVerticalScrollIndicator={false}
             columnWrapperStyle={styles.columnWrapper}
           />
-        ) : !hasSearched && categorizedResults.length > 0 ? (
-          <ScrollView
+        ) : !hasSearched && trendingSeries.length > 0 ? (
+          <FlatList
+            data={trendingSeries}
+            renderItem={renderTrendingItem}
+            keyExtractor={(item, index) => `${item.seriesName}-${index}`}
+            contentContainerStyle={styles.trendingContainer}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-          >
-            {categorizedResults.map(section => renderCategorySection(section))}
-          </ScrollView>
+            ListHeaderComponent={() => (
+              <View style={styles.trendingHeader}>
+                <View style={styles.trendingHeaderLeft}>
+                  <FontAwesome5 name="fire" size={20} color="#FFC107" />
+                  <Text style={styles.trendingHeaderTitle}>Top 10 Series</Text>
+                </View>
+              </View>
+            )}
+          />
         ) : (
           <View style={styles.emptyWrapper}>
             {renderEmptyState()}
@@ -417,43 +374,35 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#1A1A1A',
   },
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#1A1A1A',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingVertical: 16,
-    backgroundColor: '#0A0A0A',
+    paddingVertical: 12,
+    backgroundColor: '#1A1A1A',
   },
   searchContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F0F',
-    borderRadius: 28,
-    paddingHorizontal: 18,
-    height: 56,
-    borderWidth: 2,
-    borderColor: '#2A2A2A',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
+    backgroundColor: '#252525',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   searchIconWrapper: {
-    marginRight: 12,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#FFFFFF',
+    color: '#FFF',
     paddingVertical: 0,
   },
   clearButton: {
@@ -462,15 +411,20 @@ const styles = StyleSheet.create({
   },
   mostSearchedSection: {
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 10,
-    letterSpacing: 0.5,
+    color: '#FFF',
+    letterSpacing: 0.3,
   },
   chipsContainer: {
     flexDirection: 'row',
@@ -478,98 +432,68 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#252525',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: '#FFC107',
   },
-  chipIcon: {
-    marginRight: 5,
-  },
   chipText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#CCCCCC',
-    letterSpacing: 0.3,
+    color: '#FFF',
+    letterSpacing: 0.2,
   },
-  scrollContent: {
+  trendingContainer: {
+    paddingHorizontal: HORIZONTAL_PADDING,
     paddingBottom: 100,
   },
-  categorySection: {
-    marginBottom: 20,
-  },
-  categoryHeader: {
+  trendingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: HORIZONTAL_PADDING,
+    marginBottom: 20,
+    paddingVertical: 8,
   },
-  categoryTitleRow: {
+  trendingHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
-  categoryDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFC107',
-    marginRight: 8,
-  },
-  categoryTitle: {
-    fontSize: 17,
+  trendingHeaderTitle: {
+    fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#FFF',
     letterSpacing: 0.5,
   },
-  categoryCount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#999999',
+  trendingCard: {
     backgroundColor: '#252525',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  horizontalList: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-  },
-  horizontalCard: {
-    width: HORIZONTAL_CARD_WIDTH,
-  },
-  horizontalCardWrapper: {
-    backgroundColor: '#1A1A1A',
     borderRadius: 16,
+    marginBottom: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  horizontalThumbnailContainer: {
+  trendingThumbnail: {
     width: '100%',
-    aspectRatio: 3 / 4,
-    backgroundColor: '#0A0A0A',
-    overflow: 'hidden',
-  },
-  horizontalTitleContainer: {
-    padding: 10,
+    height: 180,
     backgroundColor: '#1A1A1A',
-    minHeight: 22,
-    justifyContent: 'center',
   },
-  horizontalVideoTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: 11,
-    letterSpacing: 0.2,
+  trendingInfo: {
+    padding: 16,
+  },
+  trendingTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+    marginBottom: 6,
+    letterSpacing: 0.3,
+  },
+  trendingEpisodes: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#999',
   },
   gridContainer: {
     paddingHorizontal: HORIZONTAL_PADDING,
@@ -580,41 +504,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: CARD_GAP,
   },
-  videoCard: {
+  searchCard: {
     width: CARD_WIDTH,
-  },
-  cardWrapper: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#252525',
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  thumbnailContainer: {
+  searchThumbnail: {
     width: '100%',
-    aspectRatio: 9 / 16,
-    backgroundColor: '#0A0A0A',
-    overflow: 'hidden',
-  },
-  thumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  titleContainer: {
-    padding: 10,
+    height: 200,
     backgroundColor: '#1A1A1A',
-    minHeight: 44,
-    justifyContent: 'center',
   },
-  videoTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: 13,
+  searchInfo: {
+    padding: 12,
+  },
+  searchTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFF',
+    marginBottom: 6,
     letterSpacing: 0.2,
+  },
+  searchEpisodes: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#999',
   },
   emptyWrapper: {
     flex: 1,
@@ -633,7 +549,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#FFF',
     letterSpacing: 0.3,
   },
   iconCircle: {
@@ -645,12 +561,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#333',
   },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#FFF',
     textAlign: 'center',
     marginBottom: 10,
     letterSpacing: 0.3,
@@ -658,7 +574,7 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#999999',
+    color: '#999',
     textAlign: 'center',
     letterSpacing: 0.2,
   },

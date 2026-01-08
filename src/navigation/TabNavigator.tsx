@@ -76,6 +76,7 @@ const TabNavigator: React.FC = () => {
       screenOptions={{
         headerShown: false,
         lazy: true,
+        animationEnabled: true,
         tabBarStyle: {
           position: 'absolute',
           bottom: 0,

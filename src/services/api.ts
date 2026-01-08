@@ -319,6 +319,23 @@ export const getCoinHistory = async (page: number = 1) => {
 };
 
 /**
+ * Reward for watching an ad
+ */
+export const rewardAdView = async (adType: string = 'rewarded') => {
+  try {
+    const response = await api.post('/api/reward/ad-view', { adType });
+    return response.data;
+  } catch (error: any) {
+    console.error('Reward Ad View Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    throw error;
+  }
+};
+
+/**
  * Claim daily check-in reward
  */
 export const claimDailyCheckIn = async () => {

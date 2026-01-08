@@ -15,6 +15,7 @@ export interface Video {
   shares?: number;
   comments?: number;
   type?: 'reel' | 'episode';
+  seriesName?: string;
   seasonId?: {
     _id: string;
     title: string;

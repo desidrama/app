@@ -145,11 +145,42 @@ export const clearCookies = async (): Promise<void> => {
 };
 
 /**
+ * Mission States Storage
+ */
+const MISSION_STATES_KEY = 'dedidrama_mission_states';
+
+export const getMissionStates = async (): Promise<Record<string, any> | null> => {
+  try {
+    const data = await AsyncStorage.getItem(MISSION_STATES_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error('Error retrieving mission states:', error);
+    return null;
+  }
+};
+
+export const setMissionStates = async (states: Record<string, any>): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(MISSION_STATES_KEY, JSON.stringify(states));
+  } catch (error) {
+    console.error('Error saving mission states:', error);
+  }
+};
+
+export const clearMissionStates = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(MISSION_STATES_KEY);
+  } catch (error) {
+    console.error('Error clearing mission states:', error);
+  }
+};
+
+/**
  * Clear all stored data
  */
 export const clearAll = async (): Promise<void> => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, COOKIES_KEY, USER_KEY]);
+    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, COOKIES_KEY, USER_KEY, MISSION_STATES_KEY]);
   } catch (error) {
     console.error('Error clearing all storage:', error);
   }

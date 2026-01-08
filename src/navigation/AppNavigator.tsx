@@ -130,12 +130,12 @@ export default function AppNavigator() {
       notification: colors.error,
     },
     fonts: {
-      regular: { fontFamily: 'System', fontWeight: '400' },
-      medium: { fontFamily: 'System', fontWeight: '500' },
-      bold: { fontFamily: 'System', fontWeight: '700' },
-      heavy: { fontFamily: 'System', fontWeight: '900' },
+      regular: { fontFamily: 'System', fontWeight: '400' as const },
+      medium: { fontFamily: 'System', fontWeight: '500' as const },
+      bold: { fontFamily: 'System', fontWeight: '700' as const },
+      heavy: { fontFamily: 'System', fontWeight: '900' as const },
     },
-  };
+  } as const;
 
   // --------------------------------------------
   // SPLASH (UNTIL AUTH CHECKED)
@@ -155,7 +155,11 @@ export default function AppNavigator() {
   // --------------------------------------------
   return (
     <NavigationContainer ref={navigationRef} theme={navigationTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false,
+        }}
+      >
 
         {!isAuthenticated && (
           <>
@@ -164,14 +168,25 @@ export default function AppNavigator() {
           </>
         )}
 
-        <Stack.Screen name="Main" component={TabNavigator} />
-        <Stack.Screen name="Search" component={SearchScreen} />
-        <Stack.Screen name="AddCoins" component={AddCoinsScreen} />
+        <Stack.Screen 
+          name="Main" 
+          component={TabNavigator}
+        />
+        <Stack.Screen 
+          name="Search" 
+          component={SearchScreen}
+        />
+        <Stack.Screen 
+          name="AddCoins" 
+          component={AddCoinsScreen}
+          options={{
+            presentation: 'modal',
+          }}
+        />
         <Stack.Screen 
           name="EpisodePlayer" 
           component={EpisodePlayerScreen}
           options={{
-            animationEnabled: true,
             presentation: 'fullScreenModal',
           }}
         />
@@ -179,7 +194,6 @@ export default function AppNavigator() {
           name="ReelInfo" 
           component={ReelInfoScreen}
           options={{
-            animationEnabled: true,
             presentation: 'card',
           }}
         />
