@@ -156,6 +156,8 @@ export default function HomeScreen() {
   const { continueWatching, continueWatchingLoading } = useSelector(
     (state: RootState) => state.video
   );
+  const user = useSelector((state: RootState) => state.user.profile);
+  const coins = user?.coinsBalance ?? user?.coins ?? 0;
 
   const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(true);
@@ -581,18 +583,18 @@ export default function HomeScreen() {
               resizeMode="contain"
             />
             <View style={styles.headerRight}>
-              <TouchableOpacity 
+              {/* <TouchableOpacity 
                 style={styles.searchButton}
                 onPress={() => rootNavigation.navigate('Search' as never)}
               >
                 <Ionicons name="search" size={26} color="#FFCB00" />
-              </TouchableOpacity>
+              </TouchableOpacity> */}
               <TouchableOpacity style={styles.coinButton}>
                 <View style={styles.coinContainer}>
                   <View style={styles.coinIcon}>
                     <Text style={styles.coinSymbol}>🪙</Text>
                   </View>
-                  <Text style={styles.coinCount}>13</Text>
+                  <Text style={styles.coinCount}>{coins}</Text>
                 </View>
               </TouchableOpacity>
             </View>
