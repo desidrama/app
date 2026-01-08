@@ -201,6 +201,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, [currentIndex]);
 
   useEffect(() => {
+    // Validate bounds before accessing array
+    if (currentIndex < 0 || currentIndex >= reels.length || !isMountedRef.current) return;
+    
     const reel = reels[currentIndex];
     if (!reel) return;
 
@@ -297,10 +300,15 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         setCurrentIndex(index);
         setTargetVideoFound(true);
       }
-      if (reels.length > 0 && isMountedRef.current) {
+      if (reels.length > 0 && isMountedRef.current && index >= 0 && index < reels.length) {
         requestAnimationFrame(() => {
-          if (isMountedRef.current && flatListRef.current && reels.length > 0) {
-            flatListRef.current.scrollToIndex({ index, animated: false });
+          if (isMountedRef.current && flatListRef.current && index >= 0 && index < reels.length) {
+            try {
+              flatListRef.current.scrollToIndex({ index, animated: false });
+            } catch (error) {
+              console.error('Error scrolling to index:', error);
+              flatListRef.current.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: false });
+            }
           }
         });
       }
@@ -318,7 +326,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
             setTargetVideoFound(true);
             setTimeout(() => {
               if (isMountedRef.current && flatListRef.current && reels.length > 0) {
-                flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                try {
+                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                } catch (error) {
+                  console.error('Error scrolling to index 0:', error);
+                  flatListRef.current.scrollToOffset({ offset: 0, animated: false });
+                }
               }
             }, 100);
           }
@@ -435,7 +448,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
                 
                 setTimeout(() => {
                   if (isMountedRef.current && flatListRef.current && reels.length > 0) {
-                    flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                    try {
+                      flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                    } catch (error) {
+                      console.error('Error scrolling to index 0:', error);
+                      flatListRef.current.scrollToOffset({ offset: 0, animated: false });
+                    }
                   }
                 }, 50);
               }
@@ -596,38 +614,101 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, [loadPage]);
 
   const handleEpisodeEnd = useCallback(() => {
+    if (!isMountedRef.current) {
+      console.warn('🎬 handleEpisodeEnd: Component not mounted');
+      return;
+    }
+    
     console.log('🎬 Episode ended, auto-advancing to next webseries...');
+    console.log('🎬 Current state:', { currentIndex, reelsLength: reels.length, hasMore });
+    
+    // Validate current index
+    if (currentIndex < 0 || currentIndex >= reels.length) {
+      console.warn('Invalid currentIndex:', currentIndex, 'reels.length:', reels.length);
+      return;
+    }
     
     if (currentIndex < reels.length - 1) {
       const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-      }, 100);
+      
+      // Validate next index
+      if (nextIndex < 0 || nextIndex >= reels.length) {
+        console.warn('Invalid nextIndex:', nextIndex, 'reels.length:', reels.length);
+        return;
+      }
+      
+      console.log('🎬 Scrolling to next index:', nextIndex);
+      
+      if (isMountedRef.current) {
+        setCurrentIndex(nextIndex);
+      }
+      
+      // Smooth scroll with easing animation
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (isMountedRef.current && flatListRef.current && nextIndex >= 0 && nextIndex < reels.length) {
+            try {
+              console.log('🎬 Attempting scrollToIndex:', nextIndex);
+              flatListRef.current.scrollToIndex({ 
+                index: nextIndex, 
+                animated: true,
+              });
+              console.log('🎬 ScrollToIndex successful');
+            } catch (error) {
+              console.error('Error scrolling to next index:', error);
+              // Fallback to scrollToOffset
+              if (flatListRef.current) {
+                console.log('🎬 Using fallback scrollToOffset');
+                flatListRef.current.scrollToOffset({ 
+                  offset: nextIndex * ITEM_HEIGHT, 
+                  animated: true 
+                });
+              }
+            }
+          } else {
+            console.warn('🎬 Cannot scroll - conditions not met:', {
+              isMounted: isMountedRef.current,
+              hasFlatList: !!flatListRef.current,
+              nextIndex,
+              reelsLength: reels.length
+            });
+          }
+        }, 200);
+      });
     } else if (hasMore) {
+      console.log('🎬 No more reels, loading more...');
       loadMore();
+    } else {
+      console.log('🎬 No more reels available');
     }
-  }, [currentIndex, reels.length, hasMore, loadMore]);
+  }, [currentIndex, reels.length, hasMore, loadMore, ITEM_HEIGHT]);
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: any) => {
-      if (!viewableItems || viewableItems.length === 0) return;
+      if (!viewableItems || viewableItems.length === 0 || !isMountedRef.current) return;
 
       const first = viewableItems[0];
-      if (typeof first.index !== 'number') return;
+      if (typeof first.index !== 'number' || first.index < 0) return;
+
+      // Validate index is within bounds
+      if (first.index >= reels.length) return;
 
       if (
         prevIndexRef.current !== null &&
         first.index !== prevIndexRef.current
       ) {
         // Reset overlay visibility when scrolling to new reel
-        setHideOverlay(false);
+        if (isMountedRef.current) {
+          setHideOverlay(false);
+        }
       }
 
       prevIndexRef.current = first.index;
-      setCurrentIndex(first.index);
+      if (isMountedRef.current) {
+        setCurrentIndex(first.index);
+      }
     },
-    []
+    [reels.length]
   );
 
   const viewabilityConfig = useRef({
@@ -644,11 +725,29 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, [hasPrevious, loadingPrevious, loadPrevious, page, ITEM_HEIGHT]);
 
   const onScrollToIndexFailed = useCallback((info: any) => {
+    if (!isMountedRef.current || !flatListRef.current) return;
+    
+    const index = info?.index;
+    if (typeof index !== 'number' || index < 0 || index >= reels.length) {
+      console.warn('Invalid scroll index:', index);
+      return;
+    }
+
     const wait = new Promise(resolve => setTimeout(resolve, 500));
     wait.then(() => {
-      flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
+      if (isMountedRef.current && flatListRef.current && index >= 0 && index < reels.length) {
+        try {
+          flatListRef.current.scrollToIndex({ index, animated: true });
+        } catch (error) {
+          console.error('Error scrolling to index:', error);
+          // Fallback to scrollToOffset
+          if (flatListRef.current) {
+            flatListRef.current.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: true });
+          }
+        }
+      }
     });
-  }, []);
+  }, [reels.length, ITEM_HEIGHT]);
 
   const getItemLayout = useCallback(
     (_data: any, index: number) => ({
@@ -781,6 +880,12 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, [handleBackPress]);
 
   const handleShare = useCallback(async () => {
+    // Validate bounds before accessing array
+    if (currentIndex < 0 || currentIndex >= reels.length) {
+      console.warn('Invalid currentIndex for share:', currentIndex);
+      return;
+    }
+    
     const currentReel = reels[currentIndex];
     if (!currentReel) return;
     
@@ -866,7 +971,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       />
 
       {/* 🔒 GLOBAL Persistent Overlay */}
-{!hideOverlay && !isAnySheetOpen && reels[currentIndex] && (
+{!hideOverlay && !isAnySheetOpen && currentIndex >= 0 && currentIndex < reels.length && reels[currentIndex] && (
   <View
     style={reelOverlayStyles.overlay}
     pointerEvents="box-none"

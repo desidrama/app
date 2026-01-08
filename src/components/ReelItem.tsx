@@ -211,6 +211,7 @@ useEffect(() => {
   const isPausedByUserRef = useRef(false); // Track if user intentionally paused (ref for immediate access)
   const hasPausedForInactiveRef = useRef(false); // Prevent duplicate pause calls when inactive
   const progressSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Prevent duplicate progress saves
+  const videoEndDebounceRef = useRef<NodeJS.Timeout | null>(null); // Prevent duplicate video end calls
 
   // Configure audio mode for video playback (once on mount)
   useEffect(() => {
@@ -603,6 +604,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const [videoQuality, setVideoQuality] = useState<string>('720p'); // Default to 720p
   const [availableQualities, setAvailableQualities] = useState<string[]>([]);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string>(reel.videoUrl);
+  
+  // 2× Speed indicator animation
+  const speedIndicatorOpacity = useRef(new Animated.Value(0)).current;
 
   // Load quality preference on mount
   useEffect(() => {
@@ -805,6 +809,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       if (uiHideTimeoutRef.current) {
         clearTimeout(uiHideTimeoutRef.current);
         uiHideTimeoutRef.current = null;
+      }
+      if (videoEndDebounceRef.current) {
+        clearTimeout(videoEndDebounceRef.current);
+        videoEndDebounceRef.current = null;
       }
       
       // Clear sheets state (only if component is still mounted check removed to prevent errors)
@@ -1201,7 +1209,38 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         const progressPercent = (currentTimeSeconds / videoDurationRef.current) * 100;
         setProgress(progressPercent);
         progressBarWidth.setValue(progressPercent);
+        
+        // Check if video reached end (99% or more) as fallback if didJustFinish doesn't fire
+        if (progressPercent >= 99 && isActive && onVideoEnd && !videoEndDebounceRef.current && status.isPlaying === false) {
+          console.log('🎬 Video reached 99% completion, triggering end callback');
+          videoEndDebounceRef.current = setTimeout(() => {
+            videoEndDebounceRef.current = null;
+            if (isActive && onVideoEnd && isMountedRef.current) {
+              console.log('🎬 Executing onVideoEnd callback (progress-based)');
+              onVideoEnd();
+            }
+          }, 500);
+        }
       }
+    }
+    
+    // Check if video ended (with debouncing to prevent multiple calls)
+    if (status.didJustFinish && isActive && onVideoEnd) {
+      // Clear any existing debounce first
+      if (videoEndDebounceRef.current) {
+        clearTimeout(videoEndDebounceRef.current);
+        videoEndDebounceRef.current = null;
+      }
+      
+      console.log('🎬 Video finished (didJustFinish=true), calling onVideoEnd');
+      // Debounce the callback to prevent rapid multiple calls
+      videoEndDebounceRef.current = setTimeout(() => {
+        videoEndDebounceRef.current = null;
+        if (isActive && onVideoEnd && isMountedRef.current) {
+          console.log('🎬 Executing onVideoEnd callback');
+          onVideoEnd();
+        }
+      }, 300);
     }
     
     // Update playing state (sync ref with actual state)
@@ -1481,6 +1520,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     if (isActive && videoRef.current) {
       setPlaybackSpeed(2.0);
       videoRef.current.setRateAsync(2.0, true).catch(() => {});
+      // Show speed indicator with animation
+      Animated.timing(speedIndicatorOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       } catch {}
@@ -1492,6 +1537,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     if (isActive && videoRef.current && playbackSpeed === 2.0) {
       setPlaybackSpeed(1.0);
       videoRef.current.setRateAsync(1.0, true).catch(() => {});
+      // Hide speed indicator
+      Animated.timing(speedIndicatorOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
     }
   };
 
@@ -1817,6 +1868,28 @@ const [isFocused, setIsFocused] = useState(false);
         ]}
         pointerEvents={uiVisible ? 'auto' : 'none'}
       >
+        {/* 2× Speed Indicator */}
+        {playbackSpeed === 2.0 && (
+          <Animated.View
+            style={[
+              styles.speedIndicator,
+              {
+                opacity: speedIndicatorOpacity,
+                transform: [
+                  {
+                    scale: speedIndicatorOpacity.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={styles.speedIndicatorText}>2×</Text>
+          </Animated.View>
+        )}
+        
         {/* Real-time Playback Timer */}
         {totalDuration > 0 && (
           <Text style={styles.playbackTimer}>
@@ -2783,6 +2856,22 @@ const [isFocused, setIsFocused] = useState(false);
                         if (isActive && videoRef.current) {
                           videoRef.current.setRateAsync(speed, true).catch(() => {});
                         }
+                        // Animate speed indicator for 2× speed
+                        if (speed === 2.0) {
+                          Animated.sequence([
+                            Animated.timing(speedIndicatorOpacity, {
+                              toValue: 1,
+                              duration: 200,
+                              useNativeDriver: true,
+                            }),
+                          ]).start();
+                        } else {
+                          Animated.timing(speedIndicatorOpacity, {
+                            toValue: 0,
+                            duration: 200,
+                            useNativeDriver: true,
+                          }).start();
+                        }
                       }}
                     >
                       <Text
@@ -3355,6 +3444,18 @@ infoValue: {
     right: 16,
     zIndex: 4000, // Control Layer
     alignItems: 'flex-start', // Align timer to left
+  },
+  speedIndicator: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: 10, // Position closer to progress bar (moved down to avoid description collision)
+    // Background removed - text only
+  },
+  speedIndicatorText: {
+    color: '#FFD54A',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   progressBarBackground: {
     width: '100%',
