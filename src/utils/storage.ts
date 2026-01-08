@@ -176,11 +176,34 @@ export const clearMissionStates = async (): Promise<void> => {
 };
 
 /**
+ * Video Quality Preference Storage
+ */
+const VIDEO_QUALITY_KEY = 'dedidrama_video_quality';
+
+export const getVideoQualityPreference = async (): Promise<string> => {
+  try {
+    const quality = await AsyncStorage.getItem(VIDEO_QUALITY_KEY);
+    return quality || '720p'; // Default to 720p
+  } catch (error) {
+    console.error('Error retrieving video quality preference:', error);
+    return '720p'; // Default to 720p
+  }
+};
+
+export const setVideoQualityPreference = async (quality: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(VIDEO_QUALITY_KEY, quality);
+  } catch (error) {
+    console.error('Error saving video quality preference:', error);
+  }
+};
+
+/**
  * Clear all stored data
  */
 export const clearAll = async (): Promise<void> => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, COOKIES_KEY, USER_KEY, MISSION_STATES_KEY]);
+    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, COOKIES_KEY, USER_KEY, MISSION_STATES_KEY, VIDEO_QUALITY_KEY]);
   } catch (error) {
     console.error('Error clearing all storage:', error);
   }

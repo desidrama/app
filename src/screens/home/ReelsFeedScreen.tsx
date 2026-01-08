@@ -15,6 +15,7 @@ import {
   Alert,
   Share,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -38,7 +39,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import { skipAdWithCoins, getUserProfile } from '../../services/api';
-import { getToken } from '../../utils/storage';
+import { getToken, getVideoQualityPreference } from '../../utils/storage';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
@@ -81,6 +82,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const ITEM_HEIGHT = SCREEN_HEIGHT;
 
   useEffect(() => {
+    isMountedRef.current = true;
     StatusBar.setHidden(true);
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('hidden');
@@ -88,6 +90,7 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }
 
     return () => {
+      isMountedRef.current = false;
       StatusBar.setHidden(false);
       if (Platform.OS === 'android') {
         NavigationBar.setVisibilityAsync('visible');
@@ -223,8 +226,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsetRef = useRef<number>(0);
   const [isScreenFocused, setIsScreenFocused] = useState(true);
+  const isMountedRef = useRef<boolean>(true);
 
-  const transformVideoToReel = useCallback((video: VideoType): Reel | null => {
+  const transformVideoToReel = useCallback(async (video: VideoType): Promise<Reel | null> => {
     const seasonNum = (video as any).seasonNumber || 1;
     const episodeNum = (video as any).episodeNumber || 1;
     
@@ -235,7 +239,10 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     let videoUrl = video.masterPlaylistUrl || '';
 
     if (!videoUrl && video.variants && video.variants.length > 0) {
-      const preferredOrder = ['720p', '1080p', '480p', '360p'];
+      // Get user's quality preference (default to 720p)
+      const preferredQuality = await getVideoQualityPreference();
+      const preferredOrder = [preferredQuality, '720p', '1080p', '480p', '360p'].filter((q, i, arr) => arr.indexOf(q) === i);
+      
       for (const res of preferredOrder) {
         const v = video.variants.find((x) => x.resolution === res);
         if (v && v.url) {
@@ -282,15 +289,17 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
   }, []);
 
   const findAndScrollToVideo = useCallback((videoId: string) => {
-    if (!videoId || !flatListRef.current || targetVideoFound) return;
+    if (!videoId || !flatListRef.current || targetVideoFound || !isMountedRef.current) return;
     
     const index = reels.findIndex((reel: Reel) => reel.id === videoId);
     if (index !== -1) {
-      setCurrentIndex(index);
-      setTargetVideoFound(true);
-      if (reels.length > 0) {
+      if (isMountedRef.current) {
+        setCurrentIndex(index);
+        setTargetVideoFound(true);
+      }
+      if (reels.length > 0 && isMountedRef.current) {
         requestAnimationFrame(() => {
-          if (flatListRef.current && reels.length > 0) {
+          if (isMountedRef.current && flatListRef.current && reels.length > 0) {
             flatListRef.current.scrollToIndex({ index, animated: false });
           }
         });
@@ -301,14 +310,14 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     const fetchTargetVideo = async () => {
       try {
         const response = await videoService.getVideoById(videoId);
-        if (response.success && response.data) {
-          const targetReel = transformVideoToReel(response.data);
-          if (targetReel) {
+        if (response.success && response.data && isMountedRef.current) {
+          const targetReel = await transformVideoToReel(response.data);
+          if (targetReel && isMountedRef.current) {
             setReels((prev) => [targetReel, ...prev]);
             setCurrentIndex(0);
             setTargetVideoFound(true);
             setTimeout(() => {
-              if (flatListRef.current && reels.length > 0) {
+              if (isMountedRef.current && flatListRef.current && reels.length > 0) {
                 flatListRef.current.scrollToIndex({ index: 0, animated: false });
               }
             }, 100);
@@ -391,8 +400,9 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
       try {
         const res = await videoService.getWebseriesFeed(pageToLoad);
         if (res && res.success && Array.isArray(res.data)) {
-          const transformed = res.data
-            .map(transformVideoToReel)
+          const transformedPromises = res.data.map(transformVideoToReel);
+          const transformedResults = await Promise.all(transformedPromises);
+          const transformed = transformedResults
             .filter((reel: Reel | null): reel is Reel => reel !== null);
 
           transformed.sort((a: Reel, b: Reel) => {
@@ -409,50 +419,61 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
           }
           const finalReels = Array.from(uniqueWebseries.values());
           
+          // Check if component is still mounted before updating state
+          if (!isMountedRef.current) return;
+          
           if (targetVideoId && !targetVideoFound) {
             const targetIndex = finalReels.findIndex((reel: Reel) => reel.id === targetVideoId);
             if (targetIndex !== -1) {
               const targetReel = finalReels[targetIndex];
               const otherReels = finalReels.filter((_: Reel, idx: number) => idx !== targetIndex);
               const reelsToSet = opts?.replace ? [targetReel, ...otherReels] : [...reels, targetReel, ...otherReels];
-              setReels(reelsToSet);
-              setCurrentIndex(0);
-              setTargetVideoFound(true);
-              
-              setTimeout(() => {
-                if (flatListRef.current && reels.length > 0) {
-                  flatListRef.current.scrollToIndex({ index: 0, animated: false });
-                }
-              }, 50);
+              if (isMountedRef.current) {
+                setReels(reelsToSet);
+                setCurrentIndex(0);
+                setTargetVideoFound(true);
+                
+                setTimeout(() => {
+                  if (isMountedRef.current && flatListRef.current && reels.length > 0) {
+                    flatListRef.current.scrollToIndex({ index: 0, animated: false });
+                  }
+                }, 50);
+              }
             } else {
-              if (opts?.replace) {
+              if (opts?.replace && isMountedRef.current) {
                 setReels(finalReels);
                 flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
                 setCurrentIndex(0);
-              } else {
+              } else if (isMountedRef.current) {
                 setReels((prev) => [...prev, ...finalReels]);
               }
             }
           } else {
-            if (opts?.replace) {
+            if (opts?.replace && isMountedRef.current) {
               setReels(finalReels);
               flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
               setCurrentIndex(0);
-            } else {
+            } else if (isMountedRef.current) {
               setReels((prev) => [...prev, ...finalReels]);
             }
           }
 
-          setPage(pageToLoad);
-          setHasMore(Boolean(res.pagination?.hasMore));
-          setHasPrevious(Boolean(res.pagination?.hasPrevious) || pageToLoad > 1);
+          if (isMountedRef.current) {
+            setPage(pageToLoad);
+            setHasMore(Boolean(res.pagination?.hasMore));
+            setHasPrevious(Boolean(res.pagination?.hasPrevious) || pageToLoad > 1);
+          }
         } else {
-          setHasMore(false);
+          if (isMountedRef.current) {
+            setHasMore(false);
+          }
         }
       } catch (e) {
         console.error('Error loading reels page', e);
       } finally {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     },
     [loading, transformVideoToReel, targetVideoId, targetVideoFound, reels]
@@ -483,25 +504,36 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         }
         const finalReels = Array.from(uniqueWebseries.values());
 
+        // Check if component is still mounted before updating state
+        if (!isMountedRef.current) return;
+
         setReels((prev) => [...finalReels, ...prev]);
 
         const offsetDelta = finalReels.length * ITEM_HEIGHT;
         requestAnimationFrame(() => {
-          flatListRef.current?.scrollToOffset({
-            offset: scrollOffsetRef.current + offsetDelta,
-            animated: false,
-          });
+          if (isMountedRef.current && flatListRef.current) {
+            flatListRef.current.scrollToOffset({
+              offset: scrollOffsetRef.current + offsetDelta,
+              animated: false,
+            });
+          }
         });
 
-        setPage(prevPage);
-        setHasPrevious(prevPage > 1);
+        if (isMountedRef.current) {
+          setPage(prevPage);
+          setHasPrevious(prevPage > 1);
+        }
       } else {
-        setHasPrevious(false);
+        if (isMountedRef.current) {
+          setHasPrevious(false);
+        }
       }
     } catch (err) {
       console.error('Error loading previous page', err);
     } finally {
-      setLoadingPrevious(false);
+      if (isMountedRef.current) {
+        setLoadingPrevious(false);
+      }
     }
   }, [loadingPrevious, page, transformVideoToReel, ITEM_HEIGHT]);
 
@@ -530,26 +562,36 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
         }
         const finalReels = Array.from(uniqueWebseries.values());
 
+        // Check if component is still mounted before updating state
+        if (!isMountedRef.current) return;
+
         setReels((prev) => [...prev, ...finalReels]);
         setPage(nextPage);
         setHasMore(Boolean(res.pagination?.hasMore));
         setHasPrevious(true);
       } else {
-        setHasMore(false);
+        if (isMountedRef.current) {
+          setHasMore(false);
+        }
       }
     } catch (err) {
       console.error('Error loading more reels', err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [loading, hasMore, page, transformVideoToReel]);
 
   const onRefresh = useCallback(async () => {
+    if (!isMountedRef.current) return;
     setRefreshing(true);
     try {
       await loadPage(1, { replace: true });
     } finally {
-      setRefreshing(false);
+      if (isMountedRef.current) {
+        setRefreshing(false);
+      }
     }
   }, [loadPage]);
 
@@ -691,9 +733,52 @@ const ReelPlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propNavi
     }, [])
   );
 
-  const handleBackPress = () => {
-    navigation.navigate('Home');
-  };
+  const handleBackPress = useCallback(() => {
+    // Cleanup before navigating to prevent render errors
+    try {
+      // Reset state to prevent render errors
+      setReels([]);
+      setCurrentIndex(0);
+      setLoading(false);
+      setLoadingPrevious(false);
+      setRefreshing(false);
+      
+      // Mark as unmounted to prevent any async state updates
+      isMountedRef.current = false;
+      
+      // Navigate back
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
+    } catch (error) {
+      console.error('Error in handleBackPress:', error);
+      // Mark as unmounted even on error
+      isMountedRef.current = false;
+      // Fallback navigation
+      try {
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
+        }
+      } catch (navError) {
+        console.error('Navigation error:', navError);
+      }
+    }
+    return true; // Prevent default back behavior
+  }, [navigation]);
+
+  // Handle Android hardware back button
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+      return () => {
+        backHandler.remove();
+      };
+    }
+  }, [handleBackPress]);
 
   const handleShare = useCallback(async () => {
     const currentReel = reels[currentIndex];

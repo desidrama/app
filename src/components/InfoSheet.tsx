@@ -175,8 +175,8 @@ const InfoSheet: React.FC<{
           {(reel.seasonId || seasonEpisodes.length > 0) && (
             <View style={{ marginBottom: 16 }}>
               <Text style={styles.infoSectionHeading}>
-                {seasonEpisodes.length > 0 && seasonEpisodes[0].seasonNumber 
-                  ? `Season ${seasonEpisodes[0].seasonNumber} • Eps ${seasonEpisodes.length}`
+                {seasonEpisodes.length > 0 && seasonEpisodes[0].seasonId?.seasonNumber 
+                  ? `Season ${seasonEpisodes[0].seasonId.seasonNumber} • Eps ${seasonEpisodes.length}`
                   : 'Episodes'}
               </Text>
               {loadingEpisodes ? (
@@ -213,8 +213,8 @@ const InfoSheet: React.FC<{
                       >
                         <Ionicons name="play" size={18} color="#000" />
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
+                  </TouchableOpacity>
+                ))
               ) : (
                 <Text style={styles.episodesLoadingText}>No episodes available</Text>
               )}

@@ -32,6 +32,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { videoService } from '../services/video.service';
 import { CommentInputOptimized } from './CommentInputOptimized';
 import type { Video as VideoType } from '../types';
+import { getVideoQualityPreference, setVideoQualityPreference } from '../utils/storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -509,7 +510,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             wasPlayingBeforeScrub.current = status.isPlaying || false;
             
             // Pause video while scrubbing for better UX
-            if (status.isPlaying) {
+            if (status.isPlaying && videoRef.current) {
               await videoRef.current.pauseAsync();
             }
             
@@ -599,6 +600,28 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // Video quality removed - Auto quality only (handled by backend/CDN)
   const [audioTrack, setAudioTrack] = useState('Original');
   const [isInWatchlist, setIsInWatchlist] = useState(false);
+  const [videoQuality, setVideoQuality] = useState<string>('720p'); // Default to 720p
+  const [availableQualities, setAvailableQualities] = useState<string[]>([]);
+  const [currentVideoUrl, setCurrentVideoUrl] = useState<string>(reel.videoUrl);
+
+  // Load quality preference on mount
+  useEffect(() => {
+    const loadQualityPreference = async () => {
+      const preference = await getVideoQualityPreference();
+      setVideoQuality(preference);
+    };
+    loadQualityPreference();
+  }, []);
+
+  // Update video URL when quality preference or reel changes
+  useEffect(() => {
+    if (reel.videoUrl) {
+      // Try to replace resolution in URL if it contains resolution info
+      // This handles URLs like: https://.../videos/{id}/720p.mp4
+      const updatedUrl = reel.videoUrl.replace(/(360p|480p|720p|1080p)/, videoQuality);
+      setCurrentVideoUrl(updatedUrl);
+    }
+  }, [videoQuality, reel.videoUrl]);
 
   // Load like status when reel becomes active
   useEffect(() => {
@@ -643,11 +666,13 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
             // If reel is locked, pause immediately and don't play
           if (reel.adStatus === 'locked') {
             console.log(`🔒 ReelItem: Reel ${reel.title} is locked during initialization, pausing`);
-            const status = await videoRef.current!.getStatusAsync();
-            if (status.isLoaded) {
-              await videoRef.current!.pauseAsync();
-              setIsPlaying(false);
-              isPausedByUserRef.current = true;
+            if (videoRef.current) {
+              const status = await videoRef.current.getStatusAsync();
+              if (status.isLoaded && videoRef.current) {
+                await videoRef.current.pauseAsync();
+                setIsPlaying(false);
+                isPausedByUserRef.current = true;
+              }
             }
             return;
           }
@@ -749,24 +774,47 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // CLEANUP: Properly unload video when component unmounts or becomes inactive
   useEffect(() => {
     return () => {
+      // Mark as unmounted to prevent state updates
+      isMountedRef.current = false;
+      isActiveRef.current = false;
+      
       // Cleanup on unmount
       if (videoRef.current) {
-        videoRef.current.pauseAsync().catch(() => {});
-        videoRef.current.stopAsync().catch(() => {});
-        videoRef.current.unloadAsync().catch(() => {});
+        try {
+          videoRef.current.pauseAsync().catch(() => {});
+          videoRef.current.stopAsync().catch(() => {});
+          videoRef.current.unloadAsync().catch(() => {});
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
       }
       
       // Clear all timeouts
-      if (progressSaveTimeoutRef.current) clearTimeout(progressSaveTimeoutRef.current);
-      if (progressSaveIntervalRef.current) clearInterval(progressSaveIntervalRef.current);
-      if (tapDebounceRef.current) clearTimeout(tapDebounceRef.current);
-      if (uiHideTimeoutRef.current) clearTimeout(uiHideTimeoutRef.current);
+      if (progressSaveTimeoutRef.current) {
+        clearTimeout(progressSaveTimeoutRef.current);
+        progressSaveTimeoutRef.current = null;
+      }
+      if (progressSaveIntervalRef.current) {
+        clearInterval(progressSaveIntervalRef.current);
+        progressSaveIntervalRef.current = null;
+      }
+      if (tapDebounceRef.current) {
+        clearTimeout(tapDebounceRef.current);
+        tapDebounceRef.current = null;
+      }
+      if (uiHideTimeoutRef.current) {
+        clearTimeout(uiHideTimeoutRef.current);
+        uiHideTimeoutRef.current = null;
+      }
       
-      // Clear sheets state
-      setShowComments(false);
-      setShowEpisodes(false);
-      setShowDescSheet(false);
-      setShowMore(false);
+      // Clear sheets state (only if component is still mounted check removed to prevent errors)
+      try {
+        setShowComments(false);
+        setShowEpisodes(false);
+        setShowMore(false);
+      } catch (error) {
+        // Ignore state update errors during unmount
+      }
       
       isMountedRef.current = false;
     };
@@ -905,12 +953,14 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       console.log(`🔒 ReelItem: Reel ${reel.title} is locked, pausing video immediately`);
       const pauseLockedVideo = async () => {
         try {
-          const status = await videoRef.current!.getStatusAsync();
-          if (status.isLoaded) {
-            await videoRef.current!.pauseAsync();
-            setIsPlaying(false);
-            isPausedByUserRef.current = true;
-            console.log(`✅ ReelItem: Successfully paused locked video ${reel.title}`);
+          if (videoRef.current) {
+            const status = await videoRef.current.getStatusAsync();
+            if (status.isLoaded && videoRef.current) {
+              await videoRef.current.pauseAsync();
+              setIsPlaying(false);
+              isPausedByUserRef.current = true;
+              console.log(`✅ ReelItem: Successfully paused locked video ${reel.title}`);
+            }
           }
         } catch (error) {
           console.error(`Error pausing locked video: ${reel.title}`, error);
@@ -960,15 +1010,19 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       setIsPlaying(false);
       
       // Try to pause immediately without waiting
-      videoRef.current.pauseAsync().catch(() => {});
+      if (videoRef.current) {
+        videoRef.current.pauseAsync().catch(() => {});
+      }
       
       // Also do the full pause check to ensure it worked
       const pauseVideo = async () => {
         try {
-          const status = await videoRef.current!.getStatusAsync();
-          if (status.isLoaded && status.isPlaying) {
-            await videoRef.current!.pauseAsync();
-            console.log(`✅ ReelItem: Successfully paused video ${reel.title}`);
+          if (videoRef.current) {
+            const status = await videoRef.current.getStatusAsync();
+            if (status.isLoaded && status.isPlaying && videoRef.current) {
+              await videoRef.current.pauseAsync();
+              console.log(`✅ ReelItem: Successfully paused video ${reel.title}`);
+            }
           }
         } catch (error) {
           console.error('Error pausing video:', error);
@@ -1397,7 +1451,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         if (!status.isLoaded || isBuffering) return;
         
         // Idempotent toggle: check actual state, then act
-        if (status.isPlaying && actualPlayStateRef.current === 'playing') {
+        if (status.isPlaying && actualPlayStateRef.current === 'playing' && videoRef.current) {
           // Actually playing → pause
           isPausedByUserRef.current = true;
           setIsPausedByUser(true);
@@ -1527,7 +1581,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         return;
       }
       
-      navigation.navigate('ReelInfo' as never, {
+      (navigation as any).navigate('ReelInfo', {
         reelId: reel.id,
         title: reel.title,
         year: reel.year,
@@ -1536,7 +1590,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         thumbnailUrl: reel.thumbnailUrl,
         description: reel.description,
         seasonId: seasonId,
-      } as never);
+      });
     } catch (error) {
       console.error('❌ Error navigating to ReelInfo:', error);
     }
@@ -1582,9 +1636,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:handleEpisodePress',message:'Episode pressed',data:{reelId:reel.id,episodeId:episode._id,episodeTitle:episode.title},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet'})}).catch(()=>{});
     // #endregion
-    // Close the info sheet first
-    setShowDescSheet(false);
-    // Note: Episode navigation would need to be handled by parent component
+    // Note: Episode navigation is handled by parent component
     // For now, we'll just log it
     console.log('Episode pressed:', episode.title);
   };
@@ -1674,7 +1726,7 @@ const [isFocused, setIsFocused] = useState(false);
       <View style={styles.videoLayer} pointerEvents={showEpisodes || showMore ? "none" : "none"}>
         <Video
           ref={videoRef}
-          source={{ uri: reel.videoUrl.replace(/720p/, '480p') }}
+          source={{ uri: currentVideoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
@@ -2746,7 +2798,57 @@ const [isFocused, setIsFocused] = useState(false);
                 </View>
               </View>
 
-              {/* Video Quality Section - Removed (Auto quality only, handled by backend/CDN) */}
+              {/* Video Quality Section */}
+              <View style={styles.moreSection}>
+                <Text style={styles.moreSectionTitle}>Video Quality</Text>
+                <View style={styles.moreOptionsRow}>
+                  {['360p', '480p', '720p', '1080p'].map((quality) => (
+                    <TouchableOpacity
+                      key={quality}
+                      style={[
+                        styles.moreOptionChip,
+                        videoQuality === quality && styles.moreOptionChipActive,
+                      ]}
+                      onPress={async () => {
+                        setVideoQuality(quality);
+                        await setVideoQualityPreference(quality);
+                        // Update video URL
+                        if (reel.videoUrl) {
+                          const updatedUrl = reel.videoUrl.replace(/(360p|480p|720p|1080p)/, quality);
+                          setCurrentVideoUrl(updatedUrl);
+                          // Reload video with new quality
+                          if (isActive && videoRef.current) {
+                            try {
+                              const status = await videoRef.current.getStatusAsync();
+                              const currentTime = status.isLoaded ? status.positionMillis / 1000 : 0;
+                              const wasPlaying = status.isLoaded && status.isPlaying;
+                              await videoRef.current.unloadAsync();
+                              await videoRef.current.loadAsync({ uri: updatedUrl });
+                              if (currentTime > 0) {
+                                await videoRef.current.setPositionAsync(currentTime * 1000);
+                              }
+                              if (wasPlaying && !isPausedByUserRef.current) {
+                                await videoRef.current.playAsync();
+                              }
+                            } catch (error) {
+                              console.error('Error changing video quality:', error);
+                            }
+                          }
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.moreOptionChipText,
+                          videoQuality === quality && styles.moreOptionChipTextActive,
+                        ]}
+                      >
+                        {quality}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
 
               {/* Audio Track Section */}
               <View style={styles.moreSection}>
