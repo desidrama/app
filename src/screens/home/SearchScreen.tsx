@@ -55,15 +55,6 @@ export default function SearchScreen() {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const MOST_SEARCHED = [
-    'Ghost',
-    'Digilocker',
-    'Meridian Exposed',
-    'Firewall of Lies',
-    'eyes',
-    'Machine',
-  ];
 
   // Group videos by series name
   const groupVideosBySeries = (videos: VideoType[]): SeriesGroup[] => {
@@ -122,8 +113,16 @@ export default function SearchScreen() {
       const response = await videoService.searchVideos(' ', 1);
       if (response.success && response.data) {
         const groupedSeries = groupVideosBySeries(response.data);
+        
+        // Sort series by most recent video creation date
+        const sortedSeries = groupedSeries.sort((a, b) => {
+          const aLatest = new Date(a.videos[0]?.createdAt || 0).getTime();
+          const bLatest = new Date(b.videos[0]?.createdAt || 0).getTime();
+          return bLatest - aLatest; // Most recent first
+        });
+        
         // Take top 10 series
-        setTrendingSeries(groupedSeries.slice(0, 10));
+        setTrendingSeries(sortedSeries.slice(0, 10));
       }
     } catch (err) {
       console.error('Trending load error:', err);
@@ -189,23 +188,50 @@ export default function SearchScreen() {
       ? imageUrl 
       : `${API_BASE_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
 
+    // Get the series description from the first video
+    const seriesDescription = item.videos[0]?.seasonId?.title 
+      ? `Season ${item.videos[0].seasonId.seasonNumber || 1}` 
+      : 'Web Series';
+    const videoDescription = item.videos[0]?.description || 'Exciting content awaits';
+
     return (
       <TouchableOpacity
-        style={styles.trendingCard}
+        style={styles.searchCard}
         onPress={() => handleSeriesPress(item)}
-        activeOpacity={0.9}
+        activeOpacity={0.85}
       >
-        <Image
-          source={{ uri: fullImageUrl }}
-          style={styles.trendingThumbnail}
-          resizeMode="cover"
-        />
-
-        <View style={styles.trendingInfo}>
-          <Text style={styles.trendingTitle} numberOfLines={2}>
-            {item.seriesName}
-          </Text>
-          <Text style={styles.trendingEpisodes}>{item.totalEpisodes} Episodes</Text>
+        <View style={styles.thumbnailContainer}>
+          <Image
+            source={{ uri: fullImageUrl }}
+            style={styles.searchThumbnail}
+            resizeMode="cover"
+          />
+        </View>
+        
+        <View style={styles.searchInfo}>
+          <View style={styles.searchContentWrapper}>
+            <Text style={styles.searchTitle} numberOfLines={2}>
+              {item.seriesName}
+            </Text>
+            
+            <View style={styles.metaRow}>
+              <View style={styles.metaBadge}>
+                <Ionicons name="videocam" size={12} color="#FFC107" />
+                <Text style={styles.metaText}>{item.totalEpisodes} Episodes</Text>
+              </View>
+              <View style={styles.metaDivider} />
+              <Text style={styles.metaCategory}>{seriesDescription}</Text>
+            </View>
+            
+            <Text style={styles.searchDescription} numberOfLines={3}>
+              {videoDescription}
+            </Text>
+          </View>
+          
+          <View style={styles.watchButton}>
+            <Ionicons name="play" size={14} color="#1A1A1A" />
+            <Text style={styles.watchButtonText}>Watch Now</Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -217,23 +243,50 @@ export default function SearchScreen() {
       ? imageUrl 
       : `${API_BASE_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
 
+    // Get the series description from the first video
+    const seriesDescription = item.videos[0]?.seasonId?.title 
+      ? `Season ${item.videos[0].seasonId.seasonNumber || 1}` 
+      : 'Web Series';
+    const videoDescription = item.videos[0]?.description || 'Exciting content awaits';
+
     return (
       <TouchableOpacity
         style={styles.searchCard}
         onPress={() => handleSeriesPress(item)}
-        activeOpacity={0.9}
+        activeOpacity={0.85}
       >
-        <Image
-          source={{ uri: fullImageUrl }}
-          style={styles.searchThumbnail}
-          resizeMode="cover"
-        />
+        <View style={styles.thumbnailContainer}>
+          <Image
+            source={{ uri: fullImageUrl }}
+            style={styles.searchThumbnail}
+            resizeMode="cover"
+          />
+        </View>
         
         <View style={styles.searchInfo}>
-          <Text style={styles.searchTitle} numberOfLines={2}>
-            {item.seriesName}
-          </Text>
-          <Text style={styles.searchEpisodes}>{item.totalEpisodes} Episodes</Text>
+          <View style={styles.searchContentWrapper}>
+            <Text style={styles.searchTitle} numberOfLines={2}>
+              {item.seriesName}
+            </Text>
+            
+            <View style={styles.metaRow}>
+              <View style={styles.metaBadge}>
+                <Ionicons name="videocam" size={12} color="#FFC107" />
+                <Text style={styles.metaText}>{item.totalEpisodes} Episodes</Text>
+              </View>
+              <View style={styles.metaDivider} />
+              <Text style={styles.metaCategory}>{seriesDescription}</Text>
+            </View>
+            
+            <Text style={styles.searchDescription} numberOfLines={3}>
+              {videoDescription}
+            </Text>
+          </View>
+          
+          <View style={styles.watchButton}>
+            <Ionicons name="play" size={14} color="#1A1A1A" />
+            <Text style={styles.watchButtonText}>Watch Now</Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -316,18 +369,18 @@ export default function SearchScreen() {
         {!hasSearched && searchQuery.length === 0 && (
           <View style={styles.mostSearchedSection}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="flash" size={16} color="#FFC107" />
+              
               <Text style={styles.sectionTitle}>Trending Searches</Text>
             </View>
             <View style={styles.chipsContainer}>
-              {MOST_SEARCHED.map((item) => (
+              {trendingSeries.slice(0, 4).map((item) => (
                 <TouchableOpacity
-                  key={item}
+                  key={item.seriesName}
                   style={styles.chip}
-                  onPress={() => handleMostSearchedPress(item)}
+                  onPress={() => handleMostSearchedPress(item.seriesName)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.chipText}>{item}</Text>
+                  <Text style={styles.chipText}>{item.seriesName}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -339,11 +392,8 @@ export default function SearchScreen() {
             data={searchResults}
             renderItem={renderSearchResultItem}
             keyExtractor={(item, index) => `${item.seriesName}-${index}`}
-            key="two-columns"
-            numColumns={NUM_COLUMNS}
-            contentContainerStyle={styles.gridContainer}
+            contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
-            columnWrapperStyle={styles.columnWrapper}
           />
         ) : !hasSearched && trendingSeries.length > 0 ? (
           <FlatList
@@ -411,17 +461,17 @@ const styles = StyleSheet.create({
   },
   mostSearchedSection: {
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 8,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: 0.3,
@@ -429,18 +479,18 @@ const styles = StyleSheet.create({
   chipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   chip: {
     backgroundColor: '#252525',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#FFC107',
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     color: '#FFF',
     letterSpacing: 0.2,
@@ -495,6 +545,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#999',
   },
+  listContainer: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingTop: 16,
+    paddingBottom: 100,
+  },
   gridContainer: {
     paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: 12,
@@ -504,33 +559,132 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: CARD_GAP,
   },
+  // NEW IMPROVED SEARCH CARD STYLES
   searchCard: {
-    width: CARD_WIDTH,
+    flexDirection: 'row',
     backgroundColor: '#252525',
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#333',
+    marginBottom: 14,
+    height: 200,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  thumbnailContainer: {
+    width: 160,
+    height: '100%',
+    position: 'relative',
+    backgroundColor: '#1A1A1A',
   },
   searchThumbnail: {
     width: '100%',
-    height: 200,
+    height: '100%',
     backgroundColor: '#1A1A1A',
   },
+  playOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
   searchInfo: {
+    flex: 1,
     padding: 12,
+    justifyContent: 'space-between',
+  },
+  searchContentWrapper: {
+    flex: 1,
   },
   searchTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFF',
     marginBottom: 6,
+    letterSpacing: 0.3,
+    lineHeight: 20,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    flexWrap: 'wrap',
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 193, 7, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFC107',
     letterSpacing: 0.2,
   },
-  searchEpisodes: {
-    fontSize: 12,
+  metaDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#444',
+    marginHorizontal: 8,
+  },
+  metaCategory: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#999',
+    letterSpacing: 0.2,
+  },
+  searchDescription: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#CCC',
+    lineHeight: 16,
+    letterSpacing: 0.2,
+    marginBottom: 6,
+  },
+  watchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFC107',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  watchButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    letterSpacing: 0.3,
+  },
+  searchHeader: {
+    marginBottom: 6,
+  },
+  episodesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  searchEpisodes: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFC107',
   },
   emptyWrapper: {
     flex: 1,

@@ -219,14 +219,16 @@ const CoinsScreen = ({ navigation }: any) => {
 
         setHasClaimedToday(!!isSameDay);
         
-        // Set current day - if they've claimed today, show the NEXT day they'll claim tomorrow
-        // If they haven't claimed today, show the day they need to claim today
+        // The currentCheckInDay from backend is the day they JUST CLAIMED (if today)
+        // Or the day they should claim next (if haven't claimed today)
+        // We need to show the NEXT day if they've already claimed today
         let dayToShow = res.data.currentCheckInDay || 1;
         
         if (isSameDay) {
-          // They've already claimed today, so show the next day (tomorrow)
+          // They've already claimed today, so show the NEXT day (for tomorrow)
           dayToShow = dayToShow >= 7 ? 1 : dayToShow + 1;
         }
+        // If they haven't claimed today, dayToShow stays as currentCheckInDay
         
         setCurrentDay(dayToShow);
         setSelectedDay(dayToShow);
@@ -234,8 +236,8 @@ const CoinsScreen = ({ navigation }: any) => {
         console.log('Fetch User - Last Check-in:', lastCheckInDate?.toDateString());
         console.log('Fetch User - Today:', today.toDateString());
         console.log('Fetch User - Has claimed today:', isSameDay);
-        console.log('Fetch User - Current day (to show):', dayToShow);
         console.log('Fetch User - Backend currentCheckInDay:', res.data.currentCheckInDay);
+        console.log('Fetch User - Day to show (currentDay):', dayToShow);
       }
     } catch (error) {
       console.error('Error fetching user:', error);
@@ -290,11 +292,10 @@ const CoinsScreen = ({ navigation }: any) => {
       console.log('Claim response:', res);
       
       if (res.success) {
-        // Update local state immediately
-        const newDay = res.data.currentDay || (currentDay || 0) + 1;
-        
-        // Reset to day 1 if we've completed all 7 days
-        const nextDay = newDay > 7 ? 1 : newDay;
+        // Backend returns currentDay which is the day JUST CLAIMED
+        // We need to show the NEXT day for tomorrow's claim
+        const claimedDay = res.data.currentDay || (currentDay || 1);
+        const nextDay = claimedDay >= 7 ? 1 : claimedDay + 1;
         
         setCurrentDay(nextDay);
         setSelectedDay(nextDay);
@@ -307,7 +308,7 @@ const CoinsScreen = ({ navigation }: any) => {
             {
               text: 'OK',
               onPress: async () => {
-                // Fetch updated user data
+                // Fetch updated user data to sync with backend
                 await fetchUser();
                 await fetchHistory();
               },
