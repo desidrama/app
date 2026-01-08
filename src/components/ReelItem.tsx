@@ -27,8 +27,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useKeyboard } from '@react-native-community/hooks';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { videoService } from '../services/video.service';
-import InfoSheet from './InfoSheet';
 import { CommentInputOptimized } from './CommentInputOptimized';
 import type { Video as VideoType } from '../types';
 
@@ -151,6 +152,7 @@ const ActionButton = React.memo(({
 });
 
 export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
+  const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const insets = useSafeAreaInsets();
   
   
@@ -240,7 +242,6 @@ const commentSheetY = useRef(new Animated.Value(0)).current; // Comments sheet s
 
   const [showEpisodes, setShowEpisodes] = useState(false);
 const [showComments, setShowComments] = useState(false);
-const [showDescSheet, setShowDescSheet] = useState(false);
 const [showMore, setShowMore] = useState(false);
 
   // Open/close comments with animation (Full bottom sheet - Instagram Reels style)
@@ -1444,12 +1445,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const closeEpisodes = () => {
     console.log('🎯 closeEpisodes called');
     setShowEpisodes(false);
-    isAnySheetOpenRef.current = showComments || showMore || showDescSheet;
+    isAnySheetOpenRef.current = showComments || showMore;
     if (onSheetStateChange) {
-      onSheetStateChange(showComments || showMore || showDescSheet);
+      onSheetStateChange(showComments || showMore);
     }
     // Resume only if user didn't manually pause
-    if (isActive && !isPausedByUserRef.current && !showComments && !showMore && !showDescSheet) {
+    if (isActive && !isPausedByUserRef.current && !showComments && !showMore) {
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(false).catch(() => {});
         videoRef.current.playAsync().catch(() => {});
@@ -1478,12 +1479,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const closeMore = () => {
     console.log('🎯 closeMore called');
     setShowMore(false);
-    isAnySheetOpenRef.current = showComments || showEpisodes || showDescSheet;
+    isAnySheetOpenRef.current = showComments || showEpisodes;
     if (onSheetStateChange) {
-      onSheetStateChange(showComments || showEpisodes || showDescSheet);
+      onSheetStateChange(showComments || showEpisodes);
     }
     // Resume only if user didn't manually pause
-    if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showDescSheet) {
+    if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes) {
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(false).catch(() => {});
         videoRef.current.playAsync().catch(() => {});
@@ -1514,66 +1515,33 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
 
   const openDesc = async () => {
-    // 9️⃣ COMMENT / MODAL INTERACTION RULE - Pause on open
-    isAnySheetOpenRef.current = true;
-    if (isActive && videoRef.current) {
-      videoRef.current.pauseAsync().catch(() => {});
-      videoRef.current.setIsMutedAsync(true).catch(() => {});
-      actualPlayStateRef.current = 'paused';
-      setIsPlaying(false);
-      isPausedByUserRef.current = true;
-      setIsPausedByUser(true);
-    }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openDesc',message:'Opening info sheet',data:{reelId:reel.id,hasSeasonId:!!reel.seasonId,reelTitle:reel.title,currentShowDescSheet:showDescSheet},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet-open'})}).catch(()=>{});
-    // #endregion
-    setShowDescSheet(true);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openDesc',message:'setShowDescSheet called',data:{reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet-open'})}).catch(()=>{});
-    // #endregion
-    
-    // Fetch episodes if seasonId exists
-    if (reel.seasonId) {
-      setLoadingEpisodes(true);
-      try {
-        const seasonId = typeof reel.seasonId === 'string' ? reel.seasonId : (reel.seasonId as any)?._id || reel.seasonId;
-        const response = await videoService.getEpisodes(seasonId);
-        if (response.success && response.data) {
-          setSeasonEpisodes(response.data);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openDesc',message:'Episodes loaded',data:{reelId:reel.id,episodeCount:response.data.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet'})}).catch(()=>{});
-          // #endregion
-        }
-      } catch (error) {
-        console.error('Error loading episodes:', error);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:openDesc',message:'Error loading episodes',data:{reelId:reel.id,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet'})}).catch(()=>{});
-        // #endregion
-      } finally {
-        setLoadingEpisodes(false);
+    try {
+      console.log('🎯 openDesc called, navigating to ReelInfo', { reelId: reel.id, title: reel.title });
+      // Navigate to ReelInfo screen instead of showing overlay
+      const seasonId = reel.seasonId 
+        ? (typeof reel.seasonId === 'string' ? reel.seasonId : (reel.seasonId as any)?._id || reel.seasonId)
+        : undefined;
+      
+      if (!navigation) {
+        console.error('❌ Navigation is not available');
+        return;
       }
+      
+      navigation.navigate('ReelInfo' as never, {
+        reelId: reel.id,
+        title: reel.title,
+        year: reel.year,
+        rating: reel.rating,
+        duration: reel.duration,
+        thumbnailUrl: reel.thumbnailUrl,
+        description: reel.description,
+        seasonId: seasonId,
+      } as never);
+    } catch (error) {
+      console.error('❌ Error navigating to ReelInfo:', error);
     }
   };
 
-  const closeDesc = () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:closeDesc',message:'Closing info sheet',data:{reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet'})}).catch(()=>{});
-    // #endregion
-    setShowDescSheet(false);
-    isAnySheetOpenRef.current = showComments || showEpisodes || showMore;
-    if (onSheetStateChange) {
-      onSheetStateChange(showComments || showEpisodes || showMore);
-    }
-    // Resume only if user didn't manually pause
-    if (isActive && !isPausedByUserRef.current && !showComments && !showEpisodes && !showMore) {
-      if (videoRef.current) {
-        videoRef.current.setIsMutedAsync(false).catch(() => {});
-        videoRef.current.playAsync().catch(() => {});
-        actualPlayStateRef.current = 'playing';
-        setIsPlaying(true);
-      }
-    }
-  };
 
   const openComments = () => {
     console.log('🎯 openComments called');
@@ -1594,12 +1562,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const closeComments = () => {
     console.log('🎯 closeComments called');
     setShowComments(false);
-    isAnySheetOpenRef.current = showEpisodes || showMore || showDescSheet;
+    isAnySheetOpenRef.current = showEpisodes || showMore;
     if (onSheetStateChange) {
-      onSheetStateChange(showEpisodes || showMore || showDescSheet);
+      onSheetStateChange(showEpisodes || showMore);
     }
     // Resume only if user didn't manually pause
-    if (isActive && !isPausedByUserRef.current && !showEpisodes && !showMore && !showDescSheet) {
+    if (isActive && !isPausedByUserRef.current && !showEpisodes && !showMore) {
       if (videoRef.current) {
         videoRef.current.setIsMutedAsync(false).catch(() => {});
         videoRef.current.playAsync().catch(() => {});
@@ -1926,6 +1894,7 @@ const [isFocused, setIsFocused] = useState(false);
                   <Text style={styles.seriesNameText}>{seriesName}</Text>
                   <TouchableOpacity
                     onPress={() => {
+                      console.log('🎯 Info icon pressed');
                       openDesc();
                     }}
                     style={styles.seriesInfoIcon}
@@ -1975,6 +1944,7 @@ const [isFocused, setIsFocused] = useState(false);
               {isTruncated && (
                 <TouchableOpacity
                   onPress={() => {
+                    console.log('🎯 More button pressed');
                     // #region agent log
                     fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:moreButton',message:'More button pressed',data:{reelId:reel.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'description'})}).catch(()=>{});
                     // #endregion
@@ -2004,31 +1974,7 @@ const [isFocused, setIsFocused] = useState(false);
         </Animated.View>
       )}
 
-      {/* INFO SHEET */}
-      {(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/5574f555-8bbc-47a0-889d-701914ddc9bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReelItem.tsx:render',message:'Rendering InfoSheet',data:{showDescSheet,reelId:reel.id,seasonEpisodesCount:seasonEpisodes.length,loadingEpisodes},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'info-sheet-render'})}).catch(()=>{});
-        // #endregion
-        return null;
-      })()}
-      <InfoSheet
-        visible={showDescSheet}
-        onClose={closeDesc}
-        reel={{
-          id: reel.id,
-          title: reel.title,
-          year: reel.year || '2024',
-          rating: reel.rating || 'U/A 16+',
-          duration: reel.duration || '2m',
-          thumbnailUrl: reel.thumbnailUrl,
-          description: reel.description || 'Experience the drama, action, and suspense in this captivating series.',
-          seasonId: reel.seasonId,
-        }}
-        seasonEpisodes={seasonEpisodes}
-        loadingEpisodes={loadingEpisodes}
-        onPressEpisode={handleEpisodePress}
-        onLike={handleLike}
-      />
+      {/* InfoSheet removed - now navigates to ReelInfoScreen */}
 
       {/* EPISODES SHEET - Same pattern as Comment Sheet (WORKING REFERENCE) */}
       {showEpisodes && (

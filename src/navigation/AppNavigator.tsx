@@ -16,6 +16,7 @@ import OTPScreen from '../screens/auth/OTPScreen';
 import SplashScreen from '../screens/Splash/splashscreen';
 import SearchScreen from '../screens/home/SearchScreen';
 import EpisodePlayerScreen from '../screens/home/EpisodePlayerScreen';
+import ReelInfoScreen from '../screens/reels/ReelInfoScreen';
 
 import TabNavigator from './TabNavigator';
 import AddCoinsScreen from '../components/AddCoinsScreen';
@@ -37,6 +38,16 @@ export type RootStackParamList = {
     resumeTime?: number;
     progress?: number;
   } | undefined;
+  ReelInfo: {
+    reelId: string;
+    title: string;
+    year?: string;
+    rating?: string;
+    duration?: string;
+    thumbnailUrl?: string;
+    description?: string;
+    seasonId?: any;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -162,6 +173,14 @@ export default function AppNavigator() {
           options={{
             animationEnabled: true,
             presentation: 'fullScreenModal',
+          }}
+        />
+        <Stack.Screen 
+          name="ReelInfo" 
+          component={ReelInfoScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
           }}
         />
 

@@ -411,7 +411,6 @@ export default StyleSheet.create({
     bottom: 0,
     backgroundColor: '#050509',
     paddingHorizontal: 18,
-    paddingTop: 10,
     zIndex: 1001,
     elevation: 1001,
   },
@@ -419,7 +418,18 @@ export default StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingTop: 8,
+    paddingHorizontal: 0,
     marginBottom: 10,
+    minHeight: 44,
+  },
+  infoCloseButton: {
+    padding: 8,
+    marginRight: 0,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   infoHandle: {
     width: 60,
@@ -431,8 +441,8 @@ export default StyleSheet.create({
 
   infoPosterRow: {
     alignItems: 'center',
-    marginBottom: 16,
-    marginTop: 8,
+    marginBottom: 20,
+    marginTop: 4,
   },
   posterWrapper: {
     width: SCREEN_WIDTH * 0.62,
@@ -466,7 +476,8 @@ export default StyleSheet.create({
   tagRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginTop: 4,
+    marginBottom: 12,
   },
   tagChip: {
     paddingHorizontal: 10,
@@ -485,15 +496,16 @@ export default StyleSheet.create({
     fontWeight: '900',
     color: '#fff',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 8,
+    marginBottom: 4,
   },
 
   infoMetaRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 12,
+    marginTop: 8,
+    marginBottom: 16,
   },
   infoMetaText: {
     color: '#d7d7dd',
@@ -507,7 +519,8 @@ export default StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#FFD54A',
     paddingVertical: 12,
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 12,
   },
   infoSecondaryButton: {
     flexDirection: 'row',
@@ -516,7 +529,7 @@ export default StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#ffdd63',
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   infoPrimaryText: {
     marginLeft: 8,
@@ -527,13 +540,17 @@ export default StyleSheet.create({
   infoDescription: {
     color: '#f0f0f3',
     fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 20,
+    marginTop: 4,
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
   infoQuickRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 18,
+    marginTop: 4,
+    marginBottom: 24,
+    paddingVertical: 8,
   },
   infoQuickItem: {
     alignItems: 'center',
@@ -548,7 +565,8 @@ export default StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#fff',
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 12,
   },
 
   castItem: {
