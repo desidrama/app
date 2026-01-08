@@ -262,16 +262,23 @@ export default function HomeScreen() {
 
   const refreshHomeContent = useCallback(async () => {
     try {
-      const latestResponse = await videoService.getLatestVideos(20, 'episode');
-      if (latestResponse.success && latestResponse.data) {
-        const transformed = latestResponse.data.map((video: VideoType) => ({
-          _id: (video as any)._id || String(Date.now()),
-          title: video.title || 'Untitled',
-          imageUrl: video.thumbnailUrl || video.thumbnail || 'https://picsum.photos/160/240?random=1',
-          seasonNumber: (video as any).seasonId?.seasonNumber || 1,
-          episodeNumber: (video as any).episodeNumber || 1,
-          genres: (video as any).genres || ['Drama'],
-          languages: (video as any).languages || 'Hindi',
+      const seasonsResponse = await videoService.getSeasons();
+      if (seasonsResponse.success && seasonsResponse.data) {
+        // Sort seasons by createdAt descending to get newest first
+        const sortedSeasons = [...seasonsResponse.data].sort((a: any, b: any) => {
+          const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
+          const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
+          return dateB - dateA;
+        });
+        
+        const transformed = sortedSeasons.map((season: any) => ({
+          _id: season._id || String(Date.now()),
+          title: season.title || 'Untitled',
+          imageUrl: season.thumbnail || season.thumbnailUrl || 'https://picsum.photos/160/240?random=1',
+          seasonNumber: season.seasonNumber || 1,
+          seasonId: season._id,
+          genres: season.genres || ['Drama'],
+          languages: season.languages || 'Hindi',
         }));
         if (transformed.length > 0) {
           setLatestTrendingData(transformed);
@@ -532,8 +539,33 @@ export default function HomeScreen() {
     });
   };
 
-  const handleVideoPress = (videoItem: { _id: string }) => {
+  const handleVideoPress = async (videoItem: { _id: string; seasonId?: string }) => {
     if (!videoItem._id) return;
+    
+    // If it's a season (webseries), get the first episode
+    if (videoItem.seasonId || videoItem._id) {
+      const seasonId = videoItem.seasonId || videoItem._id;
+      try {
+        const episodesResponse = await videoService.getEpisodes(seasonId);
+        if (episodesResponse.success && episodesResponse.data?.length > 0) {
+          const sorted = [...episodesResponse.data].sort(
+            (a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0)
+          );
+          const firstEpisode = sorted[0];
+          if (firstEpisode?._id) {
+            navigation.navigate('Reels', {
+              targetVideoId: String(firstEpisode._id).trim(),
+              resumeTime: 0,
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Error fetching episodes for season:', error);
+      }
+    }
+    
+    // Fallback: navigate with the provided ID (for backward compatibility)
     navigation.navigate('Reels', {
       targetVideoId: String(videoItem._id).trim(),
       resumeTime: 0,
