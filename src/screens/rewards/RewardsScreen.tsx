@@ -31,15 +31,34 @@ import RewardedEpisodeAd from '../../components/RewardedEpisodeAd';
 
 const TAB_BAR_SAFE_PADDING = 140;
 
-const DAILY_REWARDS = [
-  { day: 1, coins: 5 },
-  { day: 2, coins: 5 },
-  { day: 3, coins: 5 },
-  { day: 4, coins: 5 },
-  { day: 5, coins: 5 },
-  { day: 6, coins: 5 },
-  { day: 7, coins: 5 },
-];
+/**
+ * Generate daily rewards for a 7-day window based on the current day
+ * For infinite streaks: day 1-7 shows days 1-7, day 8-14 shows days 8-14, etc.
+ * Each day gives coins equal to the day number (day 1 = 1 coin, day 2 = 2 coins, etc.)
+ */
+const generateDailyRewards = (currentDay: number | undefined): Array<{ day: number; coins: number }> => {
+  if (!currentDay || currentDay < 1) {
+    // Default to first 7 days if not set
+    return Array.from({ length: 7 }, (_, i) => ({
+      day: i + 1,
+      coins: i + 1,
+    }));
+  }
+
+  // Calculate which 7-day window the current day falls into
+  // Days 1-7 -> window starting at 1
+  // Days 8-14 -> window starting at 8
+  // Days 15-21 -> window starting at 15
+  const windowStart = Math.floor((currentDay - 1) / 7) * 7 + 1;
+  
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = windowStart + i;
+    return {
+      day,
+      coins: day, // Coins equal to day number
+    };
+  });
+};
 
 const MISSIONS = [
   {
@@ -221,12 +240,12 @@ const CoinsScreen = ({ navigation }: any) => {
         
         // The currentCheckInDay from backend is the day they JUST CLAIMED (if today)
         // Or the day they should claim next (if haven't claimed today)
-        // We need to show the NEXT day if they've already claimed today
+        // For infinite streaks, we just use the current day as-is
         let dayToShow = res.data.currentCheckInDay || 1;
         
         if (isSameDay) {
           // They've already claimed today, so show the NEXT day (for tomorrow)
-          dayToShow = dayToShow >= 7 ? 1 : dayToShow + 1;
+          dayToShow = dayToShow + 1;
         }
         // If they haven't claimed today, dayToShow stays as currentCheckInDay
         
@@ -295,7 +314,7 @@ const CoinsScreen = ({ navigation }: any) => {
         // Backend returns currentDay which is the day JUST CLAIMED
         // We need to show the NEXT day for tomorrow's claim
         const claimedDay = res.data.currentDay || (currentDay || 1);
-        const nextDay = claimedDay >= 7 ? 1 : claimedDay + 1;
+        const nextDay = claimedDay + 1; // Infinite streak - just increment
         
         setCurrentDay(nextDay);
         setSelectedDay(nextDay);
@@ -607,7 +626,7 @@ const CoinsScreen = ({ navigation }: any) => {
           <Text style={styles.sectionTitle}>Daily Check-in</Text>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {DAILY_REWARDS.map(d => {
+            {generateDailyRewards(currentDay).map(d => {
               // A day is "done" if it's less than the current day
               const done = currentDay ? d.day < currentDay : false;
               // Today's day is the current day and has been claimed
@@ -655,7 +674,7 @@ const CoinsScreen = ({ navigation }: any) => {
                 ? 'Claiming...' 
                 : hasClaimedToday 
                   ? '✓ Claimed Today' 
-                  : `Claim ${DAILY_REWARDS.find(d => d.day === selectedDay)?.coins} Coin`}
+                  : `Claim ${generateDailyRewards(currentDay).find(d => d.day === selectedDay)?.coins} Coin`}
             </Text>
           </TouchableOpacity>
         </View>

@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
     marginBottom: 14,
-    height: 200,
+    height: 280,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   thumbnailContainer: {
-    width: 160,
+    width: 190,
     height: '100%',
     position: 'relative',
     backgroundColor: '#1A1A1A',
