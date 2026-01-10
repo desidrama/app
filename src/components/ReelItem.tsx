@@ -19,7 +19,7 @@ import {
   PanResponder,
   ScrollView,
   AppState,
-  
+  ActivityIndicator,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +32,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { videoService } from '../services/video.service';
 import { CommentInputOptimized } from './CommentInputOptimized';
 import type { Video as VideoType } from '../types';
+import { RewardedAd, RewardedAdEventType, TestIds } from 'react-native-google-mobile-ads';
 import { getVideoQualityPreference, setVideoQualityPreference } from '../utils/storage';
 
 const { width, height } = Dimensions.get('window');
@@ -51,6 +52,11 @@ type ReelItemProps = {
     initialLikes?: number;
     comments?: number;
     adStatus?: 'locked' | 'unlocked'; // Ad lock status
+    unlockStatus?: {
+      isUnlocked: boolean;
+      unlockType: 'coins' | 'ad' | null;
+      expiresAt: string | null;
+    };
   };
   isActive: boolean;
   initialTime?: number;
@@ -152,6 +158,31 @@ const ActionButton = React.memo(({
   );
 });
 
+// Helper function to check if episode is actually unlocked
+const isEpisodeUnlocked = (reel: ReelItemProps['reel']): boolean => {
+  // If adStatus is unlocked, it's always unlocked
+  if (reel.adStatus === 'unlocked') {
+    return true;
+  }
+  
+  // If adStatus is locked, check unlockStatus
+  if (reel.adStatus === 'locked') {
+    if (reel.unlockStatus?.isUnlocked) {
+      // Check if unlock hasn't expired
+      if (reel.unlockStatus.expiresAt) {
+        const expiresAt = new Date(reel.unlockStatus.expiresAt);
+        const now = new Date();
+        return expiresAt > now;
+      }
+      return true;
+    }
+    return false;
+  }
+  
+  // Default: unlocked if no adStatus specified
+  return true;
+};
+
 export default function ReelItem({ reel, isActive, initialTime = 0, screenFocused = true, onEpisodeSelect, shouldPause = false, onStartWatching, onVideoEnd, onOverlayToggle, onVideoTap, onSheetStateChange }: ReelItemProps) {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const insets = useSafeAreaInsets();
@@ -201,6 +232,8 @@ useEffect(() => {
   const isActiveRef = useRef(isActive);
   const isMountedRef = useRef(true);
   const playbackRetryCountRef = useRef(0); // Track retry attempts for audio focus
+  const audioFocusCooldownRef = useRef(0); // Track cooldown period after max retries
+  const isRetryingAudioFocusRef = useRef(false); // Prevent concurrent retry attempts
   const tapDebounceRef = useRef<NodeJS.Timeout | null>(null); // Debounce tap events (300ms)
   const isAnySheetOpenRef = useRef(false); // Track if any modal/sheet is open
   const wasPlayingBeforeScrub = useRef(false); // Track if video was playing before scrubbing
@@ -212,6 +245,51 @@ useEffect(() => {
   const hasPausedForInactiveRef = useRef(false); // Prevent duplicate pause calls when inactive
   const progressSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Prevent duplicate progress saves
   const videoEndDebounceRef = useRef<NodeJS.Timeout | null>(null); // Prevent duplicate video end calls
+  const lastExpiryCheckRef = useRef<number>(0); // Track last expiry check time (to avoid checking too frequently)
+  const expiryCheckIntervalRef = useRef<NodeJS.Timeout | null>(null); // Interval for periodic expiry checks
+  const rewardedAdRef = useRef<RewardedAd | null>(null); // Rewarded ad instance
+  const pendingUnlockEpisodeId = useRef<string | null>(null); // Track episode pending unlock after ad
+
+  // Initialize rewarded ad
+  useEffect(() => {
+    // Use test ad unit ID for development, replace with real one for production
+    const adUnitId = __DEV__ 
+      ? TestIds.REWARDED 
+      : Platform.select({
+          ios: 'ca-app-pub-XXXXX/XXXXX', // Replace with your iOS ad unit ID
+          android: 'ca-app-pub-XXXXX/XXXXX', // Replace with your Android ad unit ID
+        }) || TestIds.REWARDED;
+
+    const rewarded = RewardedAd.createForAdRequest(adUnitId, {
+      requestNonPersonalizedAdsOnly: false,
+    });
+
+    // Event listeners
+    const loadedListener = rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
+      console.log('✅ Rewarded ad loaded');
+    });
+
+    const earnedListener = rewarded.addAdEventListener(
+      RewardedAdEventType.EARNED_REWARD,
+      (reward) => {
+        console.log('🎁 User earned reward:', reward);
+        // Ad was watched successfully, now unlock the episode
+        if (pendingUnlockEpisodeId.current) {
+          unlockEpisodeAfterAd(pendingUnlockEpisodeId.current);
+        }
+      }
+    );
+
+    rewardedAdRef.current = rewarded;
+
+    // Load the ad
+    rewarded.load();
+
+    return () => {
+      loadedListener();
+      earnedListener();
+    };
+  }, []);
 
   // Configure audio mode for video playback (once on mount)
   useEffect(() => {
@@ -391,6 +469,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // Like state (Instagram-style: optimistic updates)
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(reel.initialLikes || 0);
+  const [unlockingWithCoins, setUnlockingWithCoins] = useState(false);
+  const [unlockingWithAd, setUnlockingWithAd] = useState(false);
+  const [currentUnlockStatus, setCurrentUnlockStatus] = useState(reel.unlockStatus);
+  const [showUnlockPopup, setShowUnlockPopup] = useState(false); // Control when to show unlock popup
   
   // PanResponder for swipe-down to close comments sheet (YouTube Shorts-style)
   const commentSheetPanResponder = useRef(
@@ -551,7 +633,12 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         isScrubbingRef.current = false;
         setIsScrubbing(false);
         try {
+          if (!videoRef.current || !isMountedRef.current) return;
           const status = await videoRef.current.getStatusAsync();
+          
+          // Check again after async operation
+          if (!videoRef.current || !isMountedRef.current) return;
+          
           if (!status.isLoaded || !status.durationMillis) return;
           
           // Use pageX to get absolute screen position, subtract container's left position (16px padding)
@@ -562,6 +649,9 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           const tapPercent = Math.max(0, Math.min(1, containerX / barWidth));
           const newTime = (status.durationMillis / 1000) * tapPercent;
           
+          // Check again before seeking
+          if (!videoRef.current || !isMountedRef.current) return;
+          
           // Seek to the exact timestamp
           await videoRef.current.setPositionAsync(newTime * 1000);
           
@@ -570,6 +660,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           
           // Resume playback if it was playing before scrubbing
           if (wasPlayingBeforeScrub.current) {
+            // Check again before playing
+            if (!videoRef.current || !isMountedRef.current) return;
             await videoRef.current.playAsync();
           }
           
@@ -662,13 +754,57 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
   }, [isActive, reel.id]);
 
+  // Verify unlock status from backend when video becomes active (STRICT BACKEND VALIDATION)
+  useEffect(() => {
+    if (isActive && reel.id && reel.adStatus === 'locked') {
+      const verifyUnlockStatus = async () => {
+        try {
+          console.log('🔍 Verifying video access from backend:', reel.id);
+          const accessResponse = await videoService.checkVideoAccess(reel.id);
+          
+          if (accessResponse.success) {
+            if (accessResponse.unlocked && accessResponse.data) {
+              // Video is unlocked - update state
+              setCurrentUnlockStatus({
+                isUnlocked: true,
+                unlockType: accessResponse.data.unlockType || null,
+                expiresAt: accessResponse.data.expiresAt || null,
+              });
+              console.log('✅ Video unlocked:', accessResponse.data);
+            } else {
+              // Video is locked - clear any stale state
+              setCurrentUnlockStatus({
+                isUnlocked: false,
+                unlockType: null,
+                expiresAt: null,
+              });
+              console.log('🔒 Video locked');
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error verifying unlock status:', error);
+          // On error, treat as locked for safety
+          setCurrentUnlockStatus({
+            isUnlocked: false,
+            unlockType: null,
+            expiresAt: null,
+          });
+        }
+      };
+      verifyUnlockStatus();
+    }
+  }, [isActive, reel.id, reel.adStatus]);
+
   // Initialize video and seek to initial time when video becomes active
   useEffect(() => {
     if (isActive && videoRef.current && !hasSeekedRef.current) {
       const initializeVideo = async () => {
         try {
-            // If reel is locked, pause immediately and don't play
-          if (reel.adStatus === 'locked') {
+            // Check if episode is unlocked
+          const episodeUnlocked = isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+          
+            // If reel is locked and not unlocked by user, pause immediately and don't play
+          if (!episodeUnlocked) {
             console.log(`🔒 ReelItem: Reel ${reel.title} is locked during initialization, pausing`);
             if (videoRef.current) {
               const status = await videoRef.current.getStatusAsync();
@@ -682,20 +818,22 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           }
 
           // Wait for video to be ready
-          const status = await videoRef.current!.getStatusAsync();
+          if (!videoRef.current || !isMountedRef.current) return;
+          const status = await videoRef.current.getStatusAsync();
           
-          if (status.isLoaded) {
+          if (status.isLoaded && videoRef.current && isMountedRef.current) {
             // Seek to initial time if provided
-            if (initialTime > 0) {
-              await videoRef.current!.setPositionAsync(initialTime * 1000);
+            if (initialTime > 0 && videoRef.current && isMountedRef.current) {
+              await videoRef.current.setPositionAsync(initialTime * 1000);
               console.log(`⏩ Seeked to ${initialTime}s for video: ${reel.title}`);
             }
             
-            // Ensure video is playing (only if not locked)
-            if (isActive && screenFocused && reel.adStatus === 'unlocked') {
-              await videoRef.current!.setIsMutedAsync(false);
-              await videoRef.current!.playAsync();
-              setIsPlaying(true);
+            // Ensure video is playing (only if unlocked)
+            if (isActive && screenFocused && episodeUnlocked && videoRef.current && isMountedRef.current) {
+              const success = await playVideoWithRetry();
+              if (success && isMountedRef.current) {
+                setIsPlaying(true);
+              }
             }
             
             hasSeekedRef.current = true;
@@ -716,6 +854,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       isPausedByUserRef.current = false;
       setIsPausedByUser(false); // Reset user pause flag when video becomes inactive
       actualPlayStateRef.current = 'stopped';
+      setShowUnlockPopup(false); // Close unlock popup when video becomes inactive
     }
   }, [isActive, initialTime, reel.videoUrl, screenFocused]);
 
@@ -826,6 +965,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         clearTimeout(videoEndDebounceRef.current);
         videoEndDebounceRef.current = null;
       }
+      if (expiryCheckIntervalRef.current) {
+        clearInterval(expiryCheckIntervalRef.current);
+        expiryCheckIntervalRef.current = null;
+      }
       
       // Clear sheets state (only if component is still mounted check removed to prevent errors)
       try {
@@ -869,10 +1012,32 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   }, [screenFocused, reel.id]);
 
   // Helper function to play video with retry logic for audio focus errors
-  const playVideoWithRetry = async (retryCount = 0): Promise<boolean> => {
+  const playVideoWithRetry = useCallback(async (retryCount = 0): Promise<boolean> => {
     if (!videoRef.current || !isMountedRef.current) return false;
     
+    // Check if we're in cooldown period after max retries
+    const now = Date.now();
+    if (audioFocusCooldownRef.current > now) {
+      const remainingMs = Math.ceil((audioFocusCooldownRef.current - now) / 1000);
+      console.log(`⏸️ Audio focus cooldown active for ${reel.title}, ${remainingMs}s remaining`);
+      return false;
+    }
+    
+    // Prevent concurrent retry attempts
+    if (isRetryingAudioFocusRef.current && retryCount === 0) {
+      console.log(`⏳ Audio focus retry already in progress for ${reel.title}`);
+      return false;
+    }
+    
     try {
+      // Mark as retrying if this is the first attempt
+      if (retryCount === 0) {
+        isRetryingAudioFocusRef.current = true;
+      }
+      
+      // Check again after async operations
+      if (!videoRef.current || !isMountedRef.current) return false;
+      
       const status = await videoRef.current.getStatusAsync();
       if (!status.isLoaded) {
         // Video not ready yet, retry after delay
@@ -880,13 +1045,22 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           await new Promise(resolve => setTimeout(resolve, 200 + retryCount * 100));
           return playVideoWithRetry(retryCount + 1);
         }
+        isRetryingAudioFocusRef.current = false;
         return false;
       }
       
+      // Check again before playing
+      if (!videoRef.current || !isMountedRef.current) return false;
+      
       // Unmute and play
       await videoRef.current.setIsMutedAsync(false);
+      
+      // Final check before playAsync
+      if (!videoRef.current || !isMountedRef.current) return false;
       await videoRef.current.playAsync();
       playbackRetryCountRef.current = 0;
+      audioFocusCooldownRef.current = 0; // Clear cooldown on success
+      isRetryingAudioFocusRef.current = false;
       return true;
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
@@ -895,21 +1069,51 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       if (errorMsg.includes('AudioFocusNotAcquiredException') || errorMsg.includes('audio focus')) {
         // Audio focus error - retry with exponential backoff
         if (retryCount < 5) {
-          const delayMs = Math.min(1000, 100 * Math.pow(2, retryCount)); // 100ms, 200ms, 400ms, 800ms, 1600ms
-          console.log(`🔊 Audio focus conflict, retrying in ${delayMs}ms (attempt ${retryCount + 1}/5) for ${reel.title}`);
+          const delayMs = Math.min(1000, 100 * Math.pow(2, retryCount)); // 100ms, 200ms, 400ms, 800ms, 1000ms
+          if (retryCount <= 2) { // Only log first few attempts to reduce noise
+            console.log(`🔊 Audio focus conflict, retrying in ${delayMs}ms (attempt ${retryCount + 1}/5) for ${reel.title}`);
+          }
           await new Promise(resolve => setTimeout(resolve, delayMs));
           return playVideoWithRetry(retryCount + 1);
         } else {
-          console.error(`❌ Failed to acquire audio focus after 5 retries for ${reel.title}`);
+          // Max retries reached - set cooldown period (30 seconds)
+          audioFocusCooldownRef.current = now + 30000;
+          playbackRetryCountRef.current = 0;
+          isRetryingAudioFocusRef.current = false;
+          console.warn(`⚠️ Failed to acquire audio focus after 5 retries for ${reel.title}. Cooldown: 30s`);
+          
+          // Try playing muted as fallback
+          try {
+            if (videoRef.current && isMountedRef.current) {
+              const status = await videoRef.current.getStatusAsync();
+              
+              // Check again after async operation
+              if (!videoRef.current || !isMountedRef.current) return false;
+              
+              if (status.isLoaded) {
+                await videoRef.current.setIsMutedAsync(true);
+                
+                // Final check before playAsync
+                if (!videoRef.current || !isMountedRef.current) return false;
+                await videoRef.current.playAsync();
+                console.log(`🔇 Playing ${reel.title} muted as fallback (audio focus unavailable)`);
+                return true;
+              }
+            }
+          } catch (fallbackError) {
+            // Fallback also failed, just return false
+          }
+          
           return false;
         }
       } else {
         // Other error
+        isRetryingAudioFocusRef.current = false;
         console.error(`Error playing video ${reel.title}:`, error);
         return false;
       }
     }
-  };
+  }, [reel.title]);
 
   // 1️⃣ SINGLE ACTIVE REEL RULE - Strict play/pause based on isActive
   useEffect(() => {
@@ -975,8 +1179,11 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     // Reset the pause flag when becoming active
     hasPausedForInactiveRef.current = false;
     
-    // If reel is locked, pause immediately and prevent auto-play
-    if (reel.adStatus === 'locked' && videoRef.current && isMountedRef.current) {
+    // Check if episode is unlocked
+    const episodeUnlocked = isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+    
+    // If reel is locked and not unlocked by user, pause immediately and prevent auto-play
+    if (!episodeUnlocked && videoRef.current && isMountedRef.current) {
       console.log(`🔒 ReelItem: Reel ${reel.title} is locked, pausing video immediately`);
       const pauseLockedVideo = async () => {
         if (!isMountedRef.current) return;
@@ -1001,7 +1208,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
 
     // Only play if: isActive AND screenFocused AND no sheets open AND user hasn't paused AND not locked AND not shouldPause AND mounted
-    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering && reel.adStatus !== 'locked' && !shouldPause && isMountedRef.current) {
+    if (isActive && screenFocused && !isAnySheetOpenRef.current && !isPausedByUserRef.current && !isBuffering && episodeUnlocked && !shouldPause && isMountedRef.current) {
       const playVideo = async () => {
         // Double check mounted before playing
         if (!isMountedRef.current || !isActiveRef.current) return;
@@ -1071,13 +1278,17 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       console.log(`▶️ ReelItem: Resuming video for ${reel.title} (shouldPause=false)`);
       const resumeVideo = async () => {
         try {
-          const status = await videoRef.current!.getStatusAsync();
-          if (status.isLoaded) {
+          if (!videoRef.current || !isMountedRef.current) return;
+          const status = await videoRef.current.getStatusAsync();
+          if (status.isLoaded && videoRef.current && isMountedRef.current) {
             isPausedByUserRef.current = false;
-            await videoRef.current!.setIsMutedAsync(false);
-            await videoRef.current!.playAsync();
-            setIsPlaying(true);
-            console.log(`✅ ReelItem: Successfully resumed video ${reel.title}`);
+            const success = await playVideoWithRetry();
+            if (success && isMountedRef.current) {
+              setIsPlaying(true);
+              console.log(`✅ ReelItem: Successfully resumed video ${reel.title}`);
+            } else {
+              console.warn(`⚠️ ReelItem: Could not resume video ${reel.title} - audio focus unavailable`);
+            }
           }
         } catch (error) {
           console.error('Error resuming video:', error);
@@ -1090,7 +1301,8 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
 
   // Handle when reel becomes unlocked - allow video to play
   useEffect(() => {
-    if (reel.adStatus === 'unlocked' && isActive && screenFocused && videoRef.current) {
+    const episodeUnlocked = isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+    if (episodeUnlocked && isActive && screenFocused && videoRef.current) {
       // Reel was just unlocked, reset isPausedByUserRef to allow auto-play
       console.log(`🔓 ReelItem: Reel ${reel.title} unlocked, allowing video to play`);
       isPausedByUserRef.current = false;
@@ -1098,35 +1310,55 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       // Auto-play the video if it's active and screen is focused
       const playUnlockedVideo = async () => {
         try {
-          const status = await videoRef.current!.getStatusAsync();
-          if (status.isLoaded) {
-            // Force unmute the video first (even if already playing)
-            console.log(`🔊 ReelItem: Unmuting video for ${reel.title}`);
-            await videoRef.current!.setIsMutedAsync(false);
-            // Small delay to ensure unmute takes effect
+          if (!videoRef.current || !isMountedRef.current) return;
+          
+          const status = await videoRef.current.getStatusAsync();
+          if (!status.isLoaded || !videoRef.current || !isMountedRef.current) return;
+          
+          // Force unmute the video first (even if already playing)
+          console.log(`🔊 ReelItem: Unmuting video for ${reel.title}`);
+          if (videoRef.current && isMountedRef.current) {
+            await videoRef.current.setIsMutedAsync(false);
+          }
+          
+          // Small delay to ensure unmute takes effect
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Verify unmute worked and retry if needed
+          if (!videoRef.current || !isMountedRef.current) return;
+          const unmutedStatus = await videoRef.current.getStatusAsync();
+          
+          if (unmutedStatus.isLoaded && unmutedStatus.isMuted && videoRef.current && isMountedRef.current) {
+            // Still muted, try again with longer delay
+            console.log(`⚠️ ReelItem: Video still muted, retrying unmute for ${reel.title}`);
+            await videoRef.current.setIsMutedAsync(false);
             await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Verify unmute worked and retry if needed
-            const unmutedStatus = await videoRef.current!.getStatusAsync();
-            if (unmutedStatus.isLoaded && unmutedStatus.isMuted) {
-              // Still muted, try again with longer delay
-              console.log(`⚠️ ReelItem: Video still muted, retrying unmute for ${reel.title}`);
-              await videoRef.current!.setIsMutedAsync(false);
-              await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          
+          // Now play the video (or continue playing if already playing) - use retry logic for audio focus
+          if (!videoRef.current || !isMountedRef.current) return;
+          const finalStatus = await videoRef.current.getStatusAsync();
+          
+          if (finalStatus.isLoaded && videoRef.current && isMountedRef.current) {
+            if (!finalStatus.isPlaying) {
+              const success = await playVideoWithRetry();
+              if (success && isMountedRef.current) {
+                setIsPlaying(true);
+              } else {
+                console.warn(`⚠️ ReelItem: Could not acquire audio focus for ${reel.title}`);
+              }
+            } else {
+              setIsPlaying(true);
             }
-            
-            // Now play the video (or continue playing if already playing)
-            if (unmutedStatus.isLoaded && !unmutedStatus.isPlaying) {
-              await videoRef.current!.playAsync();
-            }
-            setIsPlaying(true);
             
             // Final check after a delay to ensure audio stays on
             setTimeout(async () => {
-              if (videoRef.current && isActive && reel.adStatus === 'unlocked') {
+              if (!isMountedRef.current) return;
+              const stillUnlocked = isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+              if (videoRef.current && isActive && stillUnlocked && isMountedRef.current) {
                 try {
                   const finalStatus = await videoRef.current.getStatusAsync();
-                  if (finalStatus.isLoaded) {
+                  if (finalStatus.isLoaded && videoRef.current && isMountedRef.current) {
                     if (finalStatus.isMuted) {
                       console.log(`🔊 ReelItem: Video became muted, forcing unmute for ${reel.title}`);
                       await videoRef.current.setIsMutedAsync(false);
@@ -1144,15 +1376,20 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           } else {
             // Video not loaded yet, wait a bit and retry
             setTimeout(async () => {
-              if (videoRef.current && isActive && screenFocused && reel.adStatus === 'unlocked') {
+              if (!isMountedRef.current) return;
+              const stillUnlocked = isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+              if (videoRef.current && isActive && screenFocused && stillUnlocked && isMountedRef.current) {
                 try {
+                  if (!videoRef.current || !isMountedRef.current) return;
                   const retryStatus = await videoRef.current.getStatusAsync();
-                  if (retryStatus.isLoaded) {
-                    await videoRef.current.setIsMutedAsync(false);
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                    await videoRef.current.playAsync();
-                    setIsPlaying(true);
-                    console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio (retry)`);
+                  if (retryStatus.isLoaded && videoRef.current && isMountedRef.current) {
+                    const success = await playVideoWithRetry();
+                    if (success && isMountedRef.current) {
+                      setIsPlaying(true);
+                      console.log(`✅ ReelItem: Successfully started playing unlocked video ${reel.title} with audio (retry)`);
+                    } else {
+                      console.warn(`⚠️ ReelItem: Could not play unlocked video ${reel.title} after retries`);
+                    }
                   }
                 } catch (error) {
                   console.error('Error playing unlocked video (retry):', error);
@@ -1166,7 +1403,94 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
       };
       playUnlockedVideo();
     }
-  }, [reel.adStatus, isActive, screenFocused, reel.title]);
+  }, [reel.adStatus, currentUnlockStatus, isActive, screenFocused, reel.title, playVideoWithRetry]);
+
+  // Function to check and refresh unlock status from backend (for expiry checking)
+  const checkAndRefreshUnlockStatus = useCallback(async () => {
+    if (!reel.id || reel.adStatus !== 'locked') return;
+    
+    try {
+      console.log('🔍 Checking unlock status from backend (periodic check):', reel.id);
+      const accessResponse = await videoService.checkVideoAccess(reel.id);
+      
+      if (accessResponse.success) {
+        if (accessResponse.unlocked && accessResponse.data) {
+          // Still unlocked
+          const newStatus = {
+            isUnlocked: true,
+            unlockType: accessResponse.data.unlockType || null,
+            expiresAt: accessResponse.data.expiresAt || null,
+          };
+          setCurrentUnlockStatus(newStatus);
+          return newStatus;
+        } else {
+          // Unlock expired - pause and show popup
+          const newStatus = {
+            isUnlocked: false,
+            unlockType: null,
+            expiresAt: null,
+          };
+          setCurrentUnlockStatus(newStatus);
+          
+          // Pause video if playing
+          if (videoRef.current && isMountedRef.current) {
+            console.log(`🔒 ReelItem: Unlock expired for ${reel.title}, pausing video and showing popup`);
+            try {
+              await videoRef.current.pauseAsync();
+              setIsPlaying(false);
+              isPausedByUserRef.current = true;
+              // Show unlock popup for user to re-unlock
+              setShowUnlockPopup(true);
+            } catch (error) {
+              console.error('Error pausing expired video:', error);
+            }
+          }
+          return newStatus;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking unlock status:', error);
+      // On error, treat as locked for safety
+      setCurrentUnlockStatus({
+        isUnlocked: false,
+        unlockType: null,
+        expiresAt: null,
+      });
+    }
+    return null;
+  }, [reel.id, reel.adStatus, reel.title]);
+
+  // Set up periodic expiry checking for locked videos
+  useEffect(() => {
+    if (reel.adStatus === 'locked' && isActive && isPlaying) {
+      // Set up interval to check expiry every 30 seconds
+      expiryCheckIntervalRef.current = setInterval(() => {
+        if (!isMountedRef.current || !isActiveRef.current) {
+          if (expiryCheckIntervalRef.current) {
+            clearInterval(expiryCheckIntervalRef.current);
+            expiryCheckIntervalRef.current = null;
+          }
+          return;
+        }
+        
+        // Check expiry and refresh unlock status
+        checkAndRefreshUnlockStatus();
+      }, 30000); // Check every 30 seconds
+      
+      return () => {
+        if (expiryCheckIntervalRef.current) {
+          clearInterval(expiryCheckIntervalRef.current);
+          expiryCheckIntervalRef.current = null;
+        }
+      };
+    } else {
+      // Clear interval if video is not locked or not playing
+      if (expiryCheckIntervalRef.current) {
+        clearInterval(expiryCheckIntervalRef.current);
+        expiryCheckIntervalRef.current = null;
+      }
+    }
+  }, [reel.adStatus, isActive, isPlaying, checkAndRefreshUnlockStatus]);
 
   // Save progress function
   const saveProgress = async (currentTimeSeconds: number, durationSeconds: number, forceSave: boolean = false) => {
@@ -1268,6 +1592,30 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
               onVideoEnd();
             }
           }, 200); // Reduced delay for faster response
+        }
+      }
+    }
+    
+    // Periodic expiry check for locked videos (every 30 seconds)
+    if (reel.adStatus === 'locked' && status.isPlaying && isActive) {
+      const now = Date.now();
+      // Check expiry every 30 seconds
+      if (now - lastExpiryCheckRef.current > 30000) {
+        lastExpiryCheckRef.current = now;
+        
+        // Check if unlock has expired locally first
+        if (currentUnlockStatus?.expiresAt) {
+          const expiresAt = new Date(currentUnlockStatus.expiresAt);
+          const currentTime = new Date();
+          
+          if (expiresAt <= currentTime) {
+            // Unlock has expired, refresh from server and lock video
+            console.log(`🔒 ReelItem: Unlock expired for ${reel.title}, checking server and locking`);
+            checkAndRefreshUnlockStatus();
+          }
+        } else if (currentUnlockStatus?.isUnlocked) {
+          // No expiry date but marked as unlocked - refresh from server
+          checkAndRefreshUnlockStatus();
         }
       }
     }
@@ -1535,6 +1883,14 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   const handleScreenPress = useCallback(async (event: any) => {
     if (!isActive || !videoRef.current || isBuffering) return;
     
+    // Check if episode is locked - show unlock popup instead of playing
+    const episodeLocked = !isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus });
+    if (episodeLocked) {
+      // Show unlock popup when user taps on locked video
+      setShowUnlockPopup(true);
+      return;
+    }
+    
     // Debounce tap events (300ms)
     if (tapDebounceRef.current) {
       clearTimeout(tapDebounceRef.current);
@@ -1560,13 +1916,17 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
           actualPlayStateRef.current = 'paused';
           setIsPlaying(false);
         } else if (!status.isPlaying && actualPlayStateRef.current !== 'playing') {
-          // Actually paused → play
+          // Actually paused → play (use retry logic for audio focus)
           isPausedByUserRef.current = false;
           setIsPausedByUser(false);
-          await videoRef.current.setIsMutedAsync(false);
-          await videoRef.current.playAsync();
-          actualPlayStateRef.current = 'playing';
-          setIsPlaying(true);
+          const success = await playVideoWithRetry();
+          if (success) {
+            actualPlayStateRef.current = 'playing';
+            setIsPlaying(true);
+          } else {
+            // Audio focus failed, keep paused state
+            console.warn('⚠️ Could not acquire audio focus for playback');
+          }
         }
         // If state is inconsistent, sync it (shouldn't happen, but safety check)
       } catch (error) {
@@ -1574,7 +1934,7 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
         // Don't throw - gracefully handle errors
       }
     }, 300);
-  }, [isActive, isBuffering, showUI]);
+  }, [isActive, isBuffering, showUI, reel, currentUnlockStatus]);
 
   // Long-press handler for 2x speed (replaces onPressIn)
   const handleLongPress = () => {
@@ -1618,9 +1978,10 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
     }
     // Resume only if user didn't manually pause
     if (isActive && !isPausedByUserRef.current && !showComments && !showMore) {
-      if (videoRef.current) {
-        videoRef.current.setIsMutedAsync(false).catch(() => {});
-        videoRef.current.playAsync().catch(() => {});
+      const video = videoRef.current;
+      if (video && isMountedRef.current) {
+        video.setIsMutedAsync(false).catch(() => {});
+        video.playAsync().catch(() => {});
         actualPlayStateRef.current = 'playing';
         setIsPlaying(true);
       }
@@ -1831,6 +2192,142 @@ const [loadingEpisodesSheet, setLoadingEpisodesSheet] = useState(false);
   // Episodes array is now loaded from API in openEpisodes
 const [isFocused, setIsFocused] = useState(false);
 
+  // Update unlock status when reel prop changes
+  useEffect(() => {
+    setCurrentUnlockStatus(reel.unlockStatus);
+  }, [reel.unlockStatus]);
+
+  // Handle unlock with coins (STRICT BACKEND REVALIDATION)
+  const handleUnlockWithCoins = async () => {
+    if (!reel.id || unlockingWithCoins) return;
+    
+    try {
+      setUnlockingWithCoins(true);
+      console.log('💰 Unlocking with coins:', reel.id);
+      
+      const response = await videoService.purchaseEpisodeWithCoins(reel.id);
+      
+      if (response.success) {
+        console.log('✅ Coin unlock successful, revalidating from backend...');
+        
+        // MANDATORY: Revalidate from backend before closing popup
+        const accessResponse = await videoService.checkVideoAccess(reel.id);
+        
+        if (accessResponse.success && accessResponse.unlocked && accessResponse.data) {
+          // Backend confirms unlock - update state and close popup
+          setCurrentUnlockStatus({
+            isUnlocked: true,
+            unlockType: accessResponse.data.unlockType || null,
+            expiresAt: accessResponse.data.expiresAt || null,
+          });
+          
+          setShowUnlockPopup(false);
+          Alert.alert('🎉 Unlocked!', 'Episode unlocked for 1 month! Enjoy watching.');
+          console.log('✅ Backend confirmed unlock');
+        } else {
+          // Backend says still locked - something went wrong
+          console.error('❌ Backend says video still locked after purchase');
+          Alert.alert('Error', 'Unlock may have failed. Please check your coin balance and try again.');
+        }
+      } else {
+        Alert.alert('Error', response.message || 'Failed to unlock episode');
+      }
+    } catch (error: any) {
+      console.error('❌ Error unlocking episode with coins:', error);
+      // Check for insufficient coins error
+      if (error.response?.data?.message === 'Insufficient coins') {
+        const required = error.response?.data?.data?.required || 10;
+        const current = error.response?.data?.data?.current || 0;
+        Alert.alert(
+          'Insufficient Coins',
+          `You need ${required} coins to unlock this episode.\n\nYou have: ${current} coins\n\nWatch ads or complete daily check-ins to earn more coins!`
+        );
+      } else {
+        Alert.alert('Error', error.message || 'Failed to unlock episode. Please try again.');
+      }
+    } finally {
+      setUnlockingWithCoins(false);
+    }
+  };
+
+  // Handle unlock with ad
+  const handleUnlockWithAd = async () => {
+    if (!reel.id || unlockingWithAd) return;
+    
+    try {
+      setUnlockingWithAd(true);
+      
+      // Check if ad is loaded
+      if (!rewardedAdRef.current?.loaded) {
+        Alert.alert(
+          'Ad Not Ready',
+          'Please wait a moment while we prepare the ad...',
+          [{ text: 'OK', onPress: () => setUnlockingWithAd(false) }]
+        );
+        // Try to load ad again
+        rewardedAdRef.current?.load();
+        return;
+      }
+
+      // Store episode ID for unlock after ad completes
+      pendingUnlockEpisodeId.current = reel.id;
+      
+      // Show the ad
+      rewardedAdRef.current.show();
+      
+    } catch (error: any) {
+      console.error('Error showing ad:', error);
+      Alert.alert('Error', 'Failed to show ad. Please try again.');
+      setUnlockingWithAd(false);
+      pendingUnlockEpisodeId.current = null;
+    }
+  };
+
+  // Unlock episode after ad is watched (STRICT BACKEND REVALIDATION)
+  const unlockEpisodeAfterAd = async (episodeId: string) => {
+    try {
+      console.log('🔓 Unlocking episode after ad watch:', episodeId);
+      
+      // Call backend to unlock episode
+      const response = await videoService.unlockEpisodeWithAd(episodeId);
+      
+      if (response.success) {
+        console.log('✅ Ad unlock successful, revalidating from backend...');
+        
+        // MANDATORY: Revalidate from backend before closing popup
+        const accessResponse = await videoService.checkVideoAccess(episodeId);
+        
+        if (accessResponse.success && accessResponse.unlocked && accessResponse.data) {
+          // Backend confirms unlock - update state and close popup
+          setCurrentUnlockStatus({
+            isUnlocked: true,
+            unlockType: accessResponse.data.unlockType || null,
+            expiresAt: accessResponse.data.expiresAt || null,
+          });
+          
+          setShowUnlockPopup(false);
+          Alert.alert('🎉 Unlocked!', 'Episode unlocked for 1 week! Enjoy watching.');
+          console.log('✅ Backend confirmed unlock');
+        } else {
+          // Backend says still locked - something went wrong
+          console.error('❌ Backend says video still locked after ad');
+          Alert.alert('Error', 'Unlock may have failed. Please try again.');
+        }
+        
+        // Reload ad for next use
+        rewardedAdRef.current?.load();
+      } else {
+        Alert.alert('Error', response.message || 'Failed to unlock episode');
+      }
+    } catch (error: any) {
+      console.error('❌ Error unlocking episode with ad:', error);
+      Alert.alert('Error', error.message || 'Failed to unlock episode. Please try again.');
+    } finally {
+      setUnlockingWithAd(false);
+      pendingUnlockEpisodeId.current = null;
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* ========================================
@@ -1925,6 +2422,83 @@ const [isFocused, setIsFocused] = useState(false);
             <Ionicons name="play" size={48} color="#FFFFFF" />
           </View>
         </Animated.View>
+      )}
+
+      {/* LOCK INDICATOR - Small indicator on locked videos */}
+      {!isEpisodeUnlocked({ ...reel, unlockStatus: currentUnlockStatus }) && !showUnlockPopup && (
+        <View style={styles.lockIndicator} pointerEvents="none">
+          <View style={styles.lockIndicatorBadge}>
+            <Ionicons name="lock-closed" size={20} color="#FFD54A" />
+            <Text style={styles.lockIndicatorText}>Tap to Unlock</Text>
+          </View>
+        </View>
+      )}
+
+      {/* UNLOCK POPUP - Shows when user taps on locked video */}
+      {showUnlockPopup && (
+        <View style={styles.unlockPopupOverlay} pointerEvents="auto">
+          <TouchableOpacity 
+            style={styles.unlockPopupBackdrop} 
+            activeOpacity={1}
+            onPress={() => setShowUnlockPopup(false)}
+          />
+          <View style={styles.unlockPopupContainer}>
+            <View style={styles.unlockPopupHeader}>
+              <View style={styles.unlockPopupIconContainer}>
+                <Ionicons name="play-circle" size={48} color="#FFD54A" />
+              </View>
+              <TouchableOpacity 
+                style={styles.unlockPopupCloseButton}
+                onPress={() => setShowUnlockPopup(false)}
+              >
+                <Ionicons name="close" size={24} color="#999" />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.unlockPopupTitle}>Unlock to Continue</Text>
+            <Text style={styles.unlockPopupSubtitle}>
+              Choose how you'd like to unlock this episode
+            </Text>
+            
+            <View style={styles.unlockButtons}>
+              <TouchableOpacity
+                style={[styles.unlockButton, styles.coinsButton]}
+                onPress={handleUnlockWithCoins}
+                disabled={unlockingWithCoins || unlockingWithAd}
+              >
+                {unlockingWithCoins ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <View style={styles.unlockButtonContent}>
+                    <Ionicons name="diamond" size={24} color="#000" />
+                    <View style={styles.unlockButtonTextContainer}>
+                      <Text style={styles.unlockButtonText}>Unlock with Coins</Text>
+                      <Text style={styles.unlockButtonSubtext}>10 coins • 1 month access</Text>
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.unlockButton, styles.adButton]}
+                onPress={handleUnlockWithAd}
+                disabled={unlockingWithCoins || unlockingWithAd}
+              >
+                {unlockingWithAd ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <View style={styles.unlockButtonContent}>
+                    <Ionicons name="play-circle" size={24} color="#FFF" />
+                    <View style={styles.unlockButtonTextContainer}>
+                      <Text style={[styles.unlockButtonText, { color: '#FFF' }]}>Watch Ad</Text>
+                      <Text style={[styles.unlockButtonSubtext, { color: '#FFF' }]}>Free • 1 week access</Text>
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* ========================================
@@ -2987,12 +3561,18 @@ const [isFocused, setIsFocused] = useState(false);
                               const status = await videoRef.current.getStatusAsync();
                               const currentTime = status.isLoaded ? status.positionMillis / 1000 : 0;
                               const wasPlaying = status.isLoaded && status.isPlaying;
+                              if (!videoRef.current || !isMountedRef.current) return;
                               await videoRef.current.unloadAsync();
+                              
+                              if (!videoRef.current || !isMountedRef.current) return;
                               await videoRef.current.loadAsync({ uri: updatedUrl });
+                              
                               if (currentTime > 0) {
+                                if (!videoRef.current || !isMountedRef.current) return;
                                 await videoRef.current.setPositionAsync(currentTime * 1000);
                               }
                               if (wasPlaying && !isPausedByUserRef.current) {
+                                if (!videoRef.current || !isMountedRef.current) return;
                                 await videoRef.current.playAsync();
                               }
                             } catch (error) {
@@ -4333,4 +4913,128 @@ infoValue: {
     letterSpacing: 0.3,
   },
 
+  // Lock Indicator Styles (small badge on locked videos)
+  lockIndicator: {
+    position: 'absolute',
+    top: '40%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  lockIndicatorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 8,
+  },
+  lockIndicatorText: {
+    color: '#FFD54A',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Unlock Popup Styles
+  unlockPopupOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 6000,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockPopupBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+  },
+  unlockPopupContainer: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 24,
+    maxWidth: 380,
+    width: '90%',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 213, 74, 0.3)',
+  },
+  unlockPopupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  unlockPopupIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 213, 74, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockPopupCloseButton: {
+    position: 'absolute',
+    right: -8,
+    top: -8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockPopupTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  unlockPopupSubtitle: {
+    color: '#999999',
+    fontSize: 14,
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  unlockButtons: {
+    width: '100%',
+    gap: 12,
+  },
+  unlockButton: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+  unlockButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  unlockButtonTextContainer: {
+    alignItems: 'center',
+  },
+  coinsButton: {
+    backgroundColor: '#FFD54A',
+  },
+  adButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  unlockButtonText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  unlockButtonSubtext: {
+    color: '#666666',
+    fontSize: 11,
+    marginTop: 2,
+  },
 });

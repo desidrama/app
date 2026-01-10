@@ -44,7 +44,9 @@ export const videoService = {
 
   async getEpisodes(seasonId: string) {
     // Validate seasonId before making request
-    if (!seasonId || seasonId === 'undefined' || seasonId === 'null' || seasonId.trim() === '') {
+    // Convert to string first to handle cases where seasonId might be undefined, null, or non-string
+    const seasonIdStr = seasonId ? String(seasonId).trim() : '';
+    if (!seasonIdStr || seasonIdStr === 'undefined' || seasonIdStr === 'null' || seasonIdStr === '') {
       console.warn('Invalid seasonId provided to getEpisodes:', seasonId);
       return {
         success: false,
@@ -54,7 +56,7 @@ export const videoService = {
     }
     
     try {
-      const response = await api.get(`/api/content/episodes/${String(seasonId).trim()}`);
+      const response = await api.get(`/api/content/episodes/${seasonIdStr}`);
       return response.data;
     } catch (error: any) {
       // Handle 401 gracefully - return empty episodes
@@ -469,6 +471,85 @@ export const videoService = {
       // Non-critical operation, silently fail
       console.warn('Could not preload episode video:', error);
       return { success: false };
+    }
+  },
+
+  // ========== Episode Unlock Methods (STRICT BACKEND VALIDATION) ==========
+  
+  /**
+   * CRITICAL: Check video access from backend (single source of truth)
+   * This MUST be called before rendering any video/popup
+   */
+  async checkVideoAccess(videoId: string) {
+    try {
+      if (!videoId) {
+        throw new Error('Video ID is required');
+      }
+      const response = await api.get(`/api/content/video/access-check?videoId=${videoId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Error checking video access:', error);
+      if (error.response?.status === 401) {
+        return { success: false, unlocked: false, data: null, message: 'Authentication required' };
+      }
+      // On any error, treat as locked for safety
+      return { success: false, unlocked: false, data: null };
+    }
+  },
+
+  /**
+   * Purchase episode with coins (backend saves immediately)
+   */
+  async purchaseEpisodeWithCoins(videoId: string) {
+    try {
+      if (!videoId) {
+        throw new Error('Video ID is required');
+      }
+      const response = await api.post('/api/content/video/unlock/coins', { videoId });
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Error purchasing episode with coins:', error);
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required');
+      }
+      if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || 'Insufficient coins');
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Unlock episode with ad (called AFTER ad completes, backend saves immediately)
+   */
+  async unlockEpisodeWithAd(videoId: string) {
+    try {
+      if (!videoId) {
+        throw new Error('Video ID is required');
+      }
+      const response = await api.post('/api/content/video/unlock/ad', { videoId });
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Error unlocking episode with ad:', error);
+      if (error.response?.status === 401) {
+        throw new Error('Authentication required');
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * @deprecated Use checkVideoAccess instead - this is for backward compatibility only
+   */
+  async checkEpisodeUnlockStatus(episodeId: string) {
+    try {
+      const response = await api.get(`/api/content/episodes/${episodeId}/unlock-status`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        return { success: false, data: { isUnlocked: false }, message: 'Authentication required' };
+      }
+      throw error;
     }
   },
 };

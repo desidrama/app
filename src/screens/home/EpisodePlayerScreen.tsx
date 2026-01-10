@@ -264,10 +264,21 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
   }, []);
 
   // Load all episodes from all seasons for a webseries
-  const loadAllSeasonEpisodes = useCallback(async (seasonId: string) => {
+  const loadAllSeasonEpisodes = useCallback(async (seasonId: string | any) => {
     try {
-      console.log('🔍 Loading all episodes for seasonId:', seasonId);
-      const response = await videoService.getEpisodes(seasonId);
+      // Extract seasonId if it's an object
+      const seasonIdStr = typeof seasonId === 'string' 
+        ? seasonId 
+        : (seasonId?._id || seasonId?.id || String(seasonId || ''));
+      
+      // Validate seasonId before making request
+      if (!seasonIdStr || seasonIdStr === 'undefined' || seasonIdStr === 'null' || seasonIdStr.trim() === '') {
+        console.warn('Invalid seasonId provided to loadAllSeasonEpisodes:', seasonId);
+        return [];
+      }
+      
+      console.log('🔍 Loading all episodes for seasonId:', seasonIdStr);
+      const response = await videoService.getEpisodes(seasonIdStr);
       
       if (response.success && response.data && response.data.length > 0) {
         const sortedEpisodes = [...response.data].sort(
@@ -606,7 +617,7 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
     }, [reels.length, loading, targetVideoId, loadPage])
   );
 
-  const handleEpisodeEnd = useCallback(() => {
+  const handleEpisodeEnd = useCallback(async () => {
     console.log('🎬 Episode ended, checking for next episode...');
     
     // Check if we're at the last episode (before "Explore More" end screen)
@@ -623,6 +634,42 @@ const EpisodePlayerScreen: React.FC<{ navigation?: any }> = ({ navigation: propN
         // Last episode finished - show explore more
         console.log('✅ Last episode finished, showing explore more');
         setShowExploreMore(true);
+        return;
+      }
+      
+      // NOT the last episode - check if next episode exists and verify access
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < reels.length) {
+        const nextEpisode = reels[nextIndex];
+        
+        // Skip if next is explore-more screen
+        if (nextEpisode.id.startsWith('explore-more')) {
+          return;
+        }
+        
+        // If next episode is locked, verify access from backend before auto-scroll
+        if (nextEpisode.adStatus === 'locked' && nextEpisode.id) {
+          console.log('🔍 Next episode is locked, verifying access from backend...');
+          try {
+            const { videoService } = await import('../../services/video.service');
+            const accessResponse = await videoService.checkVideoAccess(nextEpisode.id);
+            
+            if (!accessResponse.success || !accessResponse.unlocked) {
+              // Next episode is locked - DON'T auto-scroll, show unlock popup
+              console.log('🔒 Next episode locked by backend, showing unlock popup');
+              setShowAdPopup(true);
+              return;
+            }
+            
+            // Backend says unlocked - allow auto-scroll
+            console.log('✅ Next episode unlocked by backend, allowing auto-scroll');
+          } catch (error) {
+            console.error('❌ Error checking next episode access:', error);
+            // On error, show popup to be safe
+            setShowAdPopup(true);
+            return;
+          }
+        }
       }
     }
   }, [currentIndex, reels, episodesLoaded, allSeasonEpisodes]);
